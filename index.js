@@ -10,9 +10,14 @@ import attendanceRouter from './routes/attendance.js'
 import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
 
+import {userRegister} from './userSeed.js'
+
 connectToDatabase() 
 const app = express() 
-app.use(cors())
+app.use(cors({
+    origin: "https://unis-frontend.vercel.app/",
+    credentials: true
+}))
 app.use(express.json())
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)
