@@ -14,10 +14,7 @@ import connectToDatabase from './db/db.js'
 
 connectToDatabase() 
 const app = express() 
-app.use(cors({
-    origin: "https://unis-frontend.vercel.app/",
-    credentials: true
-}))
+app.use(cors())
 app.use(express.json())
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)
