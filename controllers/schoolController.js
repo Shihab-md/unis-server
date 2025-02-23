@@ -59,9 +59,9 @@ const addSchool = async (req, res) => {
       incharge2,
       incharge2Number,
       active,
-      createdBy: createdBy,
+      createdBy,
       createdAt,
-      updatedBy: createdBy,
+      createdBy,
       updatedAt,
     });
     await newSchool.save();
