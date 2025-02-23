@@ -80,13 +80,10 @@ const getSchools = async (req, res) => {
 };
 
 const getSchool = async (req, res) => {
-  const { id } = req.params;
   try {
-    let school;
-    school = await School.findOne({ userId: id })
-      .populate("createdBy", { password: 0 })
-      .populate("updatedBy", { password: 0 })
-    return res.status(200).json({ success: true, school });
+    const {id} = req.params;
+    const school = await School.findById({_id: id})
+    return res.status(200).json({success: true, school})
   } catch (error) {
     return res
       .status(500)

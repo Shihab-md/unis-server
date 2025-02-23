@@ -11,8 +11,6 @@ import attendanceRouter from './routes/attendance.js'
 import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
 
-
-
 connectToDatabase() 
 const app = express() 
 app.use(cors())
