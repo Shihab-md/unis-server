@@ -34,13 +34,13 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    const createdByUser = await User.findOne({ createdBy });
+/*    const createdByUser = await User.findOne({ createdBy });
     if (!createdByUser) {
       alert("OK")
       return res
         .status(404)
         .json({ success: false, error: "user not found" });
-    }
+    } */
 
     const newSchool = new School({
       code,
