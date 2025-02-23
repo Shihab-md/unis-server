@@ -76,8 +76,6 @@ const addSchool = async (req, res) => {
 const getSchools = async (req, res) => {
   try {
     const schools = await School.find()
-      .populate("createdBy", { password: 0 })
-      .populate("updatedBy", { password: 0 })
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     return res
