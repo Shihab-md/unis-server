@@ -36,17 +36,11 @@ const addSchool = async (req, res) => {
 
     const createdByUser = await User.findOne({ createdBy });
     if (!createdByUser) {
+      alert("OK")
       return res
         .status(404)
         .json({ success: false, error: "user not found" });
     }
-    /*
-        const updatedByUser = await User.findOne({ createdBy });
-        if (!updatedByUser) {
-          return res
-            .status(404)
-            .json({ success: false, error: "user not found" });
-        } */
 
     const newSchool = new School({
       code,
