@@ -35,17 +35,18 @@ const addSchool = async (req, res) => {
     } = req.body;
 
     const createdByUser = await User.findOne({ createdBy });
-    if (createdByUser) {
+    if (!createdByUser) {
       return res
-        .status(400)
-        .json({ success: false, error: "user already registered in emp" });
+        .status(404)
+        .json({ success: false, error: "user not found" });
     }
-    const updatedByUser = await User.findOne({ createdBy });
-    if (updatedByUser) {
-      return res
-        .status(400)
-        .json({ success: false, error: "user already registered in emp" });
-    }
+    /*
+        const updatedByUser = await User.findOne({ createdBy });
+        if (!updatedByUser) {
+          return res
+            .status(404)
+            .json({ success: false, error: "user not found" });
+        } */
 
     const newSchool = new School({
       code,
@@ -60,7 +61,7 @@ const addSchool = async (req, res) => {
       active,
       createdBy: createdByUser._id,
       createdAt,
-      updatedBy: updatedByUser._id,
+      updatedBy: createdByUser._id,
       updatedAt,
     });
     await newSchool.save();
