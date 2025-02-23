@@ -94,14 +94,7 @@ const getSchool = async (req, res) => {
 const updateSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, address, contactNumber, email, incharge1, incharge1Number, incharge2, incharge2Number, active, updatedAt } = req.body;
-
-    const updatedByuser = await User.findOne({ updatedBy })
-    if (!updatedByuser) {
-      return res
-        .status(404)
-        .json({ success: false, error: "user not found" });
-    }
+    const { code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number } = req.body;
 
     const school = await School.findById({ _id: id });
     if (!school) {
@@ -112,7 +105,7 @@ const updateSchool = async (req, res) => {
 
     // const updateUser = await User.findByIdAndUpdate({_id: school.userId}, {name})
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
-      name, address, contactNumber, email, incharge1, incharge1Number, incharge2, incharge2Number, active, updatedBy: updatedByuser._id, updatedAt
+      code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number
     })
 
     if (!updateSchool) {
