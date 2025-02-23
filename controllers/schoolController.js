@@ -88,9 +88,9 @@ const getSchool = async (req, res) => {
   const { id } = req.params;
   try {
     let school;
-       school = await School.findOne({ userId: id })
-       .populate("createdBy", { password: 0 })
-       .populate("updatedBy", { password: 0 })
+    school = await School.findOne({ userId: id })
+      .populate("createdBy", { password: 0 })
+      .populate("updatedBy", { password: 0 })
     return res.status(200).json({ success: true, school });
   } catch (error) {
     return res
@@ -104,32 +104,32 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { name, address, contactNumber, email, incharge1, incharge1Number, incharge2, incharge2Number, active, updatedAt } = req.body;
 
+    const updatedByuser = await User.findOne({ updatedBy })
+    if (!updatedByuser) {
+      return res
+        .status(404)
+        .json({ success: false, error: "user not found" });
+    }
+
     const school = await School.findById({ _id: id });
     if (!school) {
       return res
         .status(404)
         .json({ success: false, error: "school not found" });
     }
-    const user = await User.findById({_id: school.updatedBy})
 
-    if (!user) {
-        return res
-          .status(404)
-          .json({ success: false, error: "user not found" });
-      }
+    // const updateUser = await User.findByIdAndUpdate({_id: school.userId}, {name})
+    const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
+      name, address, contactNumber, email, incharge1, incharge1Number, incharge2, incharge2Number, active, updatedBy: updatedByuser._id, updatedAt
+    })
 
-      // const updateUser = await User.findByIdAndUpdate({_id: school.userId}, {name})
-      const updateSchool = await School.findByIdAndUpdate({_id: id}, {
-        name, address, contactNumber, email, incharge1, incharge1Number, incharge2, incharge2Number, active, updatedBy: updatedByUser._id, updatedAt
-      })
+    if (!updateSchool) {
+      return res
+        .status(404)
+        .json({ success: false, error: "document not found" });
+    }
 
-      if(!updateSchool) {
-        return res
-          .status(404)
-          .json({ success: false, error: "document not found" });
-      }
-
-      return res.status(200).json({success: true, message: "school updated."})
+    return res.status(200).json({ success: true, message: "school updated." })
 
   } catch (error) {
     return res
