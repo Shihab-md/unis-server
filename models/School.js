@@ -16,9 +16,9 @@ const schoolSchema = new Schema({
     enum: ["Active", "In-Active"],
     default: "Active",
   },
-  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  createdBy: { type: String },
   createdAt: { type: Date, default: Date.now },
-  updatedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  updatedBy: { type: String },
   updatedAt: { type: Date, default: Date.now },
 });
 
