@@ -34,13 +34,13 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-/*    const createdByUser = await User.findOne({ createdBy });
-    if (!createdByUser) {
-      alert("OK")
-      return res
-        .status(404)
-        .json({ success: false, error: "user not found" });
-    } */
+    /*    const createdByUser = await User.findOne({ createdBy });
+        if (!createdByUser) {
+          alert("OK")
+          return res
+            .status(404)
+            .json({ success: false, error: "user not found" });
+        } */
 
     const newSchool = new School({
       code,
@@ -81,9 +81,9 @@ const getSchools = async (req, res) => {
 
 const getSchool = async (req, res) => {
   try {
-    const {id} = req.params;
-    const school = await School.findById({_id: id})
-    return res.status(200).json({success: true, school})
+    const { id } = req.params;
+    const school = await School.findById({ _id: id })
+    return res.status(200).json({ success: true, school })
   } catch (error) {
     return res
       .status(500)
@@ -103,7 +103,6 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "school not found" });
     }
 
-    // const updateUser = await User.findByIdAndUpdate({_id: school.userId}, {name})
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number
     })
@@ -123,4 +122,15 @@ const updateSchool = async (req, res) => {
   }
 };
 
-export { addSchool, upload, getSchools, getSchool, updateSchool };
+const deleteSchool = async (req, res) => {
+  try {
+      const {id} = req.params;
+      const deleteSchool = await School.findById({_id: id})
+      await deleteSchool.deleteOne()
+      return res.status(200).json({success: true, deleteSchool})
+  } catch(error) {
+      return res.status(500).json({success: false, error: "delete School server error"})
+  }
+}
+
+export { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool };
