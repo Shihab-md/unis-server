@@ -1,6 +1,6 @@
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
-import {addSchool, upload, getSchools, getSchool, updateSchool} from '../controllers/schoolController.js'
+import {addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool} from '../controllers/schoolController.js'
 
 const router = express.Router()
 
