@@ -34,15 +34,11 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    //const qs = require('qs');
-    //const query = { $or: [{ code: code }, { name: name }] };
-    //let stringQuery = qs.stringify(query);
+    const query = {};
+    query.code = code;
+    query.name = name;
 
-    const school = await School.find({
-      where: {
-        [Op.or]: [{code: code}, {name: name}]
-      }
-    });
+    const school = await School.find(query);
     if (school != null) {
       return res
         .status(404)
