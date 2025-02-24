@@ -3,6 +3,7 @@ import ClassSection from "../models/ClassSection.js";
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import path from "path";
+import { isNull } from "util";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -25,7 +26,7 @@ const addClassSection = async (req, res) => {
     } = req.body;
 
     const classsAndSection = await User.find({ classs, section });
-    if (classsAndSection) {
+    if (Utils.isNull(classsAndSection)) {
       return res
         .status(404)
         .json({ success: false, error: "Same Class and Section found." });
