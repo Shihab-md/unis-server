@@ -24,13 +24,12 @@ const addClassSection = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    /*    const createdByUser = await User.findOne({ createdBy });
-        if (!createdByUser) {
-          alert("OK")
-          return res
-            .status(404)
-            .json({ success: false, error: "user not found" });
-        } */
+    const classsAndSection = await User.findByClasssAndSection({ classs, section });
+    if (classsAndSection) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Same Class and Section found." });
+    }
 
     const newClassSection = new ClassSection({
       classs,
@@ -104,12 +103,12 @@ const updateClassSection = async (req, res) => {
 
 const deleteClassSection = async (req, res) => {
   try {
-      const {id} = req.params;
-      const deleteClassSection = await ClassSection.findById({_id: id})
-      await deleteClassSection.deleteOne()
-      return res.status(200).json({success: true, deleteClassSection})
-  } catch(error) {
-      return res.status(500).json({success: false, error: "delete ClassSection server error"})
+    const { id } = req.params;
+    const deleteClassSection = await ClassSection.findById({ _id: id })
+    await deleteClassSection.deleteOne()
+    return res.status(200).json({ success: true, deleteClassSection })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "delete ClassSection server error" })
   }
 }
 
