@@ -24,7 +24,7 @@ const addClassSection = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    const classsAndSection = await User.findByClasssAndSection({ classs, section });
+    const classsAndSection = await User.find({ classs, section });
     if (classsAndSection) {
       return res
         .status(404)
