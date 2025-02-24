@@ -109,20 +109,6 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "school not found" });
     }
 
-    const schoolByCode = await School.findOne({ code });
-    if (schoolByCode != null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "School Code already exists" });
-    }
-
-    const schoolByName = await School.findOne({ name });
-    if (schoolByName != null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "School Name already exists" });
-    }
-
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number
     })
