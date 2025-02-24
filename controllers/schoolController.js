@@ -34,11 +34,11 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    const qs = require('qs');
+    //const qs = require('qs');
     const query = { $or: [{ code: code }, { name: name }] };
-    let stringQuery = qs.stringify(query);
+    //let stringQuery = qs.stringify(query);
 
-    const school = await School.findOne({ stringQuery });
+    const school = await School.find(query);
     if (school != null) {
       return res
         .status(404)
