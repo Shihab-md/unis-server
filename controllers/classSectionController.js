@@ -26,7 +26,7 @@ const addClassSection = async (req, res) => {
     } = req.body;
 
     const classsAndSection = await User.find({ classs, section });
-    if (Utils.isNull(classsAndSection)) {
+    if (!classsAndSection.isNull) {
       return res
         .status(404)
         .json({ success: false, error: "Same Class and Section found." });
