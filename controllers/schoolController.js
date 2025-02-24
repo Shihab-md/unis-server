@@ -34,13 +34,16 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    /*    const createdByUser = await User.findOne({ createdBy });
-        if (!createdByUser) {
-          alert("OK")
-          return res
-            .status(404)
-            .json({ success: false, error: "user not found" });
-        } */
+    const qs = require('qs');
+    const query = { $or: [{ code: code }, { name: name }] };
+    let stringQuery = qs.stringify(query);
+
+    const school = await School.findOne({ stringQuery });
+    if (school != null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "School Code / Name already exists" });
+    }
 
     const newSchool = new School({
       code,
@@ -124,12 +127,12 @@ const updateSchool = async (req, res) => {
 
 const deleteSchool = async (req, res) => {
   try {
-      const {id} = req.params;
-      const deleteSchool = await School.findById({_id: id})
-      await deleteSchool.deleteOne()
-      return res.status(200).json({success: true, deleteSchool})
-  } catch(error) {
-      return res.status(500).json({success: false, error: "delete School server error"})
+    const { id } = req.params;
+    const deleteSchool = await School.findById({ _id: id })
+    await deleteSchool.deleteOne()
+    return res.status(200).json({ success: true, deleteSchool })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "delete School server error" })
   }
 }
 
