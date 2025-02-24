@@ -34,15 +34,18 @@ const addSchool = async (req, res) => {
       updatedAt,
     } = req.body;
 
-    const query = {};
-    query.code = code;
-    query.name = name;
-
-    const school = await School.find(query);
-    if (school != null) {
+    const schoolByCode = await School.findOne(code);
+    if (schoolByCode != null) {
       return res
         .status(404)
-        .json({ success: false, error: "School Code / Name already exists" });
+        .json({ success: false, error: "School Code already exists" });
+    }
+
+    const schoolByName = await School.findOne(name);
+    if (schoolByName != null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "School Name already exists" });
     }
 
     const newSchool = new School({
