@@ -35,7 +35,7 @@ const addSchool = async (req, res) => {
     } = req.body;
 
     //const qs = require('qs');
-    const query = { $or: [{ code: code }, { name: name }] };
+    //const query = { $or: [{ code: code }, { name: name }] };
     //let stringQuery = qs.stringify(query);
 
     const school = await School.find({
