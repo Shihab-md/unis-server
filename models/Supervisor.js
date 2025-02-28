@@ -7,7 +7,7 @@ const supervisorSchema = new Schema({
   routeName: { type: String },
   qualification: { type: String },
   dob: { type: Date },
-  gender: { type: String, enum: ["Male", "Female"], default: "ActiMaleve", },
+  gender: { type: String, enum: ["Male", "Female"], default: "Male", },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   designation: { type: String },
