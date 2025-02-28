@@ -29,6 +29,7 @@ const login = async (req, res) => {
         user: { _id: user._id, name: user.name, role: user.role },
       });
   } catch (error) {
+    alert("Hi")
     res.status(500).json({success: false, error: error.message})
   }
 };
