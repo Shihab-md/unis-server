@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import authRouter from './routes/auth.js'
 import departmentRouter from './routes/department.js'
+import supervisorRouter from './routes/supervisor.js'
 import schoolRouter from './routes/school.js'
 import classSectionRouter from './routes/classSection.js'
 import employeeRouter from './routes/employee.js'
@@ -19,6 +20,7 @@ app.use(express.json())
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)
 app.use('/api/department', departmentRouter)
+app.use('/api/supervisor', supervisorRouter)
 app.use('/api/school', schoolRouter)
 app.use('/api/classSection', classSectionRouter)
 app.use('/api/employee', employeeRouter)
