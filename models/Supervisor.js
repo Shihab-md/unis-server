@@ -8,7 +8,7 @@ const supervisorSchema = new Schema({
   qualification: { type: String },
   dob: { type: Date },
   gender: { type: String, enum: ["Male", "Female"], default: "ActiMaleve", },
-  maritalStatus: { type: String, enum: ["Married", "UnMarried"], },
+  maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   designation: { type: String },
   salary: { type: Number, required: true },
