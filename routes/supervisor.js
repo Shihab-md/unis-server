@@ -1,6 +1,6 @@
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
-import { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, fetchSupervisorsByDepId } from '../controllers/supervisorController.js'
+import { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor } from '../controllers/supervisorController.js'
 
 const router = express.Router()
 

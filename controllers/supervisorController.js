@@ -149,16 +149,4 @@ const updateSupervisor = async (req, res) => {
   }
 };
 
-const fetchSupervisorsByDepId = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const supervisors = await Supervisor.find({ department: id })
-    return res.status(200).json({ success: true, supervisors });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get supervisorsbyDepId server error" });
-  }
-}
-
-export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, fetchSupervisorsByDepId };
+export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor };
