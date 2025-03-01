@@ -12,7 +12,6 @@ const supervisorSchema = new Schema({
   gender: { type: String, enum: ["Male", "Female"], default: "Male", },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
-  designation: { type: String },
   salary: { type: Number, required: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
