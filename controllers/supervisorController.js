@@ -97,10 +97,10 @@ const getSupervisor = async (req, res) => {
     let supervisor;
     supervisor = await Supervisor.findById({ _id: id })
       .populate("userId", { password: 0 });
-      if(!supervisor) {
-        supervisor = await Supervisor.findOne({ userId: id })
-      .populate("userId", { password: 0 });
-      }
+    if (!supervisor) {
+      supervisor = await Supervisor.findOne({ userId: id })
+        .populate("userId", { password: 0 });
+    }
     return res.status(200).json({ success: true, supervisor });
   } catch (error) {
     return res
@@ -112,7 +112,7 @@ const getSupervisor = async (req, res) => {
 const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, contactNumber, address, routeName, qualification, dob, maritalStatus, designation, doj, salary } = req.body;
+    const { name, contactNumber, supervisorId, address, routeName, gender, qualification, dob, maritalStatus, designation, doj, salary } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -120,27 +120,27 @@ const updateSupervisor = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Supervisor not found." });
     }
-    const user = await User.findById({_id: supervisor.userId})
+    const user = await User.findById({ _id: supervisor.userId })
 
     if (!user) {
-        return res
-          .status(404)
-          .json({ success: false, error: "User not found." });
-      }
+      return res
+        .status(404)
+        .json({ success: false, error: "User not found." });
+    }
 
-      const updateUser = await User.findByIdAndUpdate({_id: supervisor.userId}, {name})
-      const updateSupervisor = await Supervisor.findByIdAndUpdate({_id: id}, {
-        contactNumber, address, routeName, qualification, dob, maritalStatus,
-        designation, doj, salary
-      })
+    const updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name })
+    const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
+      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
+      designation, doj, salary
+    })
 
-      if(!updateSupervisor || !updateUser) {
-        return res
-          .status(404)
-          .json({ success: false, error: "document not found" });
-      }
+    if (!updateSupervisor || !updateUser) {
+      return res
+        .status(404)
+        .json({ success: false, error: "document not found" });
+    }
 
-      return res.status(200).json({success: true, message: "Supervisor details updated Successfully."})
+    return res.status(200).json({ success: true, message: "Supervisor details updated Successfully." })
 
   } catch (error) {
     return res
