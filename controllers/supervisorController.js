@@ -32,6 +32,7 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
+      profileImage,
     } = req.body;
 
     const user = await User.findOne({ email });
@@ -48,7 +49,8 @@ const addSupervisor = async (req, res) => {
       email,
       password: hashPassword,
       role: 'supervisor',
-      profileImage: req.file ? req.file.filename : "",
+      //profileImage: req.file ? req.file.filename : "",
+      profileImage,
     });
     const savedUser = await newUser.save();
 
