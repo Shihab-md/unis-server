@@ -22,6 +22,8 @@ const addSupervisor = async (req, res) => {
       name,
       email,
       supervisorId,
+      address,
+      contactNumber,
       routeName,
       qualification,
       dob,
@@ -55,6 +57,8 @@ const addSupervisor = async (req, res) => {
     const newSupervisor = new Supervisor({
       userId: savedUser._id,
       supervisorId,
+      address,
+      contactNumber,
       routeName,
       qualification,
       dob,
@@ -108,7 +112,7 @@ const getSupervisor = async (req, res) => {
 const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, routeName, qualification, dob, maritalStatus, designation, department, doj, salary } = req.body;
+    const { name, contactNumber, address, routeName, qualification, dob, maritalStatus, designation, doj, salary } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -126,7 +130,7 @@ const updateSupervisor = async (req, res) => {
 
       const updateUser = await User.findByIdAndUpdate({_id: supervisor.userId}, {name})
       const updateSupervisor = await Supervisor.findByIdAndUpdate({_id: id}, {
-        routeName, qualification, dob, maritalStatus,
+        contactNumber, address, routeName, qualification, dob, maritalStatus,
         designation, doj, salary
       })
 
