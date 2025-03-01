@@ -49,7 +49,7 @@ const addSupervisor = async (req, res) => {
       name,
       email,
       password: hashPassword,
-      role: "supervisor",
+      role: 'supervisor',
       profileImage: req.file ? req.file.filename : "",
     });
     const savedUser = await newUser.save();
