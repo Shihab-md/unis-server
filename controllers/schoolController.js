@@ -21,16 +21,21 @@ const addSchool = async (req, res) => {
       code,
       name,
       address,
+      district,
       contactNumber,
       email,
       incharge1,
       incharge1Number,
       incharge2,
       incharge2Number,
+      incharge3,
+      incharge3Number,
+      incharge4,
+      incharge4Number,
+      incharge5,
+      incharge5Number,
       active,
-      createdBy,
       createdAt,
-      updatedBy,
       updatedAt,
     } = req.body;
 
@@ -52,16 +57,21 @@ const addSchool = async (req, res) => {
       code,
       name,
       address,
+      district,
       contactNumber,
       email,
       incharge1,
       incharge1Number,
       incharge2,
       incharge2Number,
+      incharge3,
+      incharge3Number,
+      incharge4,
+      incharge4Number,
+      incharge5,
+      incharge5Number,
       active,
-      createdBy,
       createdAt,
-      createdBy,
       updatedAt,
     });
     await newSchool.save();
@@ -100,7 +110,12 @@ const getSchool = async (req, res) => {
 const updateSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number } = req.body;
+    const { code, name, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      incharge3Number,
+      incharge4,
+      incharge4Number,
+      incharge5,
+      incharge5Number, } = req.body;
 
     const school = await School.findById({ _id: id });
     if (!school) {
@@ -110,7 +125,12 @@ const updateSchool = async (req, res) => {
     }
 
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
-      code, name, address, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number
+      code, name, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      incharge3Number,
+      incharge4,
+      incharge4Number,
+      incharge5,
+      incharge5Number,
     })
 
     if (!updateSchool) {
