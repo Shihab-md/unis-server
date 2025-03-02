@@ -50,7 +50,7 @@ const addSupervisor = async (req, res) => {
       password: hashPassword,
       role: 'supervisor',
       //profileImage: req.file ? req.file.filename : "",
-      profileImage: convertToBase64({profileImage}),
+      profileImage: convertToBase64(req.file),
     });
     const savedUser = await newUser.save();
 
