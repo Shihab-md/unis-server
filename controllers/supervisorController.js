@@ -50,7 +50,7 @@ const addSupervisor = async (req, res) => {
       password: hashPassword,
       role: 'supervisor',
       //profileImage: req.file ? req.file.filename : "",
-      profileImage,
+      profileImage: convertToBase64({profileImage}),
     });
     const savedUser = await newUser.save();
 
@@ -77,6 +77,19 @@ const addSupervisor = async (req, res) => {
       .json({ success: false, error: "server error in adding supervisor" });
   }
 };
+
+function convertToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fileReader = new FileReader();
+    fileReader.readAsDataURL(file);
+    fileReader.onload = () => {
+      resolve(fileReader.result)
+    };
+    fileReader.onerror = (error) => {
+      reject(error)
+    }
+  })
+}
 
 const getSupervisors = async (req, res) => {
   try {
