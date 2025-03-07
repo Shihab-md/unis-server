@@ -7,9 +7,11 @@ import Department from "../models/Department.js";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    console.log("inside 1");
     cb(null, "public/uploads");
   },
   filename: (req, file, cb) => {
+    console.log("inside 2" + file.originalname);
     cb(null, Date.now() + path.extname(file.originalname));
   },
 });
@@ -52,6 +54,8 @@ const addSupervisor = async (req, res) => {
       //profileImage: convertToBase64(req.file),
     });
     const savedUser = await newUser.save();
+
+    console.log("user created");
 
     const newSupervisor = new Supervisor({
       userId: savedUser._id,
