@@ -16,7 +16,7 @@ import connectToDatabase from './db/db.js'
 connectToDatabase() 
 const app = express() 
 app.use(cors({
-    origin: "https://unis.org.in",
+    origin: "https://unis.org.in/*****",
     credentials: true
 }))
 
