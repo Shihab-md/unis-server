@@ -45,6 +45,8 @@ const addSupervisor = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
+    console.log("File name : " + req.file ? req.file.filename : "");
+
     const newUser = new User({
       name,
       email,
