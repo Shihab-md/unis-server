@@ -77,6 +77,7 @@ const addSupervisor = async (req, res) => {
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
     console.log(error);
+    console.log("File - - " + file.originalname);
     return res
       .status(500)
       .json({ success: false, error: "server error in adding supervisor" });
