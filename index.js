@@ -19,7 +19,7 @@ const app = express()
 
 app.options("*", cors())
 
-const allowedDomains = ['https://www.unis.org.in/', 'https://unis-frontend.vercel.app/']
+const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
 app.use(cors({ origin: allowedDomains, credentials: true }));
 
 app.use(express.json())
