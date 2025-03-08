@@ -17,19 +17,7 @@ connectToDatabase()
 const app = express() 
 //app.use(cors({origin: '*'}))
 //const cors = require('cors');
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Origin', 'X-Requested-With', 'Accept', 'x-client-key', 'x-client-token', 'x-client-secret', 'Authorization'],
-    credentials: true
-}))
-//app.use(cors({
-//    origin: "https://www.unis.org.in/*/*/*/*",
-//    credentials: true
-//}))
-
-app.use(express.json())
-app.use(express.static('public/uploads'))
+x
 app.use('/api/auth', authRouter)
 app.use('/api/department', departmentRouter)
 app.use('/api/supervisor', supervisorRouter)
@@ -41,6 +29,14 @@ app.use('/api/leave', leaveRouter)
 app.use('/api/setting', settingRouter)
 app.use('/api/attendance', attendanceRouter)
 app.use('/api/dashboard', dashboardRouter)
+
+const cors = require('cors');
+app.use(cors({
+    origin: 'http://example.com', // use your actual domain name (or localhost), using * is not recommended
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Origin', 'X-Requested-With', 'Accept', 'x-client-key', 'x-client-token', 'x-client-secret', 'Authorization'],
+    credentials: true
+}))
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
