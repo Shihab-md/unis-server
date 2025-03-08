@@ -21,7 +21,7 @@ const app = express()
 app.use(function (req, res, next) {
 
     // Website you wish to allow to connect
-    res.setHeader('Access-Control-Allow-Origin', 'https://unis-frontend.vercel.app/, https://www.unis.org.in/, https://unis-server.vercel.app/');
+    res.setHeader('Access-Control-Allow-Origin', 'https://unis-frontend.vercel.app/');
 
     // Request methods you wish to allow
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
