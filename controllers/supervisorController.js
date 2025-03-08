@@ -3,7 +3,6 @@ import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import path from "path";
-import Department from "../models/Department.js";
 
 const storage = multer.diskStorage({
   destination: async function(req, file, cb) {
