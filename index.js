@@ -15,10 +15,11 @@ import connectToDatabase from './db/db.js'
 
 connectToDatabase() 
 const app = express() 
-app.use(cors({
-    origin: "https://www.unis.org.in/*/*/*/*",
-    credentials: true
-}))
+app.use(cors())
+//app.use(cors({
+//    origin: "https://www.unis.org.in/*/*/*/*",
+//    credentials: true
+//}))
 
 app.use(express.json())
 app.use(express.static('public/uploads'))
