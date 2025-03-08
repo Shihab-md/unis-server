@@ -6,8 +6,12 @@ import path from "path";
 import Department from "../models/Department.js";
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: async function(req, file, cb) {
     console.log("inside 1");
+    const dirExist = await fsAsync.exists("public/uploads");
+        if (dirExist === false) {
+          await fsAsync.mkdir(dirPath);
+        }
     cb(null, "public/uploads");
   },
   filename: (req, file, cb) => {
@@ -76,8 +80,9 @@ const addSupervisor = async (req, res) => {
     await newSupervisor.save();
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
-    console.log(error);
+    
     console.log("File - - " + file.originalname);
+    console.log(error);
     return res
       .status(500)
       .json({ success: false, error: "server error in adding supervisor" });
