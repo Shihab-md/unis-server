@@ -15,7 +15,7 @@ import connectToDatabase from './db/db.js'
 
 connectToDatabase() 
 const app = express() 
-//app.use(cors({origin: '*'}))
+app.use(cors({origin: '*'}))
 //const cors = require('cors');
 // Add headers
 app.use(function (req, res, next) {
@@ -37,7 +37,7 @@ app.use(function (req, res, next) {
     next();
 });
 
-app.use(cors())
+//app.use(cors())
 
 //app.use(cors({
 //    origin: ['https://unis-frontend.vercel.app/', 'https://www.unis.org.in/', 'https://unis-server.vercel.app/'], 
