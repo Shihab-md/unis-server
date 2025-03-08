@@ -37,7 +37,7 @@ app.use(function (req, res, next) {
     next();
 });
 
-// app.use(cors())
+app.use(cors())
 
 //app.use(cors({
 //    origin: ['https://unis-frontend.vercel.app/', 'https://www.unis.org.in/', 'https://unis-server.vercel.app/'], 
