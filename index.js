@@ -40,7 +40,7 @@ const app = express()
 // app.use(cors())
 
 app.use(cors({
-    origin: ['https://unis-frontend.vercel.app/', 'https://www.unis.org.in/'], 
+    origin: ['https://unis-frontend.vercel.app/', 'https://www.unis.org.in/', 'https://unis-server.vercel.app/'], 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Origin', 'X-Requested-With', 'Accept', 'x-client-key', 'x-client-token', 'x-client-secret', 'Authorization'],
     credentials: true
