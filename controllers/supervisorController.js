@@ -39,6 +39,8 @@ const addSupervisor = async (req, res) => {
       password,
     } = req.body;
 
+    console.log("user started");
+
     const user = await User.findOne({ email });
     if (user) {
       return res
