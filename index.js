@@ -36,9 +36,9 @@ app.use('/api/setting', settingRouter)
 app.use('/api/attendance', attendanceRouter)
 app.use('/api/dashboard', dashboardRouter)
 
-var connectTimeout = require('connect-timeout');
-var longTimeout = connectTimeout({ time: 600000 });
-app.use(longTimeout);
+const connectTimeout = require('connect-timeout')
+const longTimeout = connectTimeout({ time: 600000 })
+app.use(longTimeout)
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
