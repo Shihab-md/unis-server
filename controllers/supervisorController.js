@@ -92,18 +92,18 @@ const addSupervisor = async (req, res) => {
   }
 };
 
-function convertToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const fileReader = new FileReader();
-    fileReader.readAsDataURL(file);
-    fileReader.onload = () => {
-      resolve(fileReader.result)
-    };
-    fileReader.onerror = (error) => {
-      reject(error)
-    }
-  })
-}
+//function convertToBase64(file) {
+//  return new Promise((resolve, reject) => {
+//    const fileReader = new FileReader();
+//    fileReader.readAsDataURL(file);
+//    fileReader.onload = () => {
+ //     resolve(fileReader.result)
+//    };
+//    fileReader.onerror = (error) => {
+//      reject(error)
+//    }
+//  })
+//}
 
 const getSupervisors = async (req, res) => {
   try {
