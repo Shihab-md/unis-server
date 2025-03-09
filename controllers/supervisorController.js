@@ -20,7 +20,8 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage: storage });
+//const upload = multer({ storage: storage });
+const upload = multer({ dest: 'https://www.unis.org.in/public/' })
 
 const addSupervisor = async (req, res) => {
   try {
