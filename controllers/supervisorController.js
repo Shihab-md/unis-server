@@ -7,10 +7,10 @@ import path from "path";
 const storage = multer.diskStorage({
   destination: async function(req, image, cb) {
 
-   const dirExist = await fsAsync.exists("public/uploads");
-       if (dirExist === false) {
-         await fsAsync.mkdir(dirPath);
-       }
+  // const dirExist = await fsAsync.exists("public/uploads");
+  //     if (dirExist === false) {
+  //       await fsAsync.mkdir(dirPath);
+  //     }
     cb(null, "public/uploads");
   },
   filename: (req, image, cb) => {
