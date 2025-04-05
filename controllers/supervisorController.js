@@ -21,7 +21,7 @@ const storage = multer.diskStorage({
 });
 
 //const upload = multer({ storage: storage });
-const upload = multer({ dest: 'https://unis-server.vercel.app/public/' })
+const upload = multer({ dest: 'public/uploads/' })
 
 const addSupervisor = async (req, res) => {
   try {
