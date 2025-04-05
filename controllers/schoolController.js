@@ -48,7 +48,7 @@ const addSchool = async (req, res) => {
         .json({ success: false, error: "School Code already exists" });
     }
 
-    const schoolByName = await School.findOne({ name });
+    const schoolByName = await School.findOne({ nameEnglish });
     if (schoolByName != null) {
       return res
         .status(404)
