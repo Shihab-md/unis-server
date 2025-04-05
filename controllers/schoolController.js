@@ -140,6 +140,13 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "school not found" });
     }
 
+    const supervisorById = await Supervisor.findOne({ supervisorId });
+    if (supervisorById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Supervisor data not found." });
+    }
+    
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
