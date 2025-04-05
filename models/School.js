@@ -3,7 +3,9 @@ import { Schema } from "mongoose";
 
 const schoolSchema = new Schema({
   code: { type: String, required: true, unique: true },
-  name: { type: String, required: true, unique: true },
+  nameEnglish: { type: String },
+  nameArabic: { type: String },
+  nameNative: { type: String },
   address: { type: String, required: true },
   district: { type: String, required: true },
   contactNumber: { type: Number },

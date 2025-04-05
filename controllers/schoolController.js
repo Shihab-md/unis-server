@@ -19,7 +19,9 @@ const addSchool = async (req, res) => {
   try {
     const {
       code,
-      name,
+      nameEnglish,
+      nameArabic,
+      nameNative,
       address,
       district,
       contactNumber,
@@ -55,7 +57,9 @@ const addSchool = async (req, res) => {
 
     const newSchool = new School({
       code,
-      name,
+      nameEnglish,
+      nameArabic,
+      nameNative,
       address,
       district,
       contactNumber,
@@ -110,7 +114,9 @@ const getSchool = async (req, res) => {
 const updateSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+    const { code, nameEnglish,
+      nameArabic,
+      nameNative, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
@@ -125,7 +131,9 @@ const updateSchool = async (req, res) => {
     }
 
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
-      code, name, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      code, nameEnglish,
+      nameArabic,
+      nameNative, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
