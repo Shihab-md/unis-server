@@ -176,4 +176,15 @@ const updateSupervisor = async (req, res) => {
   }
 };
 
-export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor };
+const deleteSupervisor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleteSupervisor = await Supervisor.findById({ _id: id })
+    await deleteSupervisor.deleteOne()
+    return res.status(200).json({ success: true, deleteSupervisor })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "delete Supervisor server error" })
+  }
+}
+
+export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, deleteSupervisor };
