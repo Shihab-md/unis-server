@@ -1,5 +1,6 @@
 import multer from "multer";
 import School from "../models/School.js";
+import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import path from "path";
@@ -26,6 +27,7 @@ const addSchool = async (req, res) => {
       district,
       contactNumber,
       email,
+      supervisorId,
       incharge1,
       incharge1Number,
       incharge2,
@@ -55,6 +57,13 @@ const addSchool = async (req, res) => {
         .json({ success: false, error: "School Name already exists" });
     }
 
+    const supervisorById = await Supervisor.findOne({ supervisorId });
+    if (supervisorById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Supervisor data not found." });
+    }
+
     const newSchool = new School({
       code,
       nameEnglish,
@@ -64,6 +73,7 @@ const addSchool = async (req, res) => {
       district,
       contactNumber,
       email,
+      supervisorId,
       incharge1,
       incharge1Number,
       incharge2,
@@ -116,7 +126,7 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, contactNumber, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
@@ -133,7 +143,7 @@ const updateSchool = async (req, res) => {
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, email, active, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, contactNumber, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
