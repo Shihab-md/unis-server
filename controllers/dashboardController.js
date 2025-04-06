@@ -1,10 +1,15 @@
 import Department from "../models/Department.js";
 import Employee from "../models/Employee.js"
+import Supervisor from "../models/Supervisor.js"
+import School from "../models/School.js"
 import Leave from "../models/Leave.js";
 
 const getSummary = async (req, res) => {
     try {
         const totalEmployees = await Employee.countDocuments();
+
+        const totalSupervisors = await Supervisor.countDocuments();
+        const totalSchools = await School.countDocuments();
 
         const totalDepartments = await Department.countDocuments();
 
@@ -30,6 +35,8 @@ const getSummary = async (req, res) => {
 
         return res.status(200).json({
             success: true,
+            totalSupervisors,
+            totalSchools,
             totalEmployees,
             totalDepartments,
             totalSalary: totalSalaries[0]?.totalSalary || 0,
