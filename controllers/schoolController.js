@@ -38,6 +38,10 @@ const addSchool = async (req, res) => {
       incharge4Number,
       incharge5,
       incharge5Number,
+      incharge6,
+      incharge6Number,
+      incharge7,
+      incharge7Number,
       active,
       createdAt,
       updatedAt,
@@ -84,6 +88,10 @@ const addSchool = async (req, res) => {
       incharge4Number,
       incharge5,
       incharge5Number,
+      incharge6,
+      incharge6Number,
+      incharge7,
+      incharge7Number,
       active,
       createdAt,
       updatedAt,
@@ -131,7 +139,11 @@ const updateSchool = async (req, res) => {
       incharge4,
       incharge4Number,
       incharge5,
-      incharge5Number, } = req.body;
+      incharge5Number,
+      incharge6,
+      incharge6Number,
+      incharge7,
+      incharge7Number, } = req.body;
 
     const school = await School.findById({ _id: id });
     if (!school) {
@@ -156,6 +168,10 @@ const updateSchool = async (req, res) => {
       incharge4Number,
       incharge5,
       incharge5Number,
+      incharge6,
+      incharge6Number,
+      incharge7,
+      incharge7Number,
     })
 
     if (!updateSchool) {

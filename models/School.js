@@ -21,6 +21,10 @@ const schoolSchema = new Schema({
   incharge4Number: { type: Number },
   incharge5: { type: String },
   incharge5Number: { type: Number },
+  incharge6: { type: String },
+  incharge6Number: { type: Number },
+  incharge7: { type: String },
+  incharge7Number: { type: Number },
   active: {
     type: String,
     enum: ["Active", "In-Active"],
