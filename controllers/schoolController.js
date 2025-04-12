@@ -54,12 +54,12 @@ const addSchool = async (req, res) => {
         .json({ success: false, error: "School Code already exists" });
     }
 
-    const schoolByName = await School.findOne({ nameEnglish });
+    {/*const schoolByName = await School.findOne({ nameEnglish });
     if (schoolByName != null) {
       return res
         .status(404)
-        .json({ success: false, error: "School Name already exists" });
-    }
+        .json({ success: false, error: "Niswan Name already exists" });
+    }*/}
 
     const supervisorById = await Supervisor.findOne({ supervisorId });
     if (supervisorById == null) {
@@ -97,7 +97,7 @@ const addSchool = async (req, res) => {
       updatedAt,
     });
     await newSchool.save();
-    return res.status(200).json({ success: true, message: "school is created." });
+    return res.status(200).json({ success: true, message: "Niswan is created." });
   } catch (error) {
     console.log(error);
     return res
@@ -149,7 +149,7 @@ const updateSchool = async (req, res) => {
     if (!school) {
       return res
         .status(404)
-        .json({ success: false, error: "school not found" });
+        .json({ success: false, error: "Niswan not found" });
     }
 
     const supervisorById = await Supervisor.findOne({ supervisorId });
@@ -158,7 +158,7 @@ const updateSchool = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Supervisor data not found." });
     }
-    
+
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
@@ -177,15 +177,15 @@ const updateSchool = async (req, res) => {
     if (!updateSchool) {
       return res
         .status(404)
-        .json({ success: false, error: "document not found" });
+        .json({ success: false, error: "Niswan data not found" });
     }
 
-    return res.status(200).json({ success: true, message: "school updated." })
+    return res.status(200).json({ success: true, message: "Niswan updated." })
 
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "update schools server error" });
+      .json({ success: false, error: "update Niswan server error" });
   }
 };
 
