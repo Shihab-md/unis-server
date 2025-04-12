@@ -1,6 +1,7 @@
 import multer from "multer";
 import Employee from "../models/Employee.js";
 import User from "../models/User.js";
+import School from "../models/School.js";
 import bcrypt from "bcrypt";
 import path from "path";
 import Department from "../models/Department.js";
@@ -21,22 +22,27 @@ const addEmployee = async (req, res) => {
     const {
       name,
       email,
+      schoolId,
       employeeId,
+      role,
+      address,
+      contactNumber,
+      designation,
+      qualification,
       dob,
       gender,
       maritalStatus,
-      designation,
-      department,
+      doj,
       salary,
       password,
-      role,
+
     } = req.body;
 
     const user = await User.findOne({ email });
     if (user) {
       return res
         .status(400)
-        .json({ success: false, error: "user already registered in emp" });
+        .json({ success: false, error: "User already registered in emp" });
     }
 
     const hashPassword = await bcrypt.hash(password, 10);
@@ -50,19 +56,30 @@ const addEmployee = async (req, res) => {
     });
     const savedUser = await newUser.save();
 
+    const schoolByCode = await School.findOne({ schoolId });
+    if (schoolByCode == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Niswan Not exists" });
+    }
+
     const newEmployee = new Employee({
       userId: savedUser._id,
+      schoolId: schoolByCode._id,
       employeeId,
+      address,
+      contactNumber,
+      designation,
+      qualification,
       dob,
       gender,
       maritalStatus,
-      designation,
-      department,
+      doj,
       salary,
     });
 
     await newEmployee.save();
-    return res.status(200).json({ success: true, message: "employee created" });
+    return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
     console.log(error);
     return res
@@ -75,7 +92,7 @@ const getEmployees = async (req, res) => {
   try {
     const employees = await Employee.find()
       .populate("userId", { password: 0 })
-      .populate("department");
+      .populate("schoolId");
     return res.status(200).json({ success: true, employees });
   } catch (error) {
     return res
@@ -90,12 +107,12 @@ const getEmployee = async (req, res) => {
     let employee;
     employee = await Employee.findById({ _id: id })
       .populate("userId", { password: 0 })
-      .populate("department");
-      if(!employee) {
-        employee = await Employee.findOne({ userId: id })
-      .populate("userId", { password: 0 })
-      .populate("department");
-      }
+      .populate("schoolId");
+    if (!employee) {
+      employee = await Employee.findOne({ userId: id })
+        .populate("userId", { password: 0 })
+        .populate("schoolId");
+    }
     return res.status(200).json({ success: true, employee });
   } catch (error) {
     return res
@@ -107,7 +124,16 @@ const getEmployee = async (req, res) => {
 const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, maritalStatus, designation, department, salary } = req.body;
+    const { name,
+      address,
+      contactNumber,
+      designation,
+      qualification,
+      dob,
+      gender,
+      maritalStatus,
+      doj,
+      salary, } = req.body;
 
     const employee = await Employee.findById({ _id: id });
     if (!employee) {
@@ -115,27 +141,34 @@ const updateEmployee = async (req, res) => {
         .status(404)
         .json({ success: false, error: "employee not found" });
     }
-    const user = await User.findById({_id: employee.userId})
+    const user = await User.findById({ _id: employee.userId })
 
     if (!user) {
-        return res
-          .status(404)
-          .json({ success: false, error: "user not found" });
-      }
+      return res
+        .status(404)
+        .json({ success: false, error: "user not found" });
+    }
 
-      const updateUser = await User.findByIdAndUpdate({_id: employee.userId}, {name})
-      const updateEmployee = await Employee.findByIdAndUpdate({_id: id}, {
-        maritalStatus,
-        designation, salary, department
-      })
+    const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
+    const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
+      address,
+      contactNumber,
+      designation,
+      qualification,
+      dob,
+      gender,
+      maritalStatus,
+      doj,
+      salary,
+    })
 
-      if(!updateEmployee || !updateUser) {
-        return res
-          .status(404)
-          .json({ success: false, error: "document not found" });
-      }
+    if (!updateEmployee || !updateUser) {
+      return res
+        .status(404)
+        .json({ success: false, error: "document not found" });
+    }
 
-      return res.status(200).json({success: true, message: "employee update"})
+    return res.status(200).json({ success: true, message: "employee update done" })
 
   } catch (error) {
     return res
@@ -144,7 +177,7 @@ const updateEmployee = async (req, res) => {
   }
 };
 
-const fetchEmployeesByDepId = async (req, res) => {
+{/*const fetchEmployeesByDepId = async (req, res) => {
   const { id } = req.params;
   try {
     const employees = await Employee.find({ department: id })
@@ -154,6 +187,6 @@ const fetchEmployeesByDepId = async (req, res) => {
       .status(500)
       .json({ success: false, error: "get employeesbyDepId server error" });
   }
-}
+}*/}
 
-export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, fetchEmployeesByDepId };
+export { addEmployee, upload, getEmployees, getEmployee, updateEmployee };

@@ -5,7 +5,7 @@ import { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor,
 const router = express.Router()
 
 router.get('/', authMiddleware, getSupervisors)
-router.post('/add12', authMiddleware, upload.single('image'), addSupervisor)
+router.post('/add', authMiddleware, upload.single('image'), addSupervisor)
 router.get('/:id', authMiddleware, getSupervisor)
 router.put('/:id', authMiddleware, updateSupervisor)
 router.delete('/:id', authMiddleware, deleteSupervisor)

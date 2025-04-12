@@ -5,16 +5,16 @@ import bcrypt from "bcrypt";
 import path from "path";
 
 const storage = multer.diskStorage({
-  destination: async function(req, file, cb) {
+  destination: async function (req, file, cb) {
 
-  // const dirExist = await fsAsync.exists("public/uploads");
-  //     if (dirExist === false) {
-  //      await fsAsync.mkdir(dirPath);
-  //     }
+    // const dirExist = await fsAsync.exists("public/uploads");
+    //     if (dirExist === false) {
+    //      await fsAsync.mkdir(dirPath);
+    //     }
     cb(null, "public/uploads");
   },
   filename: (req, file, cb) => {
-   // console.log("inside 2" + file.originalname);
+    // console.log("inside 2" + file.originalname);
     //cb(null, Date.now() + path.extname(file.originalname));
     cb(null, path.extname(file.originalname));
   },
@@ -52,13 +52,13 @@ const addSupervisor = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-   // console.log("File name : " + req.file ? req.file.filename : "");
+    // console.log("File name : " + req.file ? req.file.filename : "");
 
     const newUser = new User({
       name,
       email,
       password: hashPassword,
-      role: 'supervisor',
+      role,
       //profileImage: req.image ? req.image.filename : "",
       profileImage: req.file ? req.file.filename : "",
       //profileImage: convertToBase64(req.file),
@@ -84,7 +84,7 @@ const addSupervisor = async (req, res) => {
     await newSupervisor.save();
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
-    
+
     //console.log("File - - " + file.originalname);
     console.log(error);
     return res
@@ -98,7 +98,7 @@ const addSupervisor = async (req, res) => {
 //    const fileReader = new FileReader();
 //    fileReader.readAsDataURL(file);
 //    fileReader.onload = () => {
- //     resolve(fileReader.result)
+//     resolve(fileReader.result)
 //    };
 //    fileReader.onerror = (error) => {
 //      reject(error)
@@ -139,7 +139,8 @@ const getSupervisor = async (req, res) => {
 const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, contactNumber, supervisorId, address, routeName, gender, qualification, dob, maritalStatus, doj, salary } = req.body;
+    const { name, contactNumber, address, routeName, gender,
+      qualification, dob, maritalStatus, doj, salary } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -157,7 +158,7 @@ const updateSupervisor = async (req, res) => {
 
     const updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name })
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
-      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
+      contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
       doj, salary
     })
 
