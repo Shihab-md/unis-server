@@ -6,11 +6,11 @@ import bcrypt from "bcrypt";
 import path from "path";
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: async function (req, file, cb) {
     cb(null, "public/uploads");
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, path.extname(file.originalname));
   },
 });
 
@@ -66,7 +66,7 @@ const addEmployee = async (req, res) => {
       schoolId: schoolById._id,
       employeeId,
       contactNumber,
-      address,   
+      address,
       designation,
       qualification,
       dob,
@@ -79,7 +79,7 @@ const addEmployee = async (req, res) => {
     await newEmployee.save();
     return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
-    savedUser.deleteOne();
+    //savedUser.deleteOne();
     console.log(error);
     return res
       .status(500)

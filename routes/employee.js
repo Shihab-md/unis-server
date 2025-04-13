@@ -9,6 +9,5 @@ router.post('/add', authMiddleware, upload.single('image'), addEmployee)
 router.get('/:id', authMiddleware, getEmployee)
 router.put('/:id', authMiddleware, updateEmployee)
 router.delete('/:id', authMiddleware, deleteEmployee)
-//router.get('/department/:id', authMiddleware, fetchEmployeesByDepId)
 
 export default router
