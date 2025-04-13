@@ -15,6 +15,13 @@ const addInstitute = async (req, res) => {
       incharge2Number,
     } = req.body;
 
+    const instituteByCode = await School.findOne({ code: code });
+    if (instituteByCode != null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Institute Code already exists" });
+    }
+
     const newInstitute = new Institute({
       code,
       name,
