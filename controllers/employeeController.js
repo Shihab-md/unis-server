@@ -75,7 +75,7 @@ const addEmployee = async (req, res) => {
       doj,
       salary,
     });
-
+    console.log(newEmployee.toJSON());
     await newEmployee.save();
     return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
