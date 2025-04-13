@@ -122,8 +122,9 @@ const getEmployee = async (req, res) => {
 
 const updateEmployee = async (req, res) => {
   try {
-    const { id, schoolId } = req.params;
+    const { id } = req.params;
     const { name,
+      schoolId,
       contactNumber,
       address,
       designation,
