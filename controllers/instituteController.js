@@ -15,7 +15,7 @@ const addInstitute = async (req, res) => {
       incharge2Number,
     } = req.body;
 
-    const instituteByCode = await School.findOne({ code: code });
+    const instituteByCode = await Institute.findOne({ code: code });
     if (instituteByCode != null) {
       return res
         .status(404)
