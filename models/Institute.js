@@ -4,7 +4,7 @@ import { Schema } from "mongoose";
 const instituteSchema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
-  contactNumber: { type: Number, required: true },
+  contactNumber: { type: Number },
   email: { type: String },
   address: { type: String, required: true },
   district: { type: String, required: true },
