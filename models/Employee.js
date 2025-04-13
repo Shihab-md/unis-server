@@ -10,7 +10,7 @@ const employeeSchema = new Schema({
   designation: { type: String },
   qualification: { type: String },
   dob: { type: Date },
-  gender: { type: String, enum: ["Male", "Female"], default: "Female", },
+  gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   salary: { type: Number, required: true },

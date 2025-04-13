@@ -54,7 +54,7 @@ const addEmployee = async (req, res) => {
     });
     const savedUser = await newUser.save();
 
-    const schoolById = await School.findById({ schoolId });
+    const schoolById = await School.findById({ _id: schoolId });
     if (schoolById == null) {
       return res
         .status(404)
@@ -75,7 +75,7 @@ const addEmployee = async (req, res) => {
       doj,
       salary,
     });
-    console.log(newEmployee.toJSON());
+
     await newEmployee.save();
     return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
