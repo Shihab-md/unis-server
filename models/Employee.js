@@ -3,7 +3,7 @@ import { Schema } from "mongoose";
 
 const employeeSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  schoold: { type: Schema.Types.ObjectId, ref: "School", required: true },
+  schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
   employeeId: { type: String, required: true, unique: true },
   role: { type: String, enum: ["admin", "teacher"], },
   contactNumber: { type: Number, required: true },
