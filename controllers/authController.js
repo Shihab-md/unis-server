@@ -5,7 +5,7 @@ import bcrypt from "bcrypt";
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findByEmail({ email });
     if (!user) {
       return res.status(404).json({ success: false, error: "User Not Found" });
     }
