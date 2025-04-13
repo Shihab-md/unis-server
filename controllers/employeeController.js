@@ -54,8 +54,8 @@ const addEmployee = async (req, res) => {
     });
     const savedUser = await newUser.save();
 
-    const schoolByCode = await School.findOne({ schoolId });
-    if (schoolByCode == null) {
+    const schoolById = await School.findById({ schoolId });
+    if (schoolById == null) {
       return res
         .status(404)
         .json({ success: false, error: "Niswan Not exists" });
@@ -63,7 +63,7 @@ const addEmployee = async (req, res) => {
 
     const newEmployee = new Employee({
       userId: savedUser._id,
-      schoolId: schoolByCode._id,
+      schoolId: schoolById._id,
       employeeId,
       address,
       contactNumber,
