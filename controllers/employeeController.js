@@ -4,7 +4,6 @@ import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
 import path from "path";
-import Department from "../models/Department.js";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -35,7 +34,6 @@ const addEmployee = async (req, res) => {
       doj,
       salary,
       password,
-
     } = req.body;
 
     const user = await User.findOne({ email });
