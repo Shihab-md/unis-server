@@ -79,6 +79,7 @@ const addEmployee = async (req, res) => {
     await newEmployee.save();
     return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
+    savedUser.deleteOne();
     console.log(error);
     return res
       .status(500)
@@ -175,6 +176,17 @@ const updateEmployee = async (req, res) => {
   }
 };
 
+const deleteEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleteEmployee = await Employee.findById({ _id: id })
+    await deleteEmployee.deleteOne()
+    return res.status(200).json({ success: true, deleteEmployee })
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "delete Employee server error" })
+  }
+}
+
 {/*const fetchEmployeesByDepId = async (req, res) => {
   const { id } = req.params;
   try {
@@ -187,4 +199,4 @@ const updateEmployee = async (req, res) => {
   }
 }*/}
 
-export { addEmployee, upload, getEmployees, getEmployee, updateEmployee };
+export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee };
