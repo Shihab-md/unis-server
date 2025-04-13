@@ -140,12 +140,19 @@ const updateEmployee = async (req, res) => {
         .status(404)
         .json({ success: false, error: "employee not found" });
     }
-    const user = await User.findById({ _id: employee.userId })
 
+    const user = await User.findById({ _id: employee.userId })
     if (!user) {
       return res
         .status(404)
         .json({ success: false, error: "user not found" });
+    }
+
+    const school = await School.findById({ _id: employee.schoolId })
+    if (!school) {
+      return res
+        .status(404)
+        .json({ success: false, error: "school not found" });
     }
 
     const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
