@@ -5,7 +5,7 @@ import { addInstitute, getInstitutes, getInstitute, updateInstitute, deleteInsti
 const router = express.Router()
 
 router.get('/', authMiddleware, getInstitutes)
-router.post('/add', authMiddleware, upload.single('image'), addInstitute)
+router.post('/add', authMiddleware, addInstitute)
 router.get('/:id', authMiddleware, getInstitute)
 router.put('/:id', authMiddleware, updateInstitute)
 router.delete('/:id', authMiddleware, deleteInstitute)
