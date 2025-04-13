@@ -122,7 +122,7 @@ const getEmployee = async (req, res) => {
 
 const updateEmployee = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id, schoolId } = req.params;
     const { name,
       contactNumber,
       address,
@@ -145,18 +145,19 @@ const updateEmployee = async (req, res) => {
     if (!user) {
       return res
         .status(404)
-        .json({ success: false, error: "user not found" });
+        .json({ success: false, error: "User not found" });
     }
 
-    const school = await School.findById({ _id: employee.schoolId })
+    const school = await School.findById({ _id: schoolId })
     if (!school) {
       return res
         .status(404)
-        .json({ success: false, error: "school not found" });
+        .json({ success: false, error: "Niswan not found" });
     }
 
     const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
+      schoolId: school._id,
       contactNumber,
       address,
       designation,
