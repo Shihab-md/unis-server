@@ -3,6 +3,7 @@ import Employee from "../models/Employee.js"
 import Supervisor from "../models/Supervisor.js"
 import School from "../models/School.js"
 import Institute from "../models/Institute.js"
+import Course from "../models/Course.js"
 import Leave from "../models/Leave.js";
 
 const getSummary = async (req, res) => {
@@ -11,6 +12,7 @@ const getSummary = async (req, res) => {
         const totalSupervisors = await Supervisor.countDocuments();
         const totalSchools = await School.countDocuments();
         const totalInstitutes = await Institute.countDocuments();
+        const totalCouses = await Course.countDocuments();
 
         const totalDepartments = await Department.countDocuments();
 
@@ -42,6 +44,7 @@ const getSummary = async (req, res) => {
             totalSchools,
             totalEmployees,
             totalInstitutes,
+            totalCourses,
             totalDepartments,
             totalSalary: totalSalaries[0]?.totalSalary || 0,
             leaveSummary
