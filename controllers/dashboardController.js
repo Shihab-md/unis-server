@@ -12,7 +12,7 @@ const getSummary = async (req, res) => {
         const totalSupervisors = await Supervisor.countDocuments();
         const totalSchools = await School.countDocuments();
         const totalInstitutes = await Institute.countDocuments();
-        const totalCouses = await Course.countDocuments();
+        const totalCourses = await Course.countDocuments();
 
         const totalDepartments = await Department.countDocuments();
 
