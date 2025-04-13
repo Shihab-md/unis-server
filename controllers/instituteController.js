@@ -35,7 +35,7 @@ const addInstitute = async (req, res) => {
       incharge2Number,
     });
 
-    await newInstitute.save();
+    await newInstitute.save()
     return res.status(200).json({ success: true, message: "Institute Created Successfully." });
   } catch (error) {
     console.log(error);
