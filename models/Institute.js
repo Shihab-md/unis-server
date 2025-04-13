@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const instituteSchema = new Schema({
-  code: { type: String, required: true, unique: true },
+  iCode: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   contactNumber: { type: Number },
   email: { type: String },

@@ -3,11 +3,11 @@ import Institute from "../models/Institute.js";
 const addInstitute = async (req, res) => {
   try {
     const {
-      code,
+      iCode,
       name,
       contactNumber,
       email,
-      address,
+      address, 
       district,
       incharge1,
       incharge1Number,
@@ -15,7 +15,7 @@ const addInstitute = async (req, res) => {
       incharge2Number,
     } = req.body;
 
-    const instituteByCode = await Institute.findOne({ code: code });
+    const instituteByCode = await Institute.findOne({ iCode: iCode });
     if (instituteByCode != null) {
       return res
         .status(404)
@@ -23,7 +23,7 @@ const addInstitute = async (req, res) => {
     }
 
     const newInstitute = new Institute({
-      code,
+      iCode,
       name,
       contactNumber,
       email,
