@@ -65,8 +65,8 @@ const addEmployee = async (req, res) => {
       userId: savedUser._id,
       schoolId: schoolById._id,
       employeeId,
-      address,
       contactNumber,
+      address,   
       designation,
       qualification,
       dob,
@@ -123,8 +123,8 @@ const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const { name,
-      address,
       contactNumber,
+      address,
       designation,
       qualification,
       dob,
@@ -149,8 +149,8 @@ const updateEmployee = async (req, res) => {
 
     const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
-      address,
       contactNumber,
+      address,
       designation,
       qualification,
       dob,
