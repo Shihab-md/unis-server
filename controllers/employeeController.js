@@ -54,7 +54,7 @@ const addEmployee = async (req, res) => {
     });
     const savedUser = await newUser.save();
 
-    const schoolById = await School.findById({ _id: schoolId });
+    const schoolById =  await School.findById({ _id: schoolId });
     if (schoolById == null) {
       return res
         .status(404)
