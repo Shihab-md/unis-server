@@ -181,6 +181,8 @@ const deleteSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
     const deleteSupervisor = await Supervisor.findById({ _id: id })
+
+    await User.findByIdAndDelete({_id: deleteSupervisor.userId._id}) 
     await deleteSupervisor.deleteOne()
     return res.status(200).json({ success: true, deleteSupervisor })
   } catch (error) {
