@@ -43,7 +43,7 @@ const addSupervisor = async (req, res) => {
 
     console.log("user started");
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email });
     if (user) {
       return res
         .status(400)
@@ -58,7 +58,7 @@ const addSupervisor = async (req, res) => {
       name,
       email,
       password: hashPassword,
-      role,
+      role: "supervisor",
       //profileImage: req.image ? req.image.filename : "",
       profileImage: req.file ? req.file.filename : "",
       //profileImage: convertToBase64(req.file),
