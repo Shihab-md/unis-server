@@ -189,6 +189,8 @@ const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const deleteEmployee = await Employee.findById({ _id: id })
+
+    await User.findByIdAndDelete({_id: deleteEmployee.userId._id}) 
     await deleteEmployee.deleteOne()
     return res.status(200).json({ success: true, deleteEmployee })
   } catch (error) {
