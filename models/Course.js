@@ -5,6 +5,7 @@ const courseSchema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   remarks: { type: String },
+  fees: { type: Number, required: true },
 
   subject1: { type: String, required: true },
   subject1MaxMark: { type: Number, required: true },
