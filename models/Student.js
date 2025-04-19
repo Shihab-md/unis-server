@@ -15,8 +15,8 @@ const studentSchema = new Schema({
   idMark1: { type: String, required: true },
   idMark2: { type: String },
 
-  fatherName: { type: String, required: true },
-  fatherNumber: { type: Number, required: true },
+  fatherName: { type: String },
+  fatherNumber: { type: Number },
   motherName: { type: String },
   motherNumber: { type: Number },
   guardianName: { type: String },
