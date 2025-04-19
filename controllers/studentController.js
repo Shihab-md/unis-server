@@ -242,10 +242,13 @@ const getStudents = async (req, res) => {
 const getStudent = async (req, res) => {
   const { id } = req.params;
   try {
-    let student;
-    student = await Student.findById({ _id: id })
+    let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
       .populate("schoolId");
+
+    let academic = await Academic.findOne({ studentId: student._id })
+    student.academic = academic;
+
     if (!student) {
       student = await Student.findOne({ userId: id })
         .populate("userId", { password: 0 })

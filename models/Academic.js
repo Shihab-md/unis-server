@@ -3,7 +3,7 @@ import { Schema } from "mongoose";
 
 const academicSchema = new Schema({
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
-  acYear: { type: Schema.Types.ObjectId, ref: "Academic", required: true },
+  acYear: { type: Schema.Types.ObjectId, ref: "AcademicYear", required: true },
 
   instituteId1: { type: Schema.Types.ObjectId, ref: "Institute", required: true },
   courseId1: { type: Schema.Types.ObjectId, ref: "Course", required: true },
