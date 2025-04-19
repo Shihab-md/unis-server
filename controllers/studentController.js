@@ -246,15 +246,28 @@ const getStudent = async (req, res) => {
       .populate("userId", { password: 0 })
       .populate("schoolId");
 
-    let academic = await Academic.findOne({ studentId: student._id })
-    student.academic = academic;
-
     if (!student) {
       student = await Student.findOne({ userId: id })
         .populate("userId", { password: 0 })
         .populate("schoolId");
     }
     return res.status(200).json({ success: true, student });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get students server error" });
+  }
+};
+
+const getAcademic = async (req, res) => {
+  const { studentId, acYear } = req.params;
+  try {
+    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear })
+
+    if (!academic) {
+      academic = await Academic.findOne({ studentId: studentId, acYear: acYear })
+    }
+    return res.status(200).json({ success: true, academic });
   } catch (error) {
     return res
       .status(500)
@@ -409,4 +422,4 @@ const deleteStudent = async (req, res) => {
   }
 }*/}
 
-export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent };
+export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic };
