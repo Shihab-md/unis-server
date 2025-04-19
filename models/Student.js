@@ -32,7 +32,7 @@ const studentSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 
-  academic: { type: Academic }
+  academic: { type: Schema.Types.Academic }
 });
 
 const Student = mongoose.model("Student", studentSchema);
