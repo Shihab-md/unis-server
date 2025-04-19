@@ -25,7 +25,7 @@ const app = express()
 
 //const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
 app.use(cors({ origin: '*', credentials: true }));
-
+ 
 app.use(express.json())
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)
