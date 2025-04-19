@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { Schema } from "mongoose";
-import Academic from "../Academic.js";
+import Academic from "../models/Academic.js";
 
 const studentSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
