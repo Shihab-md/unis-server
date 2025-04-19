@@ -57,7 +57,7 @@ const addStudent = async (req, res) => {
       refNumber5,
     } = req.body;
 
-    const user = await User.findOne({ email: email });
+    const user = await User.findOne({ email: rollNumber });
     if (user) {
       return res
         .status(400)
