@@ -1,0 +1,22 @@
+import mongoose from "mongoose";
+import { Schema } from "mongoose";
+
+const studentSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
+  studentId: { type: String, required: true, unique: true },
+  contactNumber: { type: Number, required: true },
+  address: { type: String, required: true },
+  designation: { type: String },
+  qualification: { type: String },
+  dob: { type: Date },
+  gender: { type: String, enum: ["Male", "Female"], },
+  maritalStatus: { type: String, enum: ["Married", "Single"], },
+  doj: { type: Date },
+  salary: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+const Student = mongoose.model("Student", studentSchema);
+export default Student;

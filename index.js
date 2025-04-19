@@ -6,6 +6,7 @@ import supervisorRouter from './routes/supervisor.js'
 import schoolRouter from './routes/school.js'
 import classSectionRouter from './routes/classSection.js'
 import employeeRouter from './routes/employee.js'
+import studentRouter from './routes/student.js'
 import instituteRouter from './routes/institute.js'
 import courseRouter from './routes/course.js'
 import salaryRouter from './routes/salary.js'
@@ -32,6 +33,7 @@ app.use('/api/supervisor', supervisorRouter)
 app.use('/api/school', schoolRouter)
 app.use('/api/classSection', classSectionRouter)
 app.use('/api/employee', employeeRouter)
+app.use('/api/student', studentRouter)
 app.use('/api/institute', instituteRouter)
 app.use('/api/course', courseRouter)
 app.use('/api/salary', salaryRouter)
