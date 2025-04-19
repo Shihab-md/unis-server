@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
+import AcademicYear from "../models/AcademicYear.js";
 import bcrypt from "bcrypt";
 import path from "path";
 
@@ -111,10 +112,16 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Error: Student NOT added." });
     }
 
+    const academicYearById = await AcademicYear.findById({ _id: acYear });
+    if (academicYearById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not exists" });
+    }
+
     const newAcademic = new Academic({
-      userId: savedUser._id,
       studentId: savedStudent._id,
-      acYear,
+      acYear: academicYearById._id,
       instituteId1,
       courseId1,
       refNumber1,
@@ -197,7 +204,6 @@ const updateStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
-      password,
       acYear,
       instituteId1,
       courseId1,
@@ -237,6 +243,7 @@ const updateStudent = async (req, res) => {
     }
 
     const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
+    
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
       doa,
       dob,

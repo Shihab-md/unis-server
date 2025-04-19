@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const academicSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
   acYear: { type: Schema.Types.ObjectId, ref: "Academic", required: true },
 
