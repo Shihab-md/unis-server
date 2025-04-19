@@ -7,7 +7,7 @@ const studentSchema = new Schema({
 
   rollNumber: { type: String, required: true, unique: true },
   doa: { type: Date, required: true },
- 
+  
   dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },

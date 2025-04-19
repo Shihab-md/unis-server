@@ -4,7 +4,7 @@ import { Schema } from "mongoose";
 const academicSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
- 
+  
   acYear: { type: String, required: true },
  
   instituteId1: { type: Schema.Types.ObjectId, ref: "Institute", required: true },

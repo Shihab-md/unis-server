@@ -16,7 +16,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
-
+ 
 const addStudent = async (req, res) => {
   try {
     const {
@@ -113,7 +113,6 @@ const addStudent = async (req, res) => {
 
     const newAcademic = new Academic({
       userId: savedUser._id,
-      schoolId: schoolById._id,
       studentId: savedStudent._id,
       acYear,
       instituteId1,
