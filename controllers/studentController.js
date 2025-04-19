@@ -21,7 +21,6 @@ const addStudent = async (req, res) => {
   try {
     const {
       name,
-      email,
       schoolId,
       rollNumber,
       doa,
@@ -40,7 +39,6 @@ const addStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
-      password,
       acYear,
       instituteId1,
       courseId1,
@@ -66,11 +64,11 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "User already registered in Student" });
     }
 
-    const hashPassword = await bcrypt.hash(password, 10);
+    const hashPassword = await bcrypt.hash(rollNumber, 10);
 
     const newUser = new User({
       name,
-      email,
+      email: rollNumber,
       password: hashPassword,
       role: "student",
       profileImage: req.file ? req.file.filename : "",
