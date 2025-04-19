@@ -17,7 +17,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
- 
+
 const addStudent = async (req, res) => {
   try {
     const {
@@ -33,29 +33,69 @@ const addStudent = async (req, res) => {
       idMark2,
       fatherName,
       fatherNumber,
+      fatherOccupation,
       motherName,
       motherNumber,
+      motherOccupation,
       guardianName,
       guardianNumber,
+      guardianOccupation,
       guardianRelation,
       address,
       district,
+
       acYear,
+
       instituteId1,
       courseId1,
       refNumber1,
+      fees1,
+      discount1,
+      finalFees1,
+      paid1,
+      paidDate1,
+      balance1,
+
       instituteId2,
       courseId2,
       refNumber2,
+      fees2,
+      discount2,
+      finalFees2,
+      paid2,
+      paidDate2,
+      balance2,
+
       instituteId3,
       courseId3,
       refNumber3,
+      fees3,
+      discount3,
+      finalFees3,
+      paid3,
+      paidDate3,
+      balance3,
+
       instituteId4,
       courseId4,
       refNumber4,
+      fees4,
+      discount4,
+      finalFees4,
+      paid4,
+      paidDate4,
+      balance4,
+
       instituteId5,
       courseId5,
       refNumber5,
+      fees5,
+      discount5,
+      finalFees5,
+      paid5,
+      paidDate5,
+      balance5,
+
     } = req.body;
 
     const user = await User.findOne({ email: rollNumber });
@@ -96,10 +136,13 @@ const addStudent = async (req, res) => {
       idMark2,
       fatherName,
       fatherNumber,
+      fatherOccupation,
       motherName,
       motherNumber,
+      motherOccupation,
       guardianName,
       guardianNumber,
+      guardianOccupation,
       guardianRelation,
       address,
       district,
@@ -125,18 +168,52 @@ const addStudent = async (req, res) => {
       instituteId1,
       courseId1,
       refNumber1,
+      fees1,
+      discount1,
+      finalFees1,
+      paid1,
+      paidDate1,
+      balance1,
+
       instituteId2,
       courseId2,
       refNumber2,
+      fees2,
+      discount2,
+      finalFees2,
+      paid2,
+      paidDate2,
+      balance2,
+
       instituteId3,
       courseId3,
       refNumber3,
+      fees3,
+      discount3,
+      finalFees3,
+      paid3,
+      paidDate3,
+      balance3,
+
       instituteId4,
       courseId4,
       refNumber4,
+      fees4,
+      discount4,
+      finalFees4,
+      paid4,
+      paidDate4,
+      balance4,
+
       instituteId5,
       courseId5,
       refNumber5,
+      fees5,
+      discount5,
+      finalFees5,
+      paid5,
+      paidDate5,
+      balance5,
     });
 
     await newAcademic.save();
@@ -187,7 +264,6 @@ const updateStudent = async (req, res) => {
     const { id } = req.params;
     const { name,
       schoolId,
-      rollNumber,
       doa,
       dob,
       gender,
@@ -197,10 +273,13 @@ const updateStudent = async (req, res) => {
       idMark2,
       fatherName,
       fatherNumber,
+      fatherOccupation,
       motherName,
       motherNumber,
+      motherOccupation,
       guardianName,
       guardianNumber,
+      guardianOccupation,
       guardianRelation,
       address,
       district,
@@ -243,7 +322,7 @@ const updateStudent = async (req, res) => {
     }
 
     const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
-    
+
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
       doa,
       dob,
@@ -254,10 +333,13 @@ const updateStudent = async (req, res) => {
       idMark2,
       fatherName,
       fatherNumber,
+      fatherOccupation,
       motherName,
       motherNumber,
+      motherOccupation,
       guardianName,
       guardianNumber,
+      guardianOccupation,
       guardianRelation,
       address,
       district,
