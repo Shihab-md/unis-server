@@ -7,13 +7,13 @@ const studentSchema = new Schema({
 
   rollNumber: { type: String, required: true, unique: true },
   doa: { type: Date, required: true },
-
+ 
   dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   bloodGroup: { type: String },
-  identificationMark1: { type: String },
-  identificationMark1: { type: String },
+  idMark1: { type: String, required: true },
+  idMark2: { type: String },
 
   fatherName: { type: String, required: true },
   fatherNumber: { type: Number, required: true },

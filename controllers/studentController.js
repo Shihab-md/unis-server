@@ -1,7 +1,8 @@
 import multer from "multer";
-import Employee from "../models/Employee.js";
+import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
+import Academic from "../models/Academic.js";
 import bcrypt from "bcrypt";
 import path from "path";
 
@@ -16,31 +17,53 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-const addEmployee = async (req, res) => {
+const addStudent = async (req, res) => {
   try {
     const {
       name,
       email,
       schoolId,
-      employeeId,
-      role,
-      address,
-      contactNumber,
-      designation,
-      qualification,
+      rollNumber,
+      doa,
       dob,
       gender,
       maritalStatus,
-      doj,
-      salary,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      motherName,
+      motherNumber,
+      guardianName,
+      guardianNumber,
+      guardianRelation,
+      address,
+      district,
       password,
+      acYear,
+      instituteId1,
+      courseId1,
+      refNumber1,
+      instituteId2,
+      courseId2,
+      refNumber2,
+      instituteId3,
+      courseId3,
+      refNumber3,
+      instituteId4,
+      courseId4,
+      refNumber4,
+      instituteId5,
+      courseId5,
+      refNumber5,
     } = req.body;
 
     const user = await User.findOne({ email: email });
     if (user) {
       return res
         .status(400)
-        .json({ success: false, error: "User already registered in emp" });
+        .json({ success: false, error: "User already registered in Student" });
     }
 
     const hashPassword = await bcrypt.hash(password, 10);
@@ -49,100 +72,160 @@ const addEmployee = async (req, res) => {
       name,
       email,
       password: hashPassword,
-      role,
+      role: "student",
       profileImage: req.file ? req.file.filename : "",
     });
     const savedUser = await newUser.save();
 
-    const schoolById =  await School.findById({ _id: schoolId });
+    const schoolById = await School.findById({ _id: schoolId });
     if (schoolById == null) {
       return res
         .status(404)
         .json({ success: false, error: "Niswan Not exists" });
     }
 
-    const newEmployee = new Employee({
+    const newStudent = new Student({
       userId: savedUser._id,
       schoolId: schoolById._id,
-      employeeId,
-      contactNumber,
-      address,
-      designation,
-      qualification,
+      rollNumber,
+      doa,
       dob,
       gender,
       maritalStatus,
-      doj,
-      salary,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      motherName,
+      motherNumber,
+      guardianName,
+      guardianNumber,
+      guardianRelation,
+      address,
+      district,
     });
 
-    await newEmployee.save();
-    return res.status(200).json({ success: true, message: "Employee created" });
+    const savedStudent = await newStudent.save();
+    if (savedStudent == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Error: Student NOT added." });
+    }
+
+    const newAcademic = new Academic({
+      userId: savedUser._id,
+      schoolId: schoolById._id,
+      studentId: savedStudent._id,
+      acYear,
+      instituteId1,
+      courseId1,
+      refNumber1,
+      instituteId2,
+      courseId2,
+      refNumber2,
+      instituteId3,
+      courseId3,
+      refNumber3,
+      instituteId4,
+      courseId4,
+      refNumber4,
+      instituteId5,
+      courseId5,
+      refNumber5,
+    });
+
+    await newAcademic.save();
+    return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
-    //savedUser.deleteOne();
     console.log(error);
     return res
       .status(500)
-      .json({ success: false, error: "server error in adding employee" });
+      .json({ success: false, error: "server error in adding student" });
   }
 };
 
-const getEmployees = async (req, res) => {
+const getStudents = async (req, res) => {
   try {
-    const employees = await Employee.find()
+    const students = await Student.find()
       .populate("userId", { password: 0 })
       .populate("schoolId");
-    return res.status(200).json({ success: true, employees });
+    return res.status(200).json({ success: true, students });
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get employees server error" });
+      .json({ success: false, error: "get students server error" });
   }
 };
 
-const getEmployee = async (req, res) => {
+const getStudent = async (req, res) => {
   const { id } = req.params;
   try {
-    let employee;
-    employee = await Employee.findById({ _id: id })
+    let student;
+    student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
       .populate("schoolId");
-    if (!employee) {
-      employee = await Employee.findOne({ userId: id })
+    if (!student) {
+      student = await Student.findOne({ userId: id })
         .populate("userId", { password: 0 })
         .populate("schoolId");
     }
-    return res.status(200).json({ success: true, employee });
+    return res.status(200).json({ success: true, student });
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get employees server error" });
+      .json({ success: false, error: "get students server error" });
   }
 };
 
-const updateEmployee = async (req, res) => {
+const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
     const { name,
       schoolId,
-      contactNumber,
-      address,
-      designation,
-      qualification,
+      rollNumber,
+      doa,
       dob,
       gender,
       maritalStatus,
-      doj,
-      salary, } = req.body;
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      motherName,
+      motherNumber,
+      guardianName,
+      guardianNumber,
+      guardianRelation,
+      address,
+      district,
+      password,
+      acYear,
+      instituteId1,
+      courseId1,
+      refNumber1,
+      instituteId2,
+      courseId2,
+      refNumber2,
+      instituteId3,
+      courseId3,
+      refNumber3,
+      instituteId4,
+      courseId4,
+      refNumber4,
+      instituteId5,
+      courseId5,
+      refNumber5, } = req.body;
 
-    const employee = await Employee.findById({ _id: id });
-    if (!employee) {
+    const student = await Student.findById({ _id: id });
+    if (!student) {
       return res
         .status(404)
-        .json({ success: false, error: "employee not found" });
+        .json({ success: false, error: "student not found" });
     }
 
-    const user = await User.findById({ _id: employee.userId })
+    const user = await User.findById({ _id: student.userId })
     if (!user) {
       return res
         .status(404)
@@ -156,58 +239,85 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
-    const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
-      schoolId: school._id,
-      contactNumber,
-      address,
-      designation,
-      qualification,
+    const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
+    const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
+      doa,
       dob,
       gender,
       maritalStatus,
-      doj,
-      salary,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      motherName,
+      motherNumber,
+      guardianName,
+      guardianNumber,
+      guardianRelation,
+      address,
+      district,
     })
 
-    if (!updateEmployee || !updateUser) {
+    const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear }, {
+      acYear,
+      instituteId1,
+      courseId1,
+      refNumber1,
+      instituteId2,
+      courseId2,
+      refNumber2,
+      instituteId3,
+      courseId3,
+      refNumber3,
+      instituteId4,
+      courseId4,
+      refNumber4,
+      instituteId5,
+      courseId5,
+      refNumber5,
+    });
+
+    await updateAcademic.update();
+
+    if (!updateStudent || !updateUser || !updateAcademic) {
       return res
         .status(404)
         .json({ success: false, error: "document not found" });
     }
 
-    return res.status(200).json({ success: true, message: "employee update done" })
+    return res.status(200).json({ success: true, message: "Student update done" })
 
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "update employees server error" });
+      .json({ success: false, error: "update students server error" });
   }
 };
 
-const deleteEmployee = async (req, res) => {
+const deleteStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteEmployee = await Employee.findById({ _id: id })
+    const deleteStudent = await Student.findById({ _id: id })
 
-    await User.findByIdAndDelete({_id: deleteEmployee.userId._id}) 
-    await deleteEmployee.deleteOne()
-    return res.status(200).json({ success: true, deleteEmployee })
+    await User.findByIdAndDelete({ _id: deleteStudent.userId._id })
+    await deleteStudent.deleteOne()
+    return res.status(200).json({ success: true, deleteStudent })
   } catch (error) {
-    return res.status(500).json({ success: false, error: "delete Employee server error" })
+    return res.status(500).json({ success: false, error: "delete Student server error" })
   }
 }
 
-{/*const fetchEmployeesByDepId = async (req, res) => {
+{/*const fetchStudentsByDepId = async (req, res) => {
   const { id } = req.params;
   try {
-    const employees = await Employee.find({ department: id })
-    return res.status(200).json({ success: true, employees });
+    const students = await Student.find({ department: id })
+    return res.status(200).json({ success: true, students });
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get employeesbyDepId server error" });
+      .json({ success: false, error: "get studentsbyDepId server error" });
   }
 }*/}
 
-export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee };
+export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent };

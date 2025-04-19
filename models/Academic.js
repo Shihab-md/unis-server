@@ -5,8 +5,8 @@ const academicSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
  
-  academicYear: { type: String, required: true },
-
+  acYear: { type: String, required: true },
+ 
   instituteId1: { type: Schema.Types.ObjectId, ref: "Institute", required: true },
   courseId1: { type: Schema.Types.ObjectId, ref: "Course", required: true },
   refNumber1: { type: String, required: true },

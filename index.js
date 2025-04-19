@@ -9,15 +9,16 @@ import employeeRouter from './routes/employee.js'
 import studentRouter from './routes/student.js'
 import instituteRouter from './routes/institute.js'
 import courseRouter from './routes/course.js'
+import academicYearRouter from './routes/academicYear.js'
 import salaryRouter from './routes/salary.js'
-import leaveRouter from './routes/leave.js' 
+import leaveRouter from './routes/leave.js'
 import settingRouter from './routes/setting.js'
 import attendanceRouter from './routes/attendance.js'
 import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
 
-connectToDatabase() 
-const app = express() 
+connectToDatabase()
+const app = express()
 //app.use(cors()) 
 
 //app.options("*", cors())
@@ -36,6 +37,7 @@ app.use('/api/employee', employeeRouter)
 app.use('/api/student', studentRouter)
 app.use('/api/institute', instituteRouter)
 app.use('/api/course', courseRouter)
+app.use('/api/academicYear', academicYearRouter)
 app.use('/api/salary', salaryRouter)
 app.use('/api/leave', leaveRouter)
 app.use('/api/setting', settingRouter)
