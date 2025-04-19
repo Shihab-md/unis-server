@@ -4,16 +4,27 @@ import { Schema } from "mongoose";
 const studentSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
-  studentId: { type: String, required: true, unique: true },
-  contactNumber: { type: Number, required: true },
-  address: { type: String, required: true },
-  designation: { type: String },
-  qualification: { type: String },
-  dob: { type: Date },
+
+  rollNumber: { type: String, required: true, unique: true },
+  doa: { type: Date, required: true },
+
+  dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
-  doj: { type: Date },
-  salary: { type: Number, required: true },
+  bloodGroup: { type: String },
+  identificationMark1: { type: String },
+  identificationMark1: { type: String },
+
+  fatherName: { type: String, required: true },
+  fatherNumber: { type: Number, required: true },
+  motherName: { type: String },
+  motherNumber: { type: Number },
+  guardianName: { type: String },
+  guardianNumber: { type: Number },
+  guardianRelation: { type: String },
+  address: { type: String, required: true },
+  district: { type: String, required: true },
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
