@@ -10,6 +10,6 @@ router.get('/:id', authMiddleware, getStudent)
 router.put('/:id', authMiddleware, updateStudent)
 router.delete('/:id', authMiddleware, deleteStudent)
 
-router.get('/:studentId/:acYear', authMiddleware, getAcademic)
+router.get('/:studentId/:acaYear', authMiddleware, getAcademic)
 
 export default router
