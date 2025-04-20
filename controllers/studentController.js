@@ -291,6 +291,10 @@ const getAcademic = async (req, res) => {
         .populate("courseId4")
         .populate("instituteId5")
         .populate("courseId5");
+
+        return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not found : " + academic });
     }
 
     if (!academic) {
