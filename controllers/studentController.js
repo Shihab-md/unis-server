@@ -276,7 +276,7 @@ const getAcademic = async (req, res) => {
     }
 
     let academic;
-    if (!acaYear.equals("vieww")) {
+    if (acaYear != "vieww") {
       academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id });
     } else {
       academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
