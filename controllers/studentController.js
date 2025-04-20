@@ -263,19 +263,12 @@ const getAcademic = async (req, res) => {
   const { studentId, acYear } = req.params;
   try {
 
-    let accYear;
-    if (new Date().getMonth() >= 4) {
+    let accYear = new Date().getFullYear() - 1 + "-" + new Date().getFullYear();
+    if (new Date().getMonth() + 1 >= 4) {
       accYear = new Date().getFullYear() + "-" + new Date().getFullYear() + 1;
-    } else {
-      accYear = new Date().getFullYear() - 1 + "-" + new Date().getFullYear();
     }
 
-    return res
-      .status(500)
-      .json({ success: false, error: "Month is : "+ new Date().getMonth()+",  "+ "AC Year is : " + accYear });
-
     const acYear = await AcademicYear.findOne({ acYear: accYear });
-
     let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
 
     if (!academic) {
