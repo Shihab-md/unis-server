@@ -268,10 +268,6 @@ const getAcademic = async (req, res) => {
       accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     }
 
-    return res
-      .status(404)
-      .json({ success: false, error: "Academic Year Not found : " + studentId + ", " + acaYear + ", " + accYear });
-
     const acYear = await AcademicYear.findOne({ acYear: accYear });
     if (!acYear) {
       return res
