@@ -260,13 +260,17 @@ const getStudent = async (req, res) => {
 };
 
 const getAcademic = async (req, res) => {
-  const { studentId, acYear } = req.params;
+  const { studentId, vieww } = req.params;
   try {
 
     let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
     if (new Date().getMonth() + 1 >= 4) {
       accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     }
+
+    return res
+      .status(404)
+      .json({ success: false, error: "Academic Year Not found : " + studentId + ", " + vieww + ", " + accYear });
 
     const acYear = await AcademicYear.findOne({ acYear: accYear });
     if (!acYear) {
@@ -275,18 +279,23 @@ const getAcademic = async (req, res) => {
         .json({ success: false, error: "Academic Year Not found : " + accYear });
     }
 
-    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id });
-     {/* .populate("acYear")
-      .populate("instituteId1")
-      .populate("courseId1")
-      .populate("instituteId2")
-      .populate("courseId2")
-      .populate("instituteId3")
-      .populate("courseId3")
-      .populate("instituteId4")
-      .populate("courseId4")
-      .populate("instituteId5")
-      .populate("courseId5");*/}
+    let academic;
+    if (!vieww.equals("vieww")) {
+      academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id });
+    } else {
+      academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
+        .populate("acYear")
+        .populate("instituteId1")
+        .populate("courseId1")
+        .populate("instituteId2")
+        .populate("courseId2")
+        .populate("instituteId3")
+        .populate("courseId3")
+        .populate("instituteId4")
+        .populate("courseId4")
+        .populate("instituteId5")
+        .populate("courseId5");
+    }
 
     if (!academic) {
       return res
