@@ -397,7 +397,9 @@ const updateStudent = async (req, res) => {
       district,
     })
 
-    const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear }, {
+    const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear });
+
+    const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
       instituteId1,
       courseId1,
       refNumber1,
@@ -449,9 +451,7 @@ const updateStudent = async (req, res) => {
       balance5,
     });
 
-    await updateAcademic.update();
-
-    if (!updateStudent || !updateUser || !updateAcademic) {
+    if (!updateStudent || !updateUser || !updateAcademicById) {
       return res
         .status(404)
         .json({ success: false, error: "document not found" });
