@@ -262,7 +262,17 @@ const getStudent = async (req, res) => {
 const getAcademic = async (req, res) => {
   const { studentId, acYear } = req.params;
   try {
-    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear })
+
+    let accYear;
+    if (new Date().getMonth() >= 4) {
+      accYear = new Date().getFullYear + "-" + new Date().getFullYear - 1;
+    } else {
+      accYear = new Date().getFullYear - 1 + "-" + new Date().getFullYear;
+    }
+
+    const acYear = await AcademicYear.findOne({ acYear: accYear });
+
+    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
 
     if (!academic) {
       academic = await Academic.findOne({ studentId: studentId, acYear: acYear })
