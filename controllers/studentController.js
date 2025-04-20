@@ -275,8 +275,8 @@ const getAcademic = async (req, res) => {
         .json({ success: false, error: "Academic Year Not found : " + accYear });
     }
 
-    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
-      .populate("acYear")
+    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id });
+     {/* .populate("acYear")
       .populate("instituteId1")
       .populate("courseId1")
       .populate("instituteId2")
@@ -286,7 +286,7 @@ const getAcademic = async (req, res) => {
       .populate("instituteId4")
       .populate("courseId4")
       .populate("instituteId5")
-      .populate("courseId5");
+      .populate("courseId5");*/}
 
     if (!academic) {
       return res
