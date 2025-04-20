@@ -270,6 +270,10 @@ const getAcademic = async (req, res) => {
       accYear = new Date().getFullYear - 1 + "-" + new Date().getFullYear;
     }
 
+    return res
+      .status(500)
+      .json({ success: false, error: "AC Year is : " + accYear });
+
     const acYear = await AcademicYear.findOne({ acYear: accYear });
 
     let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
