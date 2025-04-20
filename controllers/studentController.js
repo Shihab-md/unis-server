@@ -299,28 +299,64 @@ const updateStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+
       acYear,
+
       instituteId1,
       courseId1,
       refNumber1,
+      fees1,
+      discount1,
+      finalFees1,
+      paid1,
+      paidDate1,
+      balance1,
+
       instituteId2,
       courseId2,
       refNumber2,
+      fees2,
+      discount2,
+      finalFees2,
+      paid2,
+      paidDate2,
+      balance2,
+
       instituteId3,
       courseId3,
       refNumber3,
+      fees3,
+      discount3,
+      finalFees3,
+      paid3,
+      paidDate3,
+      balance3,
+
       instituteId4,
       courseId4,
       refNumber4,
+      fees4,
+      discount4,
+      finalFees4,
+      paid4,
+      paidDate4,
+      balance4,
+
       instituteId5,
       courseId5,
-      refNumber5, } = req.body;
+      refNumber5,
+      fees5,
+      discount5,
+      finalFees5,
+      paid5,
+      paidDate5,
+      balance5, } = req.body;
 
     const student = await Student.findById({ _id: id });
     if (!student) {
       return res
         .status(404)
-        .json({ success: false, error: "student not found" });
+        .json({ success: false, error: "Student not found" });
     }
 
     const user = await User.findById({ _id: student.userId })
@@ -362,22 +398,55 @@ const updateStudent = async (req, res) => {
     })
 
     const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear }, {
-      acYear,
       instituteId1,
       courseId1,
       refNumber1,
+      fees1,
+      discount1,
+      finalFees1,
+      paid1,
+      paidDate1,
+      balance1,
+
       instituteId2,
       courseId2,
       refNumber2,
+      fees2,
+      discount2,
+      finalFees2,
+      paid2,
+      paidDate2,
+      balance2,
+
       instituteId3,
       courseId3,
       refNumber3,
+      fees3,
+      discount3,
+      finalFees3,
+      paid3,
+      paidDate3,
+      balance3,
+
       instituteId4,
       courseId4,
       refNumber4,
+      fees4,
+      discount4,
+      finalFees4,
+      paid4,
+      paidDate4,
+      balance4,
+
       instituteId5,
       courseId5,
       refNumber5,
+      fees5,
+      discount5,
+      finalFees5,
+      paid5,
+      paidDate5,
+      balance5,
     });
 
     await updateAcademic.update();
