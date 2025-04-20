@@ -269,11 +269,20 @@ const getAcademic = async (req, res) => {
     }
 
     const acYear = await AcademicYear.findOne({ acYear: accYear });
-    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id })
+    if (!acYear) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not found : " + accYear });
+    }
+
+    let academic = await Academic.findOne({ studentId: studentId, acYear: acYear._id });
 
     if (!academic) {
-      academic = await Academic.findOne({ studentId: studentId, acYear: acYear })
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic details Not found : " + studentId + ", " + accYear });
     }
+    
     return res.status(200).json({ success: true, academic });
   } catch (error) {
     return res
