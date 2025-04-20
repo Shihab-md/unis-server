@@ -263,9 +263,9 @@ const getAcademic = async (req, res) => {
   const { studentId, acYear } = req.params;
   try {
 
-    let accYear = new Date().getFullYear() - 1 + "-" + new Date().getFullYear();
+    let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
     if (new Date().getMonth() + 1 >= 4) {
-      accYear = new Date().getFullYear() + "-" + new Date().getFullYear() + 1;
+      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     }
 
     const acYear = await AcademicYear.findOne({ acYear: accYear });
@@ -282,7 +282,7 @@ const getAcademic = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Academic details Not found : " + studentId + ", " + accYear });
     }
-    
+
     return res.status(200).json({ success: true, academic });
   } catch (error) {
     return res
