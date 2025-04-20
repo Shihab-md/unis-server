@@ -19,13 +19,16 @@ const studentSchema = new Schema({
   fatherName: { type: String },
   fatherNumber: { type: Number },
   fatherOccupation: { type: String },
+
   motherName: { type: String },
   motherNumber: { type: Number },
   motherOccupation: { type: String },
+
   guardianName: { type: String },
   guardianNumber: { type: Number },
   guardianOccupation: { type: String },
   guardianRelation: { type: String },
+  
   address: { type: String, required: true },
   district: { type: String, required: true },
   
