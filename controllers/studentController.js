@@ -265,9 +265,9 @@ const getAcademic = async (req, res) => {
 
     let accYear;
     if (new Date().getMonth() >= 4) {
-      accYear = new Date().getFullYear + "-" + new Date().getFullYear - 1;
+      accYear = new Date().getFullYear() + "-" + new Date().getFullYear() - 1;
     } else {
-      accYear = new Date().getFullYear - 1 + "-" + new Date().getFullYear;
+      accYear = new Date().getFullYear() - 1 + "-" + new Date().getFullYear();
     }
 
     return res
