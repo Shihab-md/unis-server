@@ -8,7 +8,7 @@ const studentSchema = new Schema({
 
   rollNumber: { type: String, required: true, unique: true },
   doa: { type: Date, required: true },
-   
+
   dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
@@ -28,10 +28,18 @@ const studentSchema = new Schema({
   guardianNumber: { type: Number },
   guardianOccupation: { type: String },
   guardianRelation: { type: String },
-  
+
   address: { type: String, required: true },
   district: { type: String, required: true },
-  
+
+  hostel: { type: String, enum: ["Yes", "No"], },
+  hostelFees: { type: Number },
+  hostelDiscount: { type: Number },
+  hostelFinalFees: { type: Number },
+  hostelPaid: { type: Number },
+  hostelPaidDate: { type: Date },
+  hostelBalance: { type: Number },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

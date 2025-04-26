@@ -44,6 +44,14 @@ const addStudent = async (req, res) => {
       address,
       district,
 
+      hostel,
+      hostelFees,
+      hostelDiscount,
+      hostelFinalFees,
+      hostelPaid,
+      hostelPaidDate,
+      hostelBalance,
+
       acYear,
 
       instituteId1,
@@ -146,6 +154,13 @@ const addStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      hostel,
+      hostelFees,
+      hostelDiscount,
+      hostelFinalFees,
+      hostelPaid,
+      hostelPaidDate,
+      hostelBalance,
     });
 
     const savedStudent = await newStudent.save();
@@ -332,6 +347,14 @@ const updateStudent = async (req, res) => {
       address,
       district,
 
+      hostel,
+      hostelFees,
+      hostelDiscount,
+      hostelFinalFees,
+      hostelPaid,
+      hostelPaidDate,
+      hostelBalance,
+
       acYear,
 
       instituteId1,
@@ -427,6 +450,13 @@ const updateStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      hostel,
+      hostelFees,
+      hostelDiscount,
+      hostelFinalFees,
+      hostelPaid,
+      hostelPaidDate,
+      hostelBalance,
     })
 
     const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear });
