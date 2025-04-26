@@ -45,6 +45,7 @@ const addStudent = async (req, res) => {
       district,
 
       hostel,
+      hostelRefNumber,
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
@@ -155,6 +156,7 @@ const addStudent = async (req, res) => {
       address,
       district,
       hostel,
+      hostelRefNumber,
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
@@ -348,6 +350,7 @@ const updateStudent = async (req, res) => {
       district,
 
       hostel,
+      hostelRefNumber,
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
@@ -451,6 +454,7 @@ const updateStudent = async (req, res) => {
       address,
       district,
       hostel,
+      hostelRefNumber,
       hostelFees,
       hostelDiscount,
       hostelFinalFees,

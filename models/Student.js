@@ -33,6 +33,7 @@ const studentSchema = new Schema({
   district: { type: String, required: true },
 
   hostel: { type: String, enum: ["Yes", "No"], },
+  hostelRefNumber: { type: String },
   hostelFees: { type: Number },
   hostelDiscount: { type: Number },
   hostelFinalFees: { type: Number },
