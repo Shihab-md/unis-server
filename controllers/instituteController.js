@@ -5,9 +5,10 @@ const addInstitute = async (req, res) => {
     const {
       iCode,
       name,
+      type,
       contactNumber,
       email,
-      address, 
+      address,
       district,
       incharge1,
       incharge1Number,
@@ -25,6 +26,7 @@ const addInstitute = async (req, res) => {
     const newInstitute = new Institute({
       iCode,
       name,
+      type,
       contactNumber,
       email,
       address,
@@ -72,6 +74,7 @@ const updateInstitute = async (req, res) => {
   try {
     const { id } = req.params;
     const { name,
+      type,
       contactNumber,
       email,
       address,
@@ -90,6 +93,7 @@ const updateInstitute = async (req, res) => {
 
     const updateInstitute = await Institute.findByIdAndUpdate({ _id: id }, {
       name,
+      type,
       contactNumber,
       email,
       address,
