@@ -20,11 +20,11 @@ const courseSchema = new Schema({
   subject3MaxMark: { type: Number, required: true },
   subject3PassMark: { type: Number, required: true },
 
-  subject4: { type: String, required: true },
+  subject4: { type: String },
   subject4MaxMark: { type: Number },
   subject4PassMark: { type: Number },
 
-  subject5: { type: String, required: true },
+  subject5: { type: String },
   subject5MaxMark: { type: Number },
   subject5PassMark: { type: Number },
 
