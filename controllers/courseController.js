@@ -5,6 +5,7 @@ const addCourse = async (req, res) => {
     const {
       code,
       name,
+      type,
       remarks,
       fees,
       subject1,
@@ -49,6 +50,7 @@ const addCourse = async (req, res) => {
     const newCourse = new Course({
       code,
       name,
+      type,
       remarks,
       fees,
       subject1,
@@ -121,6 +123,7 @@ const updateCourse = async (req, res) => {
     const { id } = req.params;
     const {
       name,
+      type,
       remarks,
       fees,
       subject1,
@@ -163,6 +166,7 @@ const updateCourse = async (req, res) => {
 
     const updateCourse = await Course.findByIdAndUpdate({ _id: id }, {
       name,
+      type,
       remarks,
       fees,
       subject1,

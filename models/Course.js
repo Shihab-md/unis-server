@@ -4,6 +4,7 @@ import { Schema } from "mongoose";
 const courseSchema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
+  type: { type: String, enum: ["Deeniyath Education", "School Education", "College Education", "Vocational Courses"], },
   remarks: { type: String },
   fees: { type: Number, required: true },
 
