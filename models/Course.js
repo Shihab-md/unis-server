@@ -12,13 +12,13 @@ const courseSchema = new Schema({
   subject1MaxMark: { type: Number, required: true },
   subject1PassMark: { type: Number, required: true },
 
-  subject2: { type: String, required: true },
-  subject2MaxMark: { type: Number, required: true },
-  subject2PassMark: { type: Number, required: true },
+  subject2: { type: String },
+  subject2MaxMark: { type: Number },
+  subject2PassMark: { type: Number },
 
-  subject3: { type: String, required: true },
-  subject3MaxMark: { type: Number, required: true },
-  subject3PassMark: { type: Number, required: true },
+  subject3: { type: String },
+  subject3MaxMark: { type: Number },
+  subject3PassMark: { type: Number },
 
   subject4: { type: String },
   subject4MaxMark: { type: Number },
