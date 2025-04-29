@@ -17,7 +17,7 @@ const academicSchema = new Schema({
 
   instituteId2: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId2: { type: Schema.Types.ObjectId, ref: "Course" },
-  refNumber2: { type: String, unique: true },
+  refNumber2: { type: String },
   fees2: { type: Number },
   discount2: { type: Number },
   finalFees2: { type: Number },
@@ -27,7 +27,7 @@ const academicSchema = new Schema({
 
   instituteId3: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId3: { type: Schema.Types.ObjectId, ref: "Course" },
-  refNumber3: { type: String, unique: true },
+  refNumber3: { type: String },
   fees3: { type: Number },
   discount3: { type: Number },
   finalFees3: { type: Number },
@@ -37,17 +37,17 @@ const academicSchema = new Schema({
 
   instituteId4: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId4: { type: Schema.Types.ObjectId, ref: "Course" },
-  refNumber4: { type: String, unique: true },
+  refNumber4: { type: String },
   fees4: { type: Number },
   discount4: { type: Number },
   finalFees4: { type: Number },
   paid4: { type: Number },
-  paidDate4: { type: Date },
+  paidDate4: { type: Date }, 
   balance4: { type: Number },
 
   instituteId5: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId5: { type: Schema.Types.ObjectId, ref: "Course" },
-  refNumber5: { type: String, unique: true },
+  refNumber5: { type: String },
   fees5: { type: Number },
   discount5: { type: Number },
   finalFees5: { type: Number },
