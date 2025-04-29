@@ -186,6 +186,7 @@ const addStudent = async (req, res) => {
     const newAcademic = new Academic({
       studentId: savedStudent._id,
       acYear: academicYearById._id,
+      
       instituteId1,
       courseId1,
       refNumber1,
