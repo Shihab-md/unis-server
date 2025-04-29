@@ -19,6 +19,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const addStudent = async (req, res) => {
+
+  let savedUser;
+  let savedStudent;
+  let savedAcademic;
   try {
     const {
       name,
@@ -123,7 +127,7 @@ const addStudent = async (req, res) => {
       role: "student",
       profileImage: req.file ? req.file.filename : "",
     });
-    const savedUser = await newUser.save();
+    savedUser = await newUser.save();
 
     const schoolById = await School.findById({ _id: schoolId });
     if (schoolById == null) {
@@ -165,7 +169,7 @@ const addStudent = async (req, res) => {
       hostelBalance,
     });
 
-    const savedStudent = await newStudent.save();
+    savedStudent = await newStudent.save();
     if (savedStudent == null) {
       return res
         .status(404)
@@ -233,9 +237,22 @@ const addStudent = async (req, res) => {
       balance5,
     });
 
-    await newAcademic.save();
+    savedAcademic = await newAcademic.save();
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
+
+    if (savedUser != null) {
+      savedUser.deleteOne();
+    }
+
+    if (savedStudent != null) {
+      savedStudent.deleteOne();
+    }
+
+    if (savedAcademic != null) {
+      savedAcademic.deleteOne();
+    }
+
     console.log(error);
     return res
       .status(500)
