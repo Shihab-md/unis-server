@@ -3,10 +3,10 @@ import { Schema } from "mongoose";
 import Academic from "../models/Academic.js";
 
 const studentSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },
 
-  rollNumber: { type: String, required: true, unique: true },
+  rollNumber: { type: String, required: true, unique: true, index: true },
   doa: { type: Date, required: true },
 
   dob: { type: Date, required: true },
@@ -32,13 +32,13 @@ const studentSchema = new Schema({
   address: { type: String, required: true },
   district: { type: String, required: true },
 
-  hostel: { type: String, enum: ["Yes", "No"], },
+  hostel: { type: String, index: true, enum: ["Yes", "No"], },
   hostelRefNumber: { type: String },
   hostelFees: { type: Number },
   hostelDiscount: { type: Number },
   hostelFinalFees: { type: Number },
 
-  active: { type: String, enum: ["Active", "In-Active", "Transferred", "Graduated", "Discontinued"], default: "Active" },
+  active: { type: String, index: true, enum: ["Active", "In-Active", "Transferred", "Graduated", "Discontinued"], default: "Active" },
   remarks: { type: String },
 
   createdAt: { type: Date, default: Date.now },

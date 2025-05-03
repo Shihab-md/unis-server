@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const accountSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  acYear: { type: Schema.Types.ObjectId, ref: "AcademicYear", required: true },
-  academicId: { type: Schema.Types.ObjectId, ref: "Academic" },
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  acYear: { type: Schema.Types.ObjectId, ref: "AcademicYear", required: true, index: true },
+  academicId: { type: Schema.Types.ObjectId, ref: "Academic", index: true },
 
   receiptNumber: { type: String, required: true },
   type: { type: String, enum: ["fees", "salary", "bonus", "travel", "hostel", ""], },
