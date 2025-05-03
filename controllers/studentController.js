@@ -54,7 +54,7 @@ const addStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-    //  hostelFinalFees,
+      //  hostelFinalFees,
 
       acYear,
 
@@ -63,35 +63,35 @@ const addStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-   //   finalFees1,
+      //   finalFees1,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-    //  finalFees2,
+      //  finalFees2,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-   //   finalFees3,
+      //   finalFees3,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-  //    finalFees4,
+      //    finalFees4,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-   //   finalFees5,
+      //   finalFees5,
 
     } = req.body;
 
@@ -120,7 +120,7 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Niswan Not exists" });
     }
 
-    let hostelFinalFeesVal = Number(hostelFees) - Number(hostelDiscount);
+    let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const newStudent = new Student({
       userId: savedUser._id,
       schoolId: schoolById._id,
@@ -165,11 +165,12 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Academic Year Not exists" });
     }
 
-    let finalFees1Val = Number(fees1) - Number(discount1);
-    let finalFees2Val = Number(fees2) - Number(discount2);
-    let finalFees3Val = Number(fees3) - Number(discount3);
-    let finalFees4Val = Number(fees4) - Number(discount4);
-    let finalFees5Val = Number(fees5) - Number(discount5);
+    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
+    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
+    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
+    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
+    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
+
     const newAcademic = new Academic({
       studentId: savedStudent._id,
       acYear: academicYearById._id,
