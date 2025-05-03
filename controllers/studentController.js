@@ -120,7 +120,7 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Niswan Not exists" });
     }
 
-    let hostelFinalFeesVal = Number(hostelFees) + Number(hostelDiscount);
+    let hostelFinalFeesVal = Number(hostelFees) - Number(hostelDiscount);
     const newStudent = new Student({
       userId: savedUser._id,
       schoolId: schoolById._id,
@@ -165,11 +165,11 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Academic Year Not exists" });
     }
 
-    let finalFees1Val = Number(fees1) + Number(discount1);
-    let finalFees2Val = Number(fees2) + Number(discount2);
-    let finalFees3Val = Number(fees3) + Number(discount3);
-    let finalFees4Val = Number(fees4) + Number(discount4);
-    let finalFees5Val = Number(fees5) + Number(discount5);
+    let finalFees1Val = Number(fees1) - Number(discount1);
+    let finalFees2Val = Number(fees2) - Number(discount2);
+    let finalFees3Val = Number(fees3) - Number(discount3);
+    let finalFees4Val = Number(fees4) - Number(discount4);
+    let finalFees5Val = Number(fees5) - Number(discount5);
     const newAcademic = new Academic({
       studentId: savedStudent._id,
       acYear: academicYearById._id,
