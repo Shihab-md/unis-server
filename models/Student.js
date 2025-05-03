@@ -37,9 +37,6 @@ const studentSchema = new Schema({
   hostelFees: { type: Number },
   hostelDiscount: { type: Number },
   hostelFinalFees: { type: Number },
-  hostelPaid: { type: Number },
-  hostelPaidDate: { type: Date },
-  hostelBalance: { type: Number },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

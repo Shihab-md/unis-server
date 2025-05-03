@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
 import AcademicYear from "../models/AcademicYear.js";
+import Account from "../models/Account.js";
 import bcrypt from "bcrypt";
 import path from "path";
 
@@ -23,6 +24,7 @@ const addStudent = async (req, res) => {
   let savedUser;
   let savedStudent;
   let savedAcademic;
+  let savedAccount;
   try {
     const {
       name,
@@ -53,9 +55,6 @@ const addStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
-      hostelPaid,
-      hostelPaidDate,
-      hostelBalance,
 
       acYear,
 
@@ -65,9 +64,6 @@ const addStudent = async (req, res) => {
       fees1,
       discount1,
       finalFees1,
-      paid1,
-      paidDate1,
-      balance1,
 
       instituteId2,
       courseId2,
@@ -75,9 +71,6 @@ const addStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2,
-      paid2,
-      paidDate2,
-      balance2,
 
       instituteId3,
       courseId3,
@@ -85,9 +78,6 @@ const addStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3,
-      paid3,
-      paidDate3,
-      balance3,
 
       instituteId4,
       courseId4,
@@ -95,9 +85,6 @@ const addStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4,
-      paid4,
-      paidDate4,
-      balance4,
 
       instituteId5,
       courseId5,
@@ -105,9 +92,6 @@ const addStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5,
-      paid5,
-      paidDate5,
-      balance5,
 
     } = req.body;
 
@@ -164,9 +148,6 @@ const addStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
-      hostelPaid,
-      hostelPaidDate,
-      hostelBalance,
     });
 
     savedStudent = await newStudent.save();
@@ -186,16 +167,13 @@ const addStudent = async (req, res) => {
     const newAcademic = new Academic({
       studentId: savedStudent._id,
       acYear: academicYearById._id,
-      
+
       instituteId1,
       courseId1,
       refNumber1,
       fees1,
       discount1,
       finalFees1,
-      paid1,
-      paidDate1,
-      balance1,
 
       instituteId2,
       courseId2,
@@ -203,9 +181,6 @@ const addStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2,
-      paid2,
-      paidDate2,
-      balance2,
 
       instituteId3,
       courseId3,
@@ -213,9 +188,6 @@ const addStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3,
-      paid3,
-      paidDate3,
-      balance3,
 
       instituteId4,
       courseId4,
@@ -223,9 +195,6 @@ const addStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4,
-      paid4,
-      paidDate4,
-      balance4,
 
       instituteId5,
       courseId5,
@@ -233,12 +202,27 @@ const addStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5,
-      paid5,
-      paidDate5,
-      balance5,
     });
 
     savedAcademic = await newAcademic.save();
+
+    let totalFees = finalFees1 + finalFees2 + finalFees3 + finalFees4 + finalFees5 + hostelFinalFees;
+
+    const newAccount = new Account({
+      userId: savedStudent._id,
+      acYear: academicYearById._id,
+      academicId: savedAcademic._id,
+
+      receiptNumber: "Admission",
+      type: "fees",
+      fees: totalFees,
+      paidDate: Date.now(),
+      balance: totalFees,
+      remarks: "Admission",
+    });
+
+    savedAccount = await newAccount.save();
+
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
 
@@ -372,9 +356,6 @@ const updateStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
-      hostelPaid,
-      hostelPaidDate,
-      hostelBalance,
 
       acYear,
 
@@ -384,9 +365,6 @@ const updateStudent = async (req, res) => {
       fees1,
       discount1,
       finalFees1,
-      paid1,
-      paidDate1,
-      balance1,
 
       instituteId2,
       courseId2,
@@ -394,9 +372,6 @@ const updateStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2,
-      paid2,
-      paidDate2,
-      balance2,
 
       instituteId3,
       courseId3,
@@ -404,9 +379,6 @@ const updateStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3,
-      paid3,
-      paidDate3,
-      balance3,
 
       instituteId4,
       courseId4,
@@ -414,9 +386,6 @@ const updateStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4,
-      paid4,
-      paidDate4,
-      balance4,
 
       instituteId5,
       courseId5,
@@ -424,9 +393,7 @@ const updateStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5,
-      paid5,
-      paidDate5,
-      balance5, } = req.body;
+    } = req.body;
 
     const student = await Student.findById({ _id: id });
     if (!student) {
@@ -476,9 +443,7 @@ const updateStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees,
-      hostelPaid,
-      hostelPaidDate,
-      hostelBalance,
+
     })
 
     const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear });
@@ -490,9 +455,6 @@ const updateStudent = async (req, res) => {
       fees1,
       discount1,
       finalFees1,
-      paid1,
-      paidDate1,
-      balance1,
 
       instituteId2,
       courseId2,
@@ -500,9 +462,6 @@ const updateStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2,
-      paid2,
-      paidDate2,
-      balance2,
 
       instituteId3,
       courseId3,
@@ -510,9 +469,6 @@ const updateStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3,
-      paid3,
-      paidDate3,
-      balance3,
 
       instituteId4,
       courseId4,
@@ -520,9 +476,6 @@ const updateStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4,
-      paid4,
-      paidDate4,
-      balance4,
 
       instituteId5,
       courseId5,
@@ -530,9 +483,6 @@ const updateStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5,
-      paid5,
-      paidDate5,
-      balance5,
     });
 
     if (!updateStudent || !updateUser || !updateAcademicById) {
