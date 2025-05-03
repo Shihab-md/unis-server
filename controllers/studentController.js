@@ -259,7 +259,7 @@ const addStudent = async (req, res) => {
 
 const getStudents = async (req, res) => {
   try {
-    const students = await Student.find()
+    const students = await Student.find({ active: "Active" })
       .populate("userId", { password: 0 })
       .populate("schoolId");
     return res.status(200).json({ success: true, students });
