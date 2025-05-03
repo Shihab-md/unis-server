@@ -149,6 +149,7 @@ const addStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees: hostelFinalFeesVal,
+      active: "Active",
     });
 
     savedStudent = await newStudent.save();
@@ -362,6 +363,9 @@ const updateStudent = async (req, res) => {
       address,
       district,
 
+      active,
+      remarks,
+
       hostel,
       hostelRefNumber,
       hostelFees,
@@ -455,7 +459,8 @@ const updateStudent = async (req, res) => {
       hostelFees,
       hostelDiscount,
       hostelFinalFees: hostelFinalFeesVal,
-
+      active,
+      remarks,
     })
 
     let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
@@ -532,8 +537,9 @@ const deleteStudent = async (req, res) => {
     const { id } = req.params;
     const deleteStudent = await Student.findById({ _id: id })
 
-    await User.findByIdAndDelete({ _id: deleteStudent.userId._id })
-    await deleteStudent.deleteOne()
+    //  await User.findByIdAndDelete({ _id: deleteStudent.userId._id })
+
+    //  await deleteStudent.deleteOne()
     return res.status(200).json({ success: true, deleteStudent })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Student server error" })
