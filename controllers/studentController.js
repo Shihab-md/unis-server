@@ -54,7 +54,7 @@ const addStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-      hostelFinalFees,
+    //  hostelFinalFees,
 
       acYear,
 
@@ -63,35 +63,35 @@ const addStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-      finalFees1,
+   //   finalFees1,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-      finalFees2,
+    //  finalFees2,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-      finalFees3,
+   //   finalFees3,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-      finalFees4,
+  //    finalFees4,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-      finalFees5,
+   //   finalFees5,
 
     } = req.body;
 
