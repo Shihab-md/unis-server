@@ -366,7 +366,7 @@ const updateStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-      hostelFinalFees,
+      //  hostelFinalFees,
 
       acYear,
 
@@ -375,35 +375,35 @@ const updateStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-      finalFees1,
+      //  finalFees1,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-      finalFees2,
+      //  finalFees2,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-      finalFees3,
+      //  finalFees3,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-      finalFees4,
+      //  finalFees4,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-      finalFees5,
+      //  finalFees5,
     } = req.body;
 
     const student = await Student.findById({ _id: id });
@@ -429,6 +429,7 @@ const updateStudent = async (req, res) => {
 
     const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
 
+    let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
       doa,
       dob,
@@ -453,9 +454,15 @@ const updateStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-      hostelFinalFees,
+      hostelFinalFees: hostelFinalFeesVal,
 
     })
+
+    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
+    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
+    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
+    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
+    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
 
     const updateAcademic = await Academic.findOne({ studentId: updateStudent._id, acYear: acYear });
 
@@ -465,35 +472,44 @@ const updateStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-      finalFees1,
+      finalFees1: finalFees1Val,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-      finalFees2,
+      finalFees2: finalFees2Val,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-      finalFees3,
+      finalFees3: finalFees3Val,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-      finalFees4,
+      finalFees4: finalFees4Val,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-      finalFees5,
+      finalFees5: finalFees5Val,
+    });
+
+    const updateAccount = await Account.findOne({ userId: updateStudent._id, acYear: acYear, academicId: updateAcademic._id });
+
+    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
+
+    const updateAccountById = await Account.findByIdAndUpdate({ _id: updateAccount._id }, {
+      fees: totalFees,
+      remarks: "Admission-updated",
     });
 
     if (!updateStudent || !updateUser || !updateAcademicById) {
