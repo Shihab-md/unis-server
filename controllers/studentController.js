@@ -206,7 +206,7 @@ const addStudent = async (req, res) => {
 
     savedAcademic = await newAcademic.save();
 
-    let totalFees = finalFees1 + finalFees2 + finalFees3 + finalFees4 + finalFees5 + hostelFinalFees;
+    let totalFees = Number(finalFees1) + Number(finalFees2) + Number(finalFees3) + Number(finalFees4) + Number(finalFees5) + Number(hostelFinalFees);
 
     const newAccount = new Account({
       userId: savedStudent._id,
@@ -236,6 +236,10 @@ const addStudent = async (req, res) => {
 
     if (savedAcademic != null) {
       savedAcademic.deleteOne();
+    }
+
+    if (savedAccount != null) {
+      savedAccount.deleteOne();
     }
 
     console.log(error);
