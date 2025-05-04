@@ -542,6 +542,7 @@ const updateStudent = async (req, res) => {
 
     const updateAccountById = await Account.findByIdAndUpdate({ _id: updateAccount._id }, {
       fees: totalFees,
+      paidDate: Date.now(),
       remarks: "Admission-updated",
     })
 
