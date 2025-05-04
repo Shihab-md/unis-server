@@ -5,7 +5,7 @@ import bcrypt from "bcrypt";
 import path from "path";
 
 const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
+  destination: async function (req, image, cb) {
 
     // const dirExist = await fsAsync.exists("public/uploads");
     //     if (dirExist === false) {
@@ -13,10 +13,10 @@ const storage = multer.diskStorage({
     //     }
     cb(null, "public/uploads");
   },
-  filename: (req, file, cb) => {
+  filename: (req, image, cb) => {
     // console.log("inside 2" + file.originalname);
     //cb(null, Date.now() + path.extname(file.originalname));
-    cb(null, path.extname(file.originalname));
+    cb(null, path.extname(image.originalname));
   },
 });
 
