@@ -480,7 +480,7 @@ const updateStudent = async (req, res) => {
     let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
     let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
 
-    const updateAcademic = await Academic.findOne({ studentId: student.userId, acYear: acYear });
+    const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: acYear });
 
     const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
       instituteId1,
