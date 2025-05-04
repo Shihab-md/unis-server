@@ -6,22 +6,14 @@ import path from "path";
 
 const storage = multer.diskStorage({
   destination: async function (req, file, cb) {
-
-    // const dirExist = await fsAsync.exists("public/uploads");
-    //     if (dirExist === false) {
-    //      await fsAsync.mkdir(dirPath);
-    //     }
-    cb(null, "public/uploads");
+    cb(null, "./public/uploads");
   },
   filename: (req, file, cb) => {
-    // console.log("inside 2" + file.originalname);
-    //cb(null, Date.now() + path.extname(file.originalname));
     cb(null, path.extname(file.originalname));
   },
 });
 
 const upload = multer({ storage: storage }).single("image");;
-//const upload = multer({ dest: 'public/uploads/' })
 
 const addSupervisor = async (req, res) => {
   try {
