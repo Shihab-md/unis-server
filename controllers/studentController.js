@@ -474,13 +474,20 @@ const updateStudent = async (req, res) => {
       remarks,
     })
 
+    const academicYearById = await AcademicYear.findById({ _id: acYear });
+    if (academicYearById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not exists" });
+    }
+
     let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
     let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
     let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
     let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
     let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
 
-    const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: acYear });
+    const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: academicYearById._id });
 
     const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
       instituteId1,
