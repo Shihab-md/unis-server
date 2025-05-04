@@ -475,7 +475,7 @@ const updateStudent = async (req, res) => {
     })
 
     const academicYearById = await AcademicYear.findById({ _id: acYear });
-    if (academicYearById != null) {
+    if (academicYearById == null) {
       return res
         .status(404)
         .json({ success: false, error: "Academic Year Not exists" });
@@ -488,7 +488,7 @@ const updateStudent = async (req, res) => {
     let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
 
     const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: academicYearById._id });
-    if (updateAcademic == null) {
+    if (updateAcademic != null) {
       return res
         .status(404)
         .json({ success: false, error: "Academic Data Not exists" });
