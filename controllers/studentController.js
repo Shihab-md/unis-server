@@ -496,6 +496,9 @@ const updateStudent = async (req, res) => {
 
     const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
       
+      studentId: student._id,
+      acYear: academicYearById._id,
+
       instituteId1,
       courseId1,
       refNumber1,
