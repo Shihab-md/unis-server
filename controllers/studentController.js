@@ -491,7 +491,7 @@ const updateStudent = async (req, res) => {
     if (updateAcademic != null) {
       return res
         .status(404)
-        .json({ success: false, error: "Academic Data Not exists" });
+        .json({ success: false, error: "Academic Data Not exists : " +finalFees1Val+", "+finalFees2Val+", "+finalFees3Val+", "+finalFees4Val+", "+finalFees5Val});
     }
 
     const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
