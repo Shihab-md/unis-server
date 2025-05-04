@@ -475,7 +475,7 @@ const updateStudent = async (req, res) => {
     })
 
     const academicYearById = await AcademicYear.findById({ _id: acYear });
-    if (academicYearById == null) {
+    if (academicYearById != null) {
       return res
         .status(404)
         .json({ success: false, error: "Academic Year Not exists" });
