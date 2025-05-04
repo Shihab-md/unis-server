@@ -34,6 +34,7 @@ const addEmployee = async (req, res) => {
       doj,
       salary,
       password,
+      image,
     } = req.body;
 
     const user = await User.findOne({ email: email });
@@ -50,7 +51,7 @@ const addEmployee = async (req, res) => {
       email,
       password: hashPassword,
       role,
-      profileImage: req.file ? req.file.filename : "",
+      profileImage: req.image ? req.image.filename : "",
     });
     const savedUser = await newUser.save();
 
