@@ -308,7 +308,18 @@ const getAcademic = async (req, res) => {
 
     let academic;
     if (acaYear != "vieww") {
-      academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id });
+      academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
+        .populate("acYear")
+        .populate("instituteId1")
+        .populate("courseId1")
+        .populate("instituteId2")
+        .populate("courseId2")
+        .populate("instituteId3")
+        .populate("courseId3")
+        .populate("instituteId4")
+        .populate("courseId4")
+        .populate("instituteId5")
+        .populate("courseId5");
     } else {
       academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
         .populate("acYear")
