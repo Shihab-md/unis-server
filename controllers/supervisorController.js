@@ -33,6 +33,7 @@ const addSupervisor = async (req, res) => {
       salary,
       password,
       image,
+      file,
     } = req.body;
 
     console.log("user started");
@@ -53,7 +54,7 @@ const addSupervisor = async (req, res) => {
       email,
       password: hashPassword,
       role: "supervisor",
-      profileImage: image ? image.filename : "",
+      profileImage: file ? file.filename : "",
     });
     const savedUser = await newUser.save();
 
