@@ -16,6 +16,7 @@ import settingRouter from './routes/setting.js'
 import attendanceRouter from './routes/attendance.js'
 import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
+import path from "path";
 
 connectToDatabase()
 const app = express()
@@ -27,7 +28,7 @@ const app = express()
 app.use(cors({ origin: '*', credentials: true }));
  
 app.use(express.json())
-app.use(express.static('public/uploads'))
+app.use(express.static(path.join(__dirname, 'public/uploads')))
 app.use('/api/auth', authRouter)
 app.use('/api/department', departmentRouter)
 app.use('/api/supervisor', supervisorRouter)
