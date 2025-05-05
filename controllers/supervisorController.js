@@ -4,7 +4,7 @@ import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import path from "path";
 
-const storage = multer.diskStorage({
+{/*const storage = multer.diskStorage({
   destination: async function (req, file, cb) {
     cb(null, path.resolve('./uploads'));
   }, 
@@ -13,7 +13,7 @@ const storage = multer.diskStorage({
     cb(null, "123.png");
     // cb(null, req.body.supervisorId + path.extname(file.originalname));
   },
-});
+}); */}
 
 const upload = multer({ storage: storage });
 
@@ -33,6 +33,7 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
+      file,
     } = req.body;
 
     console.log("user started");
@@ -46,14 +47,14 @@ const addSupervisor = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-   // console.log("File name : " + req.file ? req.file.originalname : "");
+    // console.log("File name : " + req.file ? req.file.originalname : "");
 
     const newUser = new User({
       name,
       email,
       password: hashPassword,
       role: "supervisor",
-    //  profileImage: req.file ? req.file.originalname : "",
+      profileImage: file ? file.buffer.toString('base64') : "",
     });
     const savedUser = await newUser.save();
 
