@@ -6,11 +6,11 @@ import path from "path";
 
 const storage = multer.diskStorage({
   destination: async function (req, file, cb) {
-    cb(null, "./uploads/");
+    cb(null, "public/uploads");
   },
 
   filename: (req, file, cb) => {
-    cb(null, path.extname(file.originalname));
+    cb(null, req.body.supervisorId + path.extname(file.originalname));
   },
 });
 
@@ -32,8 +32,6 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
-      image,
-      file,
     } = req.body;
 
     console.log("user started");
@@ -47,14 +45,14 @@ const addSupervisor = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-    // console.log("File name : " + req.file ? req.file.filename : "");
+    console.log("File name : " + req.file ? req.file.originalname : "");
 
     const newUser = new User({
       name,
       email,
       password: hashPassword,
       role: "supervisor",
-      profileImage: file ? file.originalname : "",
+      profileImage: req.file ? req.file.originalname : "",
     });
     const savedUser = await newUser.save();
 
@@ -175,7 +173,7 @@ const deleteSupervisor = async (req, res) => {
     const { id } = req.params;
     const deleteSupervisor = await Supervisor.findById({ _id: id })
 
-    await User.findByIdAndDelete({_id: deleteSupervisor.userId._id}) 
+    await User.findByIdAndDelete({ _id: deleteSupervisor.userId._id })
     await deleteSupervisor.deleteOne()
     return res.status(200).json({ success: true, deleteSupervisor })
   } catch (error) {
