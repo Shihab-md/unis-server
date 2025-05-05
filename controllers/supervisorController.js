@@ -6,7 +6,7 @@ import path from "path";
 
 const storage = multer.diskStorage({
   destination: async function (req, file, cb) {
-    cb(null, "./public/uploads");
+    cb(null, "public/uploads");
   },
 
   filename: (req, file, cb) => {
@@ -32,7 +32,6 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
-      image,
     } = req.body;
 
     console.log("user started");
@@ -53,9 +52,7 @@ const addSupervisor = async (req, res) => {
       email,
       password: hashPassword,
       role: "supervisor",
-    //  profileImage: req.image ? req.image.filename : "",
       profileImage: req.file ? req.file.filename : "",
-      //profileImage: convertToBase64(req.file),
     });
     const savedUser = await newUser.save();
 
