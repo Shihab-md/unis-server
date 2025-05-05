@@ -5,12 +5,12 @@ import bcrypt from "bcrypt";
 import path from "path";
 
 const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
+  destination: async function (req, image, cb) {
     cb(null, "public/uploads");
   },
 
-  filename: (req, file, cb) => {
-    cb(null, path.extname(file.originalname));
+  filename: (req, image, cb) => {
+    cb(null, path.extname(image.originalname));
   },
 });
 
@@ -54,7 +54,7 @@ const addSupervisor = async (req, res) => {
       email,
       password: hashPassword,
       role: "supervisor",
-      profileImage: "", //file ? file.originalname : "",
+      profileImage: file ? file.originalname : "",
     });
     const savedUser = await newUser.save();
 
