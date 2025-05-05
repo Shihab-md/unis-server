@@ -5,12 +5,12 @@ import bcrypt from "bcrypt";
 import path from "path";
 
 const storage = multer.diskStorage({
-  destination: async function (req, image, cb) {
+  destination: async function (req, file, cb) {
     cb(null, "./");
   },
 
-  filename: (req, image, cb) => {
-    cb(null, path.extname(image.originalname));
+  filename: (req, file, cb) => {
+    cb(null, path.extname(file.originalname));
   },
 });
 
