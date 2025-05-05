@@ -8,13 +8,13 @@ const storage = multer.diskStorage({
   destination: async function (req, file, cb) {
     cb(null, "./public/uploads");
   },
-  
+
   filename: (req, file, cb) => {
     cb(null, path.extname(file.originalname));
   },
 });
 
-const upload = multer({ storage: storage }).single("image");;
+const upload = multer({ storage: storage });
 
 const addSupervisor = async (req, res) => {
   try {
