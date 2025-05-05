@@ -1,20 +1,8 @@
 import multer from "multer";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
-import User from "../models/User.js";
-import bcrypt from "bcrypt";
-import path from "path";
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "public/uploads");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage: storage });
+const upload = multer({ });
 
 const addSchool = async (req, res) => {
   try {

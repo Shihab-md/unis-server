@@ -3,18 +3,8 @@ import Employee from "../models/Employee.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
-import path from "path";
 
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    cb(null, "public/uploads");
-  },
-  filename: (req, file, cb) => {
-    cb(null, path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage: storage });
+const upload = multer({ });
 
 const addEmployee = async (req, res) => {
   try {
@@ -34,7 +24,6 @@ const addEmployee = async (req, res) => {
       doj,
       salary,
       password,
-      image,
     } = req.body;
 
     const user = await User.findOne({ email: email });
@@ -51,7 +40,7 @@ const addEmployee = async (req, res) => {
       email,
       password: hashPassword,
       role,
-      profileImage: req.image ? req.image.filename : "",
+      profileImage: req.file ? req.file.buffer.toString('base64') : "",
     });
     const savedUser = await newUser.save();
 

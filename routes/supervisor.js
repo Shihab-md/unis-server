@@ -9,6 +9,5 @@ router.post('/add', authMiddleware, upload.single('file'), addSupervisor)
 router.get('/:id', authMiddleware, getSupervisor)
 router.put('/:id', authMiddleware, updateSupervisor)
 router.delete('/:id', authMiddleware, deleteSupervisor)
-//router.get('/department/:id', authMiddleware, fetchSupervisorsByDepId)
 
 export default router

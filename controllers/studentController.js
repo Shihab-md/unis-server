@@ -6,18 +6,8 @@ import Academic from "../models/Academic.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import bcrypt from "bcrypt";
-import path from "path";
 
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    cb(null, "public/uploads");
-  },
-  filename: (req, file, cb) => {
-    cb(null, path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage: storage });
+const upload = multer({ });
 
 const addStudent = async (req, res) => {
 
@@ -109,7 +99,7 @@ const addStudent = async (req, res) => {
       email: rollNumber,
       password: hashPassword,
       role: "student",
-      profileImage: req.file ? req.file.filename : "",
+      profileImage: req.file ? req.file.buffer.toString('base64') : "",
     });
     savedUser = await newUser.save();
 

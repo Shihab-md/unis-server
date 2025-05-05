@@ -2,20 +2,8 @@ import multer from "multer";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
-import path from "path";
 
-{/*const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    cb(null, path.resolve('./uploads'));
-  }, 
-
-  filename: (req, file, cb) => {
-    cb(null, "123.png");
-    // cb(null, req.body.supervisorId + path.extname(file.originalname));
-  },
-}); */}
-
-const upload = multer({ storage: storage });
+const upload = multer({ });
 
 const addSupervisor = async (req, res) => {
   try {
@@ -33,7 +21,6 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
-      file,
     } = req.body;
 
     console.log("user started");
@@ -47,14 +34,12 @@ const addSupervisor = async (req, res) => {
 
     const hashPassword = await bcrypt.hash(password, 10);
 
-    // console.log("File name : " + req.file ? req.file.originalname : "");
-
     const newUser = new User({
       name,
       email,
       password: hashPassword,
       role: "supervisor",
-      profileImage: file ? file.buffer.toString('base64') : "",
+      profileImage: req.file ? req.file.buffer.toString('base64') : "",
     });
     const savedUser = await newUser.save();
 
@@ -77,27 +62,12 @@ const addSupervisor = async (req, res) => {
     await newSupervisor.save();
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
-
-    //console.log("File - - " + file.originalname);
     console.log(error);
     return res
       .status(500)
       .json({ success: false, error: "server error in adding supervisor" });
   }
 };
-
-//function convertToBase64(file) {
-//  return new Promise((resolve, reject) => {
-//    const fileReader = new FileReader();
-//    fileReader.readAsDataURL(file);
-//    fileReader.onload = () => {
-//     resolve(fileReader.result)
-//    };
-//    fileReader.onerror = (error) => {
-//      reject(error)
-//    }
-//  })
-//}
 
 const getSupervisors = async (req, res) => {
   try {
@@ -117,15 +87,19 @@ const getSupervisor = async (req, res) => {
     let supervisor;
     supervisor = await Supervisor.findById({ _id: id })
       .populate("userId", { password: 0 });
+
     if (!supervisor) {
       supervisor = await Supervisor.findOne({ userId: id })
         .populate("userId", { password: 0 });
     }
+
     return res.status(200).json({ success: true, supervisor });
+
   } catch (error) {
+    console.log(error);
     return res
       .status(500)
-      .json({ success: false, error: "get supervisors server error" });
+      .json({ success: false, error: "get supervisor server error" });
   }
 };
 

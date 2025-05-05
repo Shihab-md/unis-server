@@ -5,7 +5,7 @@ import {addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool} fr
 const router = express.Router()
 
 router.get('/', authMiddleware, getSchools)
-router.post('/add', authMiddleware, upload.single('image'), addSchool)
+router.post('/add', authMiddleware, upload.single('file'), addSchool)
 router.get('/:id', authMiddleware, getSchool)
 router.put('/:id', authMiddleware, updateSchool)
 router.delete('/:id', authMiddleware, deleteSchool)
