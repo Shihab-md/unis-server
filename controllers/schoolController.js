@@ -96,7 +96,7 @@ const addSchool = async (req, res) => {
 
 const getSchools = async (req, res) => {
   try {
-    const schools = await School.find()
+    const schools = await School.find().sort({ code: 1 });
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     return res
