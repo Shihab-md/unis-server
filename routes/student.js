@@ -7,7 +7,7 @@ const router = express.Router()
 router.get('/', authMiddleware, getStudents)
 router.post('/add', authMiddleware, upload.single('file'), addStudent)
 router.get('/:id', authMiddleware, getStudent)
-router.put('/:id', authMiddleware, updateStudent)
+router.put('/:id', authMiddleware, upload.single('file'), updateStudent)
 router.delete('/:id', authMiddleware, deleteStudent)
 
 router.get('/:studentId/:acaYear', authMiddleware, getAcademic)

@@ -432,7 +432,18 @@ const updateStudent = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
+  //  const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
+
+    let updateUser;
+    if (req.file) {
+      updateUser = await User.findByIdAndUpdate({ _id: student.userId },
+        {
+          name,
+          profileImage: req.file.buffer.toString('base64'),
+        })
+    } else {
+      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name, })
+    }
 
     let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {

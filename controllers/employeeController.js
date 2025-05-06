@@ -4,7 +4,7 @@ import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
 
-const upload = multer({ });
+const upload = multer({});
 
 const addEmployee = async (req, res) => {
   try {
@@ -44,7 +44,7 @@ const addEmployee = async (req, res) => {
     });
     const savedUser = await newUser.save();
 
-    const schoolById =  await School.findById({ _id: schoolId });
+    const schoolById = await School.findById({ _id: schoolId });
     if (schoolById == null) {
       return res
         .status(404)
@@ -146,7 +146,19 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
+    //  const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
+
+    let updateUser;
+    if (req.file) {
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId },
+        {
+          name,
+          profileImage: req.file.buffer.toString('base64'),
+        })
+    } else {
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name, })
+    }
+
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
       schoolId: school._id,
       contactNumber,
@@ -180,7 +192,7 @@ const deleteEmployee = async (req, res) => {
     const { id } = req.params;
     const deleteEmployee = await Employee.findById({ _id: id })
 
-    await User.findByIdAndDelete({_id: deleteEmployee.userId._id}) 
+    await User.findByIdAndDelete({ _id: deleteEmployee.userId._id })
     await deleteEmployee.deleteOne()
     return res.status(200).json({ success: true, deleteEmployee })
   } catch (error) {

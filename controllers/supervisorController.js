@@ -3,7 +3,7 @@ import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 
-const upload = multer({ });
+const upload = multer({});
 
 const addSupervisor = async (req, res) => {
   try {
@@ -123,7 +123,16 @@ const updateSupervisor = async (req, res) => {
         .json({ success: false, error: "User not found." });
     }
 
-    const updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name })
+    let updateUser;
+    if (req.file) {
+      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId },
+        {
+          name,
+          profileImage: req.file.buffer.toString('base64'),
+        })
+    } else {
+      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, })
+    }
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
       contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
       doj, salary
