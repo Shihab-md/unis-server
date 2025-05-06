@@ -243,6 +243,19 @@ const addStudent = async (req, res) => {
 
 const getStudents = async (req, res) => {
   try {
+    const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
+      .populate("userId", { password: 0 })
+      .populate("schoolId");
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get students server error" });
+  }
+};
+
+const getActiveStudents = async (req, res) => {
+  try {
     const students = await Student.find({ active: "Active" })
       .populate("userId", { password: 0 })
       .populate("schoolId");
