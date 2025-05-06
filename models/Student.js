@@ -37,7 +37,7 @@ const studentSchema = new Schema({
   hostelFees: { type: Number },
   hostelDiscount: { type: Number },
   hostelFinalFees: { type: Number },
-
+ 
   active: { type: String, index: true, enum: ["Active", "In-Active", "Transferred", "Graduated", "Discontinued"], default: "Active" },
   remarks: { type: String },
 

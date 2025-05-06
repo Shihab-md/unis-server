@@ -190,11 +190,16 @@ const updateEmployee = async (req, res) => {
 const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteEmployee = await Employee.findById({ _id: id })
+    //  const deleteEmployee = await Employee.findById({ _id: id })
+    // await User.findByIdAndDelete({ _id: deleteEmployee.userId._id })
+    // await deleteEmployee.deleteOne()
 
-    await User.findByIdAndDelete({ _id: deleteEmployee.userId._id })
-    await deleteEmployee.deleteOne()
-    return res.status(200).json({ success: true, deleteEmployee })
+    const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
+      active: "In-Active",
+      remarks: "Deleted",
+    })
+
+    return res.status(200).json({ success: true, updateEmployee })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Employee server error" })
   }

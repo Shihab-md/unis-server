@@ -14,6 +14,10 @@ const employeeSchema = new Schema({
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   salary: { type: Number, required: true },
+
+  active: { type: String, index: true, enum: ["Active", "In-Active"], default: "Active" },
+  remarks: { type: String },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -156,11 +156,16 @@ const updateSupervisor = async (req, res) => {
 const deleteSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteSupervisor = await Supervisor.findById({ _id: id })
+    //const deleteSupervisor = await Supervisor.findById({ _id: id })
+    //await User.findByIdAndDelete({ _id: deleteSupervisor.userId._id })
+    //await deleteSupervisor.deleteOne()
 
-    await User.findByIdAndDelete({ _id: deleteSupervisor.userId._id })
-    await deleteSupervisor.deleteOne()
-    return res.status(200).json({ success: true, deleteSupervisor })
+    const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
+      active: "In-Active",
+      remarks: "Deleted",
+    })
+
+    return res.status(200).json({ success: true, updateSupervisor })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Supervisor server error" })
   }

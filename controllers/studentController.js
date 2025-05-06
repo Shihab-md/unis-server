@@ -7,7 +7,7 @@ import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import bcrypt from "bcrypt";
 
-const upload = multer({ });
+const upload = multer({});
 
 const addStudent = async (req, res) => {
 
@@ -44,7 +44,6 @@ const addStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-      //  hostelFinalFees,
 
       acYear,
 
@@ -53,35 +52,30 @@ const addStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-      //   finalFees1,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-      //  finalFees2,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-      //   finalFees3,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-      //    finalFees4,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-      //   finalFees5,
 
     } = req.body;
 
@@ -371,7 +365,6 @@ const updateStudent = async (req, res) => {
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
-      //  hostelFinalFees,
 
       acYear,
 
@@ -380,35 +373,30 @@ const updateStudent = async (req, res) => {
       refNumber1,
       fees1,
       discount1,
-      //  finalFees1,
 
       instituteId2,
       courseId2,
       refNumber2,
       fees2,
       discount2,
-      //  finalFees2,
 
       instituteId3,
       courseId3,
       refNumber3,
       fees3,
       discount3,
-      //  finalFees3,
 
       instituteId4,
       courseId4,
       refNumber4,
       fees4,
       discount4,
-      //  finalFees4,
 
       instituteId5,
       courseId5,
       refNumber5,
       fees5,
       discount5,
-      //  finalFees5,
     } = req.body;
 
     const student = await Student.findById({ _id: id });
@@ -432,7 +420,7 @@ const updateStudent = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-  //  const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
+    //  const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
 
     let updateUser;
     if (req.file) {
@@ -565,12 +553,15 @@ const updateStudent = async (req, res) => {
 const deleteStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteStudent = await Student.findById({ _id: id })
-
+    //  const deleteStudent = await Student.findById({ _id: id })
     //  await User.findByIdAndDelete({ _id: deleteStudent.userId._id })
-
     //  await deleteStudent.deleteOne()
-    return res.status(200).json({ success: true, deleteStudent })
+
+    const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
+      active: "In-Active",
+      remarks: "Deleted",
+    })
+    return res.status(200).json({ success: true, updateStudent })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Student server error" })
   }
