@@ -6,6 +6,7 @@ import Institute from "../models/Institute.js"
 import Course from "../models/Course.js"
 import Student from "../models/Student.js"
 import AcademicYear from "../models/AcademicYear.js"
+import Template from "../models/Template.js"
 import Leave from "../models/Leave.js";
 
 const getSummary = async (req, res) => {
@@ -17,6 +18,7 @@ const getSummary = async (req, res) => {
         const totalCourses = await Course.countDocuments();
         const totalStudents = await Student.countDocuments();
         const totalAcademicYears = await AcademicYear.countDocuments();
+        const totalTemplates = await Template.countDocuments();
 
         const totalDepartments = await Department.countDocuments();
 
@@ -52,6 +54,7 @@ const getSummary = async (req, res) => {
             totalStudents,
             totalAcademicYears,
             totalDepartments,
+            totalTemplates,
             totalSalary: totalSalaries[0]?.totalSalary || 0,
             leaveSummary
         })

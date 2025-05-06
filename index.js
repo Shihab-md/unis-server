@@ -10,6 +10,8 @@ import studentRouter from './routes/student.js'
 import instituteRouter from './routes/institute.js'
 import courseRouter from './routes/course.js'
 import academicYearRouter from './routes/academicYear.js'
+import templateRouter from './routes/template.js'
+
 import salaryRouter from './routes/salary.js'
 import leaveRouter from './routes/leave.js'
 import settingRouter from './routes/setting.js'
@@ -38,6 +40,8 @@ app.use('/api/student', studentRouter)
 app.use('/api/institute', instituteRouter)
 app.use('/api/course', courseRouter)
 app.use('/api/academicYear', academicYearRouter)
+app.use('/api/template', templateRouter)
+
 app.use('/api/salary', salaryRouter)
 app.use('/api/leave', leaveRouter)
 app.use('/api/setting', settingRouter)
