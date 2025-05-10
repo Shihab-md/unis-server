@@ -2,6 +2,8 @@ import multer from "multer";
 import Template from "../models/Template.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
+import { Jimp, loadFont } from "jimp";
+//import { OPEN_SANS_32_WHITE } from "jimp/fonts";
 
 const upload = multer({});
 
@@ -129,20 +131,22 @@ const createCertificate = async (req, res) => {
         .json({ success: false, error: "School not found." });
     }
 
-    //  if (studentId && studentId.size() > 0) {
     const students = await Student.find({ _id: studentId })
-      .populate("userId", { password: 0, profileImage:0 });
-    //  } else {
+      .populate("userId", { password: 0, profileImage: 0 });
 
     console.log(students);
-    //  }
-    //  const newTemplate = new Template({
-    //    code,
-    //    details,
-    //   template: req.file ? req.file.buffer.toString('base64') : "",
-    //  });
 
-    //  await newTemplate.save();
+    const font = await loadFont(Jimp.FONT_SANS_128_WHITE);
+
+    const image = await Jimp.read(Buffer.from(template.template, 'base64'));
+    
+    image.print(font, 10, 10, "Ya Allah!");
+    // image.getBase64Async(Jimp.AUTO);
+
+    template.template = image.getBase64Async(Jimp.AUTO);
+
+    await template.updateOne();
+
     return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
   } catch (error) {
     console.log(error);
