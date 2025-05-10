@@ -1,6 +1,6 @@
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
-import { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate } from '../controllers/templateController.js'
+import { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate, createCertificate } from '../controllers/templateController.js'
 
 const router = express.Router()
 
@@ -9,5 +9,7 @@ router.post('/add', authMiddleware, upload.single('file'), addTemplate)
 router.get('/:id', authMiddleware, getTemplate)
 router.put('/:id', authMiddleware, upload.single('file'), updateTemplate)
 router.delete('/:id', authMiddleware, deleteTemplate)
+
+router.post('/create', authMiddleware, upload.single('file'), createCertificate)
 
 export default router

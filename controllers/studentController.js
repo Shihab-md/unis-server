@@ -243,6 +243,8 @@ const addStudent = async (req, res) => {
 
 const getStudents = async (req, res) => {
   try {
+    console.log("getStudents called : ");
+
     const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
       .populate("userId", { password: 0 })
       .populate("schoolId");
@@ -250,7 +252,25 @@ const getStudents = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get students server error" });
+      .json({ success: false, error: "get students List server error" });
+  }
+};
+
+const getStudentsBySchool = async (req, res) => {
+
+  const { schoolId } = req.params;
+
+  console.log("getStudentsBySchool : " + schoolId);
+  try {
+    const students = await Student.find({ schoolId: schoolId }).sort({ rollNumber: 1 })
+      .populate("userId", { password: 0, profileImage: 0 });
+
+    return res.status(200).json({ success: true, students });
+
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get students bySchoolId server error" });
   }
 };
 
@@ -263,12 +283,15 @@ const getActiveStudents = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get students server error" });
+      .json({ success: false, error: "get active students server error" });
   }
 };
 
 const getStudent = async (req, res) => {
   const { id } = req.params;
+
+  console.log("getStudent : " + id);
+
   try {
     let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
@@ -283,7 +306,7 @@ const getStudent = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get students server error" });
+      .json({ success: false, error: "get student by ID server error" });
   }
 };
 
@@ -342,7 +365,7 @@ const getAcademic = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "get students server error" });
+      .json({ success: false, error: "get academic by student id server error" });
   }
 };
 
@@ -448,7 +471,7 @@ const updateStudent = async (req, res) => {
 
     let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
-      doa,
+      schoolId, doa,
       dob,
       gender,
       maritalStatus,
@@ -592,4 +615,4 @@ const deleteStudent = async (req, res) => {
   }
 }*/}
 
-export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic };
+export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic, getStudentsBySchool };

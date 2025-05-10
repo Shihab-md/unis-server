@@ -103,4 +103,29 @@ const deleteTemplate = async (req, res) => {
   }
 }
 
-export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate };
+const createCertificate = async (req, res) => {
+  try {
+    const {
+      templateId,
+      schoolId,
+      studentId,
+    } = req.body;
+
+    console.log(templateId, "  ",schoolId, "  ",studentId);
+  //  const newTemplate = new Template({
+  //    code,
+  //    details,
+   //   template: req.file ? req.file.buffer.toString('base64') : "",
+  //  });
+
+  //  await newTemplate.save();
+    return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "server error in adding template" });
+  }
+};
+
+export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate, createCertificate };
