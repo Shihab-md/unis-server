@@ -1,5 +1,7 @@
 import multer from "multer";
 import Template from "../models/Template.js";
+import School from "../models/School.js";
+import Student from "../models/Student.js";
 
 const upload = multer({});
 
@@ -111,14 +113,36 @@ const createCertificate = async (req, res) => {
       studentId,
     } = req.body;
 
-    console.log(templateId, "  ",schoolId, "  ",studentId);
-  //  const newTemplate = new Template({
-  //    code,
-  //    details,
-   //   template: req.file ? req.file.buffer.toString('base64') : "",
-  //  });
+    console.log(templateId, "  ", schoolId, "  ", studentId);
 
-  //  await newTemplate.save();
+    const template = await Template.findById({ _id: templateId });
+    if (!template) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Template not found." });
+    }
+
+    const school = await School.findById({ _id: schoolId })
+    if (!school) {
+      return res
+        .status(404)
+        .json({ success: false, error: "School not found." });
+    }
+
+    //  if (studentId && studentId.size() > 0) {
+    const students = await Student.find({ _id: studentId })
+      .populate("userId", { password: 0, profileImage:0 });
+    //  } else {
+
+    console.log(students);
+    //  }
+    //  const newTemplate = new Template({
+    //    code,
+    //    details,
+    //   template: req.file ? req.file.buffer.toString('base64') : "",
+    //  });
+
+    //  await newTemplate.save();
     return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
   } catch (error) {
     console.log(error);
