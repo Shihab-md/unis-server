@@ -2,8 +2,8 @@ import multer from "multer";
 import Template from "../models/Template.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
-import { Jimp, loadFont } from "jimp";
-//import { OPEN_SANS_32_WHITE } from "jimp/fonts";
+import { createCanvas, loadImage } from "canvas";
+import * as fs from 'fs';
 
 const upload = multer({});
 
@@ -115,7 +115,7 @@ const createCertificate = async (req, res) => {
       studentId,
     } = req.body;
 
-    console.log(templateId, "  ", schoolId, "  ", studentId);
+    //  console.log(templateId, "  ", schoolId, "  ", studentId);
 
     const template = await Template.findById({ _id: templateId });
     if (!template) {
@@ -134,18 +134,42 @@ const createCertificate = async (req, res) => {
     const students = await Student.find({ _id: studentId })
       .populate("userId", { password: 0, profileImage: 0 });
 
-    console.log(students);
+    const imageBuffer = Buffer.from(template.template, 'base64');
 
-    const font = await loadFont(Jimp.FONT_SANS_128_WHITE);
+    const image = await loadImage(imageBuffer);
+    const canvas = createCanvas(image.width, image.height);
+    const context = canvas.getContext('2d');
 
-    const image = await Jimp.read(Buffer.from(template.template, 'base64'));
-    
-    image.print(font, 10, 10, "Ya Allah!");
-    // image.getBase64Async(Jimp.AUTO);
+    students.map(student => {
 
-    template.template = image.getBase64Async(Jimp.AUTO);
+      context.drawImage(image, 0, 0);
 
-    await template.updateOne();
+      context.font = '41px Arial';
+      context.fillStyle = 'darkgreen';
+      context.textAlign = 'center';
+      context.fillText(school.nameArabic ? school.nameArabic : "", image.width / 2, 130);
+
+      context.font = '28px Nirmala UI';
+      context.fillStyle = 'red';
+      context.textAlign = 'center';
+      context.fillText(school.nameNative ? school.nameNative : "", image.width / 2, 175);
+
+      context.font = '18px Arial';
+      context.fillStyle = 'black';
+      context.textAlign = 'center';
+      context.fillText(school.address ? school.address : "", image.width / 2, 205);
+
+      context.font = '21px Arial';
+      context.fillStyle = 'blue';
+      context.textAlign = 'start';
+      context.fillText(student.userId.name ? student.userId.name : "", 275, 570);
+      context.fillText(student.rollNumber ? student.rollNumber : "", 795, 570);
+      context.fillText(student.fatherName ? student.fatherName : "", 195, 600);
+
+      const base64String = canvas.toDataURL().split(',')[1];
+
+      fs.writeFileSync("C:\\UNIS\\" + student.rollNumber + ".jpg", base64String, 'base64');
+    });
 
     return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
   } catch (error) {
