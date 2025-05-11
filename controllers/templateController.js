@@ -140,7 +140,7 @@ const createCertificate = async (req, res) => {
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
 
-    students.map(student => {
+    students.map(async student => {
 
       context.drawImage(image, 0, 0);
 
@@ -169,7 +169,28 @@ const createCertificate = async (req, res) => {
       const base64String = canvas.toDataURL().split(',')[1];
 
       fs.writeFileSync("C:\\UNIS\\" + student.rollNumber + ".jpg", base64String, 'base64');
+
+    //  await Template.findByIdAndUpdate({ _id: template._id },
+    //    {
+    //      template: base64String,
+    //      updatedAt: Date.now(),
+    //    })
     });
+
+    // To use a hexadecimal color:
+    // ctx.fillStyle = '#00FF00'; // Green
+
+    // To use an RGB color:
+    // ctx.fillStyle = 'rgb(0, 0, 255)'; // Blue
+
+    // To use an RGBA color:
+    // ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'; // Semi-transparent red
+
+    // To create a gradient fill:
+    //const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    //gradient.addColorStop(0, 'white');
+    //gradient.addColorStop(1, 'black');
+    //ctx.fillStyle = gradient;
 
     return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
   } catch (error) {
