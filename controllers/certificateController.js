@@ -56,21 +56,22 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-    registerFont('ARIAL.TTF', { family: 'Arial' });
-    registerFont('NIRMALA.TTC', { family: 'Nirmala UI' });
+    registerFont('./public/uploads/ariblk.ttf', { family: 'Arial' });
+    registerFont('./public/uploads/Nirmala.ttc', { family: 'Nirmala-UI' });
+    registerFont('./public/uploads/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
     context.drawImage(image, 0, 0);
 
     // Niswan Name in Arabic
-    context.font = 'bold 46px Arial';
+    context.font = 'bold 46px DUBAI-BOLD';
     context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
     context.textAlign = 'center';
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     context.fillText(nameArabic, image.width / 2, 190);
 
-    context.font = 'bold 34px Nirmala UI';
+    context.font = 'bold 34px Nirmala-UI';
     //context.fillStyle = 'red';
     context.fillStyle = 'rgb(161, 14, 94)';
     context.textAlign = 'center';
