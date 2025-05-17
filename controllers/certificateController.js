@@ -60,7 +60,7 @@ const addCertificate = async (req, res) => {
     //  registerFont('./uploads/Nirmala.ttc', { family: 'Nirmala-UI' });
     //  registerFont('./uploads/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
-    registerFont('comicsans.ttf', { family: 'Comic Sans' })
+   // registerFont('comicsans.ttf', { family: 'Comic Sans' })
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
