@@ -56,9 +56,9 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-    registerFont('./public/uploads/ariblk.ttf', { family: 'Arial' });
-    registerFont('./public/uploads/Nirmala.ttc', { family: 'Nirmala-UI' });
-    registerFont('./public/uploads/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
+    registerFont('./uploads/ariblk.ttf', { family: 'Arial' });
+    registerFont('./uploads/Nirmala.ttc', { family: 'Nirmala-UI' });
+    registerFont('./uploads/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
