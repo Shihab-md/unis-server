@@ -1,9 +1,5 @@
 import multer from "multer";
 import Template from "../models/Template.js";
-import School from "../models/School.js";
-import Student from "../models/Student.js";
-import { createCanvas, loadImage } from "canvas";
-import * as fs from 'fs';
 
 const upload = multer({});
 
@@ -107,98 +103,4 @@ const deleteTemplate = async (req, res) => {
   }
 }
 
-const createCertificate = async (req, res) => {
-  try {
-    const {
-      templateId,
-      schoolId,
-      studentId,
-    } = req.body;
-
-    //  console.log(templateId, "  ", schoolId, "  ", studentId);
-
-    const template = await Template.findById({ _id: templateId });
-    if (!template) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Template not found." });
-    }
-
-    const school = await School.findById({ _id: schoolId })
-    if (!school) {
-      return res
-        .status(404)
-        .json({ success: false, error: "School not found." });
-    }
-
-    const students = await Student.find({ _id: studentId })
-      .populate("userId", { password: 0, profileImage: 0 });
-
-    const imageBuffer = Buffer.from(template.template, 'base64');
-
-    const image = await loadImage(imageBuffer);
-    const canvas = createCanvas(image.width, image.height);
-    const context = canvas.getContext('2d');
-
-    students.map(async student => {
-
-      context.drawImage(image, 0, 0);
-
-      context.font = '41px Arial';
-      context.fillStyle = 'darkgreen';
-      context.textAlign = 'center';
-      context.fillText(school.nameArabic ? school.nameArabic : "", image.width / 2, 130);
-
-      context.font = '28px Nirmala UI';
-      context.fillStyle = 'red';
-      context.textAlign = 'center';
-      context.fillText(school.nameNative ? school.nameNative : "", image.width / 2, 175);
-
-      context.font = '18px Arial';
-      context.fillStyle = 'black';
-      context.textAlign = 'center';
-      context.fillText(school.address ? school.address : "", image.width / 2, 205);
-
-      context.font = '21px Arial';
-      context.fillStyle = 'blue';
-      context.textAlign = 'start';
-      context.fillText(student.userId.name ? student.userId.name : "", 275, 570);
-      context.fillText(student.rollNumber ? student.rollNumber : "", 795, 570);
-      context.fillText(student.fatherName ? student.fatherName : "", 195, 600);
-
-      const base64String = canvas.toDataURL().split(',')[1];
-
-      fs.writeFileSync("C:\\UNIS\\" + student.rollNumber + ".jpg", base64String, 'base64');
-
-    //  await Template.findByIdAndUpdate({ _id: template._id },
-    //    {
-    //      template: base64String,
-    //      updatedAt: Date.now(),
-    //    })
-    });
-
-    // To use a hexadecimal color:
-    // ctx.fillStyle = '#00FF00'; // Green
-
-    // To use an RGB color:
-    // ctx.fillStyle = 'rgb(0, 0, 255)'; // Blue
-
-    // To use an RGBA color:
-    // ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'; // Semi-transparent red
-
-    // To create a gradient fill:
-    //const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-    //gradient.addColorStop(0, 'white');
-    //gradient.addColorStop(1, 'black');
-    //ctx.fillStyle = gradient;
-
-    return res.status(200).json({ success: true, message: "Certificate Created Successfully." });
-  } catch (error) {
-    console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: "server error in adding template" });
-  }
-};
-
-export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate, createCertificate };
+export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate };

@@ -11,6 +11,7 @@ import instituteRouter from './routes/institute.js'
 import courseRouter from './routes/course.js'
 import academicYearRouter from './routes/academicYear.js'
 import templateRouter from './routes/template.js'
+import certificateRouter from './routes/certificate.js'
 
 import salaryRouter from './routes/salary.js'
 import leaveRouter from './routes/leave.js'
@@ -41,6 +42,7 @@ app.use('/api/institute', instituteRouter)
 app.use('/api/course', courseRouter)
 app.use('/api/academicYear', academicYearRouter)
 app.use('/api/template', templateRouter)
+app.use('/api/certificate', certificateRouter)
 
 app.use('/api/salary', salaryRouter)
 app.use('/api/leave', leaveRouter)
