@@ -28,7 +28,8 @@ const addTemplate = async (req, res) => {
 
 const getTemplates = async (req, res) => {
   try {
-    const templates = await Template.find();
+    const templates = await Template.find().select('code details');
+
     return res.status(200).json({ success: true, templates });
   } catch (error) {
     return res

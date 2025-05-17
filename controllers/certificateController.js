@@ -104,6 +104,8 @@ const addCertificate = async (req, res) => {
         code: certificateNum,
         templateId: templateId,
         studentId: studentId,
+        schoolId: schoolId,
+        userId: student.userId,
         certificate: base64String,
       });
 
@@ -149,9 +151,16 @@ const addCertificate = async (req, res) => {
 
 const getCertificates = async (req, res) => {
   try {
-    const certificates = await Certificate.find();
+    const certificates = await Certificate.find({}).select('code')
+      .populate({ path: 'templateId', select: 'code' })
+      .populate({ path: 'studentId', select: 'rollNumber' })
+      .populate({ path: 'userId', select: 'name' })
+      .populate({ path: 'schoolId', select: 'nameEnglish' })
+
+    console.log("Result Sent");
     return res.status(200).json({ success: true, certificates });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "get certificates server error" });
@@ -161,8 +170,13 @@ const getCertificates = async (req, res) => {
 const getCertificate = async (req, res) => {
   const { id } = req.params;
   try {
-    let certificate = await Certificate.findById({ _id: id });
+    let certificate = await Certificate.findById({ _id: id })
+      .populate({ path: 'templateId', select: 'code' })
+      .populate({ path: 'studentId', select: 'rollNumber' })
+      .populate({ path: 'userId', select: 'name' })
+      .populate({ path: 'schoolId', select: 'nameEnglish' })
 
+    console.log("Result Sent");
     return res.status(200).json({ success: true, certificate });
 
   } catch (error) {
