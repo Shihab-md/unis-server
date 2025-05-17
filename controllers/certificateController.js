@@ -35,21 +35,23 @@ const addCertificate = async (req, res) => {
 
     console.log("Student Roll Number : " + student.rollNumber);
 
-    const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-    if (cert) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Certificate Already Found." });
-    }
-
     let certificateNum;
-    await Certificate.findOne({}).sort({ _id: -1 }).limit(1).then((certificate, err) => {
-      if (certificate) {
-        certificateNum = Number(certificate.code) + 1;
-      } else {
-        certificateNum = Number(new Date().getFullYear() + "00000") + 1;
+    if (!template.code.includes("Makthab")) {
+      const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
+      if (cert) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Certificate Already Found." });
       }
-    })
+
+      await Certificate.findOne({}).sort({ _id: -1 }).limit(1).then((certificate, err) => {
+        if (certificate) {
+          certificateNum = Number(certificate.code) + 1;
+        } else {
+          certificateNum = Number(new Date().getFullYear() + "00000") + 1;
+        }
+      })
+    }
 
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
@@ -79,30 +81,51 @@ const addCertificate = async (req, res) => {
     context.font = 'bold 25px Arial';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
+
     let name = student.userId.name ? student.userId.name : "";
-    context.fillText(name.toUpperCase(), 370, 790);
-
     let rollNumber = student.rollNumber ? student.rollNumber : "";
-    context.fillText(rollNumber.toUpperCase(), 1150, 790);
-
     let fatherName = student.fatherName ? student.fatherName : student.motherName ? student.motherName : student.guardianName ? student.guardianName : "";
-    context.fillText(fatherName.toUpperCase(), 250, 840);
+    let dat = (new Date()).toLocaleDateString();
+    let fileName = template.code + "_" + rollNumber;
+    let base64String;
 
-    context.fillText(certificateNum, 260, 1470);
-    context.fillText((new Date()).toLocaleDateString(), 260, 1510);
+    // For Muballiga and Muallama (only saved to DB)
+    if (!template.code.includes("Makthab")) {
 
-    let base64String = canvas.toDataURL().split(',')[1];
+      context.fillText(name.toUpperCase(), 370, 790);
+      context.fillText(rollNumber.toUpperCase(), 1150, 790);
+      context.fillText(fatherName.toUpperCase(), 250, 840);
+      context.fillText(certificateNum, 260, 1475);
+      context.fillText(dat, 260, 1510);
 
-    console.log("certificateNum :  " + certificateNum);
-    const newCertificate = new Certificate({
-      code: certificateNum,
-      templateId: templateId,
-      studentId: studentId,
-      certificate: base64String,
-    });
+      base64String = canvas.toDataURL().split(',')[1];
 
-    await newCertificate.save();
-    console.log("Saved : " + certificateNum);
+      const newCertificate = new Certificate({
+        code: certificateNum,
+        templateId: templateId,
+        studentId: studentId,
+        certificate: base64String,
+      });
+
+      await newCertificate.save();
+      console.log("Saved : " + certificateNum + ", File Name : " + fileName);
+
+    } else {
+
+      context.fillText(name.toUpperCase(), 395, 832);
+      context.fillText(rollNumber.toUpperCase(), 1100, 832);
+      context.fillText(fatherName.toUpperCase(), 322, 886);
+      // context.fillText(certificateNum, 260, 1475);
+      context.fillText(dat, 260, 1472);
+
+      base64String = canvas.toDataURL().split(',')[1];
+
+      console.log("Created File Name : " + fileName);
+    }
+
+
+
+
     // To use a hexadecimal color:
     // ctx.fillStyle = '#00FF00'; // Green
 
@@ -115,7 +138,7 @@ const addCertificate = async (req, res) => {
     //gradient.addColorStop(1, 'black');
     //ctx.fillStyle = gradient;
 
-    return res.status(200).json({ success: true, message: "Certificate Created Successfully.", image: newCertificate.certificate, rollNumber: rollNumber });
+    return res.status(200).json({ success: true, message: "Certificate Created Successfully.", image: base64String, fileName: fileName });
   } catch (error) {
     console.log(error);
     return res
