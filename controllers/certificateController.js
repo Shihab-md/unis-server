@@ -67,25 +67,25 @@ const addCertificate = async (req, res) => {
     context.drawImage(image, 0, 0);
 
     // Niswan Name in Arabic
-  //  context.font = 'bold 46px DUBAI-BOLD';
+    context.font = 'bold 46px DUBAI-BOLD';
     context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
     context.textAlign = 'center';
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     context.fillText(nameArabic, image.width / 2, 190);
 
-  //  context.font = 'bold 34px Nirmala-UI';
+    context.font = 'bold 34px Nirmala-UI';
     //context.fillStyle = 'red';
     context.fillStyle = 'rgb(161, 14, 94)';
     context.textAlign = 'center';
     let nameNativeOrEnglish = school.nameNative ? school.nameNative : school.nameEnglish ? school.nameEnglish.toUpperCase() : "";
     context.fillText(nameNativeOrEnglish, image.width / 2, 245);
 
-  //  context.font = 'bold 22px Arial';
+    context.font = 'bold 22px Arial';
     context.fillStyle = 'rgb(4, 25, 93)';
     context.textAlign = 'center';
     context.fillText(school.address ? school.address : "", image.width / 2, 290);
 
-  //  context.font = 'bold 25px Arial';
+    context.font = 'bold 25px Arial';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
 
