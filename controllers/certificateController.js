@@ -86,7 +86,7 @@ const addCertificate = async (req, res) => {
     let rollNumber = student.rollNumber ? student.rollNumber : "";
     let fatherName = student.fatherName ? student.fatherName : student.motherName ? student.motherName : student.guardianName ? student.guardianName : "";
     let dat = (new Date()).toLocaleDateString();
-    let fileName = template.code + "_" + rollNumber;
+    let fileName = template.code + "_" + rollNumber + "_" + name;
     let base64String;
 
     // For Muballiga and Muallama (only saved to DB)
@@ -124,9 +124,6 @@ const addCertificate = async (req, res) => {
 
       console.log("Created File Name : " + fileName);
     }
-
-
-
 
     // To use a hexadecimal color:
     // ctx.fillStyle = '#00FF00'; // Green
