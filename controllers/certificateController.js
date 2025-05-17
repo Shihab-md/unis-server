@@ -3,7 +3,7 @@ import Certificate from "../models/Certificate.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
-import { createCanvas, loadImage } from "canvas";
+import { createCanvas, loadImage, registerFont } from "canvas";
 import * as fs from 'fs';
 
 const upload = multer({});
@@ -55,6 +55,10 @@ const addCertificate = async (req, res) => {
 
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
+
+    registerFont('ARIAL.TTF', { family: 'Arial' });
+    registerFont('NIRMALA.TTC', { family: 'Nirmala UI' });
+
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
     context.drawImage(image, 0, 0);
