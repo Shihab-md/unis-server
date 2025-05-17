@@ -56,9 +56,9 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-    registerFont('ariblk.ttf', { family: 'Arial' });
-    registerFont('Nirmala.ttc', { family: 'Nirmala-UI' });
-    registerFont('DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
+    registerFont('https://www.unis.org.in/ariblk.ttf', { family: 'Arial' });
+    registerFont('https://www.unis.org.in/Nirmala.ttc', { family: 'Nirmala-UI' });
+    registerFont('https://www.unis.org.in/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
    // registerFont('comicsans.ttf', { family: 'Comic Sans' })
 
