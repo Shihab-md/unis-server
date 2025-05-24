@@ -68,7 +68,7 @@ const addCertificate = async (req, res) => {
       let arrayBuffer = await response.arrayBuffer();
       let fontBuffer = Buffer.from(arrayBuffer);
 
-      let tempFontPath = path.join(process.pwc(), '/tmp', 'Nirmalab.ttc');
+      let tempFontPath = path.join('/tmp', 'Nirmalab.ttc');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
         family: "Nirmala"
