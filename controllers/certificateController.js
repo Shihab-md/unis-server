@@ -143,7 +143,7 @@ const addCertificate = async (req, res) => {
     context.textAlign = 'center';
     context.fillText(school.address ? school.address : "", image.width / 2, 290);
 
-    context.font = '25px Arial-Bold';
+    context.font = 'bold 25px Arial-Bold';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
 
