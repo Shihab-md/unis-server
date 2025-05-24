@@ -3,6 +3,7 @@ import Certificate from "../models/Certificate.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
+import Academic from "../models/Academic.js";
 import { createCanvas, loadImage, registerFont } from "canvas";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -39,14 +40,42 @@ const addCertificate = async (req, res) => {
 
     console.log("Student Roll Number : " + student.rollNumber);
 
+    const academicStart = await Academic.findOne({
+      $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }],
+      $and: [{
+        'studentId': studentId
+      }]
+    }).sort({ createdAt: 1 }).limit(1)
+      .populate({ path: 'acYear', select: 'acYear' });
+
+    if (!academicStart) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Course not found for the Student." });
+    }
+
+    let startYear = academicStart.acYear.acYear.substr(0, 4);
+    console.log("Academic Start Year : " + startYear);
+
+    const academicEnd = await Academic.findOne({
+      $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }],
+      $and: [{
+        'studentId': studentId
+      }]
+    }).sort({ createdAt: -1 }).limit(1)
+      .populate({ path: 'acYear', select: 'acYear' });
+
+    let endYear = academicEnd.acYear.acYear.substr(5, 4);
+    console.log("Academic End Year : " + endYear);
+
     let certificateNum;
     if (!template.courseId.name.includes("Makthab")) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-      if (cert) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Certificate Already Found." });
-      }
+    //  if (cert) {
+    //    return res
+    //      .status(404)
+    //      .json({ success: false, error: "Certificate Already Found." });
+    //  }
 
       await Certificate.findOne({}).sort({ _id: -1 }).limit(1).then((certificate, err) => {
         if (certificate) {
@@ -60,9 +89,9 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-
     //-----------------------------
     try {
+
       let response = await fetch('https://www.unis.org.in/Nirmalab.ttc');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -165,6 +194,8 @@ const addCertificate = async (req, res) => {
       context.fillText(name.toUpperCase(), 370, 790);
       context.fillText(rollNumber.toUpperCase(), 1150, 790);
       context.fillText(fatherName.toUpperCase(), 250, 840);
+      context.fillText(startYear, 500, 890);
+      context.fillText(endYear, 700, 890);
       context.fillText(certificateNum, 260, 1475);
       context.fillText(dat, 260, 1510);
 
