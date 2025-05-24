@@ -67,7 +67,6 @@ const addCertificate = async (req, res) => {
     let arrayBuffer = await response.arrayBuffer();
     let fontBuffer = Buffer.from(arrayBuffer);
 
-    console.log('OK.....')
     let tempFontPath = path.join('', 'Nirmala.ttc');
     fs.writeFileSync(tempFontPath, fontBuffer);
     registerFont(tempFontPath, {
@@ -81,14 +80,25 @@ const addCertificate = async (req, res) => {
     arrayBuffer = await response.arrayBuffer();
     fontBuffer = Buffer.from(arrayBuffer);
 
-    console.log('OK111.....')
     tempFontPath = path.join('', 'DUBAI-BOLD.TTF');
     fs.writeFileSync(tempFontPath, fontBuffer);
     registerFont(tempFontPath, {
       family: "DUBAI-BOLD"
     });
 
-    console.log('Good111.....')
+    response = await fetch('https://www.unis.org.in/ariblk.ttf');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    arrayBuffer = await response.arrayBuffer();
+    fontBuffer = Buffer.from(arrayBuffer);
+
+    tempFontPath = path.join('', 'Arial.ttf');
+    fs.writeFileSync(tempFontPath, fontBuffer);
+    registerFont(tempFontPath, {
+      family: "Arial"
+    });
+
     //------------------------------------
 
     const canvas = createCanvas(image.width, image.height);
