@@ -138,7 +138,7 @@ const addCertificate = async (req, res) => {
     let nameNativeOrEnglish = school.nameNative ? school.nameNative : school.nameEnglish ? school.nameEnglish.toUpperCase() : "";
     context.fillText(nameNativeOrEnglish, image.width / 2, 245);
 
-    context.font = '22px Arial';
+    context.font = 'bold 22px Arial';
     context.fillStyle = 'rgb(4, 25, 93)';
     context.textAlign = 'center';
     context.fillText(school.address ? school.address : "", image.width / 2, 290);
@@ -150,7 +150,7 @@ const addCertificate = async (req, res) => {
     let name = student.userId.name ? student.userId.name : "";
     let rollNumber = student.rollNumber ? student.rollNumber : "";
     let fatherName = student.fatherName ? student.fatherName : student.motherName ? student.motherName : student.guardianName ? student.guardianName : "";
-    
+
     context.font = '25px Arial';
     let dat = (new Date()).toLocaleDateString();
     let fileName = template.code + "_" + rollNumber + "_" + name;
@@ -180,6 +180,7 @@ const addCertificate = async (req, res) => {
       console.log("Saved : " + certificateNum + ", File Name : " + fileName);
 
     } else {
+      // For Other than Muballiga and Muallama (NOT saved to DB)
 
       context.fillText(name.toUpperCase(), 395, 832);
       context.fillText(rollNumber.toUpperCase(), 1100, 832);
