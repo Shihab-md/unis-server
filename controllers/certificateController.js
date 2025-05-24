@@ -68,7 +68,7 @@ const addCertificate = async (req, res) => {
       let arrayBuffer = await response.arrayBuffer();
       let fontBuffer = Buffer.from(arrayBuffer);
 
-      let tempFontPath = path.join('/tmp', 'Nirmalab.ttc');
+      let tempFontPath = path.join(process.pwc(), '/tmp', 'Nirmalab.ttc');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
         family: "Nirmala"
@@ -171,6 +171,7 @@ const addCertificate = async (req, res) => {
       const newCertificate = new Certificate({
         code: certificateNum,
         templateId: templateId,
+        courseId: templateId.courseId._id,
         studentId: studentId,
         schoolId: schoolId,
         userId: student.userId,
@@ -219,6 +220,7 @@ const getCertificates = async (req, res) => {
   try {
     const certificates = await Certificate.find({}).select('code')
       .populate({ path: 'templateId', select: 'code' })
+      .populate({ path: 'courseId', select: 'name' })
       .populate({ path: 'studentId', select: 'rollNumber' })
       .populate({ path: 'userId', select: 'name' })
       .populate({ path: 'schoolId', select: 'code nameEnglish' })
@@ -238,6 +240,7 @@ const getCertificate = async (req, res) => {
   try {
     let certificate = await Certificate.findById({ _id: id })
       .populate({ path: 'templateId', select: 'code' })
+      .populate({ path: 'courseId', select: 'name' })
       .populate({ path: 'studentId', select: 'rollNumber' })
       .populate({ path: 'userId', select: 'name' })
       .populate({ path: 'schoolId', select: 'nameEnglish' })

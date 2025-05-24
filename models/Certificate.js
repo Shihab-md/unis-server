@@ -4,6 +4,7 @@ import { Schema } from "mongoose";
 const certificateSchema = new Schema({
   code: { type: String, required: true, index: true, unique: true },
   templateId: { type: Schema.Types.ObjectId, ref: "Template", required: true },
+  courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true },
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
