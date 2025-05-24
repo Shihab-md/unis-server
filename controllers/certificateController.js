@@ -86,7 +86,7 @@ const addCertificate = async (req, res) => {
         family: "DUBAI-BOLD"
       });
 
-      response = await fetch('https://www.unis.org.in/ariblk.ttf');
+      response = await fetch('https://www.unis.org.in/arial.ttf');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -98,6 +98,20 @@ const addCertificate = async (req, res) => {
       registerFont(tempFontPath, {
         family: "Arial"
       });
+
+      response = await fetch('https://www.unis.org.in/arialbd.ttf');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      arrayBuffer = await response.arrayBuffer();
+      fontBuffer = Buffer.from(arrayBuffer);
+
+      tempFontPath = path.join('/tmp', 'Arial-Bold.ttf');
+      fs.writeFileSync(tempFontPath, fontBuffer);
+      registerFont(tempFontPath, {
+        family: "Arial-Bold"
+      });
+
     } catch (error) {
       console.log(error);
       return res
@@ -129,13 +143,15 @@ const addCertificate = async (req, res) => {
     context.textAlign = 'center';
     context.fillText(school.address ? school.address : "", image.width / 2, 290);
 
-    context.font = '25px Arial';
+    context.font = '25px Arial-Bold';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
 
     let name = student.userId.name ? student.userId.name : "";
     let rollNumber = student.rollNumber ? student.rollNumber : "";
     let fatherName = student.fatherName ? student.fatherName : student.motherName ? student.motherName : student.guardianName ? student.guardianName : "";
+    
+    context.font = '25px Arial';
     let dat = (new Date()).toLocaleDateString();
     let fileName = template.code + "_" + rollNumber + "_" + name;
     let base64String;
