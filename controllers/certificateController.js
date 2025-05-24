@@ -219,8 +219,8 @@ const addCertificate = async (req, res) => {
 
       context.fillText(name.toUpperCase(), 395, 832);
       context.fillText(rollNumber.toUpperCase(), 1100, 832);
-      context.fillText(fatherName.toUpperCase(), 322, 886);
-      // context.fillText(certificateNum, 260, 1475);
+      context.fillText(fatherName.toUpperCase(), 335, 886);
+      context.fillText(new Date().getFullYear(), 640, 1000);
       context.fillText(dat, 260, 1472);
 
       base64String = canvas.toDataURL().split(',')[1];
