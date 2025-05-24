@@ -60,17 +60,17 @@ const addCertificate = async (req, res) => {
 
     //-----------------------------
     try {
-      let response = await fetch('https://www.unis.org.in/Nirmala.ttc');
+      let response = await fetch('https://www.unis.org.in/Nirmalab.ttc');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       let arrayBuffer = await response.arrayBuffer();
       let fontBuffer = Buffer.from(arrayBuffer);
 
-      let tempFontPath = path.join('/tmp', 'Nirmala.ttc');
+      let tempFontPath = path.join('/tmp', 'Nirmalab.ttc');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
-        family: "Nirmala-UI"
+        family: "Nirmala"
       });
 
       response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
@@ -131,7 +131,7 @@ const addCertificate = async (req, res) => {
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     context.fillText(nameArabic, image.width / 2, 190);
 
-    context.font = 'bold 34px Nirmala-UI';
+    context.font = 'bold 34px Nirmala';
     //context.fillStyle = 'red';
     context.fillStyle = 'rgb(161, 14, 94)';
     context.textAlign = 'center';
