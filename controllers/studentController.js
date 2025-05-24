@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
+import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import bcrypt from "bcrypt";
@@ -271,6 +272,57 @@ const getStudentsBySchool = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "get students bySchoolId server error" });
+  }
+};
+
+const getStudentsBySchoolAndTemplate = async (req, res) => {
+
+  const { schoolId, templateId } = req.params;
+
+  console.log("getStudentsBySchoolAndTemplate : " + schoolId + " ,  " + templateId);
+
+  try {
+
+    const template = await Template.findById({ _id: templateId })
+      .populate({ path: 'courseId', select: '_id name' });
+
+    if (!template) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Template not found." });
+    }
+    console.log("OK");
+
+    const academics = await Academic.find({
+      $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }]
+    });
+
+    if (Object.keys(academics).length <= 0) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic not found for the Niswan and Course." });
+    }
+    console.log("OK OK");
+
+    let studentIds = [];
+    for (const academic of academics) {
+      studentIds.push(String(academic.studentId));
+    }
+
+    console.log(studentIds.length);
+
+    let students
+    if (studentIds.length > 0) {
+      students = await Student.find({ _id: studentIds, schoolId: schoolId }).sort({ rollNumber: 1 })
+        .populate("userId", { password: 0, profileImage: 0 });
+    }
+
+    return res.status(200).json({ success: true, students });
+
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get students bySchoolIdAndTemplate server error" });
   }
 };
 
@@ -615,4 +667,4 @@ const deleteStudent = async (req, res) => {
   }
 }*/}
 
-export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic, getStudentsBySchool };
+export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate };

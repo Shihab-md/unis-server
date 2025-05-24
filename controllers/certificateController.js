@@ -71,11 +71,11 @@ const addCertificate = async (req, res) => {
     let certificateNum;
     if (!template.courseId.name.includes("Makthab")) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-    //  if (cert) {
-    //    return res
-    //      .status(404)
-    //      .json({ success: false, error: "Certificate Already Found." });
-    //  }
+      if (cert) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Certificate Already Found." });
+      }
 
       await Certificate.findOne({}).sort({ _id: -1 }).limit(1).then((certificate, err) => {
         if (certificate) {
