@@ -124,12 +124,12 @@ const addCertificate = async (req, res) => {
     let nameNativeOrEnglish = school.nameNative ? school.nameNative : school.nameEnglish ? school.nameEnglish.toUpperCase() : "";
     context.fillText(nameNativeOrEnglish, image.width / 2, 245);
 
-    context.font = 'bold 22px Arial';
+    context.font = '22px Arial';
     context.fillStyle = 'rgb(4, 25, 93)';
     context.textAlign = 'center';
     context.fillText(school.address ? school.address : "", image.width / 2, 290);
 
-    context.font = 'bold 25px Arial';
+    context.font = '25px Arial';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
 
