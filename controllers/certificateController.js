@@ -18,7 +18,9 @@ const addCertificate = async (req, res) => {
     } = req.body;
 
     const template = await Template.findById({ _id: templateId })
-      .populate({ path: 'courseId', select: 'name' });
+      .populate({ path: 'courseId', select: '_id name' });
+
+    console.log("CourseId - " + template.courseId._id);
     if (!template) {
       return res
         .status(404)
@@ -171,7 +173,7 @@ const addCertificate = async (req, res) => {
       const newCertificate = new Certificate({
         code: certificateNum,
         templateId: templateId,
-        courseId: templateId.courseId._id,
+        courseId: template.courseId._id,
         studentId: studentId,
         schoolId: schoolId,
         userId: student.userId,
