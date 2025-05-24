@@ -6,12 +6,12 @@ const upload = multer({});
 const addTemplate = async (req, res) => {
   try {
     const {
-      code,
+      courseId,
       details,
     } = req.body;
 
     const newTemplate = new Template({
-      code,
+      courseId,
       details,
       template: req.file ? req.file.buffer.toString('base64') : "",
     });
@@ -28,7 +28,8 @@ const addTemplate = async (req, res) => {
 
 const getTemplates = async (req, res) => {
   try {
-    const templates = await Template.find().select('code details');
+    const templates = await Template.find().select('details')
+      .populate({ path: 'courseId', select: 'name' });
 
     return res.status(200).json({ success: true, templates });
   } catch (error) {
@@ -41,7 +42,8 @@ const getTemplates = async (req, res) => {
 const getTemplate = async (req, res) => {
   const { id } = req.params;
   try {
-    let template = await Template.findById({ _id: id });
+    let template = await Template.findById({ _id: id })
+      .populate({ path: 'courseId', select: 'name' });
 
     return res.status(200).json({ success: true, template });
 

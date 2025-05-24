@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const templateSchema = new Schema({
-  code: { type: String, required: true, index: true, unique: true },
+  courseId: { type: Schema.Types.ObjectId, ref: "Course", index: true, required: true, unique: true  },
   details: { type: String, required: true },
   template: { type: String, required: true },
 

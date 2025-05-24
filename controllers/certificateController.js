@@ -17,7 +17,8 @@ const addCertificate = async (req, res) => {
       studentId,
     } = req.body;
 
-    const template = await Template.findById({ _id: templateId });
+    const template = await Template.findById({ _id: templateId })
+      .populate({ path: 'courseId', select: 'name' });
     if (!template) {
       return res
         .status(404)
@@ -37,7 +38,7 @@ const addCertificate = async (req, res) => {
     console.log("Student Roll Number : " + student.rollNumber);
 
     let certificateNum;
-    if (!template.code.includes("Makthab")) {
+    if (!template.courseId.name.includes("Makthab")) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
       if (cert) {
         return res
@@ -125,7 +126,7 @@ const addCertificate = async (req, res) => {
     context.drawImage(image, 0, 0);
 
     // Niswan Name in Arabic
-    context.font = 'bold 46px DUBAI-BOLD'; // Sans Bold
+    context.font = '46px DUBAI-BOLD'; // Sans Bold
     context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
     context.textAlign = 'center';
     let nameArabic = school.nameArabic ? school.nameArabic : "";
@@ -153,11 +154,11 @@ const addCertificate = async (req, res) => {
 
     context.font = '25px Arial';
     let dat = (new Date()).toLocaleDateString();
-    let fileName = template.code + "_" + rollNumber + "_" + name;
+    let fileName = template.courseId.name + "_" + rollNumber + "_" + name;
     let base64String;
 
     // For Muballiga and Muallama (only saved to DB)
-    if (!template.code.includes("Makthab")) {
+    if (!template.courseId.name.includes("Makthab")) {
 
       context.fillText(name.toUpperCase(), 370, 790);
       context.fillText(rollNumber.toUpperCase(), 1150, 790);
