@@ -4,7 +4,8 @@ import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
 import { createCanvas, loadImage, registerFont } from "canvas";
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 const upload = multer({});
 
@@ -56,18 +57,32 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-    registerFont('https://www.unis.org.in/ariblk.ttf', { family: 'Arial' });
-    registerFont('https://www.unis.org.in/Nirmala.ttc', { family: 'Nirmala-UI' });
-    registerFont('https://www.unis.org.in/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
+    //  registerFont('/ariblk.ttf', { family: 'Arial' });
+    //  registerFont('/Nirmala.ttc', { family: 'Nirmala-UI' });
+    //  registerFont('/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
-   // registerFont('comicsans.ttf', { family: 'Comic Sans' })
+    // registerFont('comicsans.ttf', { family: 'Comic Sans' })
+// --------
+  //  const fontBuffer = Buffer.from("https://www.unis.org.in/Nirmala.ttc", 'binary');
+  //  const fontFilePath = path.join(process.cwd(), 'public/uploads', `Nirmala1.ttc`);
+
+   // console.log("fontFilePath : "+fontFilePath)
+  //  fs.writeFile(fontFilePath, JSON.stringify(fontBuffer));
+  //  registerFont(path.resolve(fontFilePath), { family: 'Nirmala' });
+
+    let myFont = new FontFace(
+      "Pangolin",
+      "url(https://fonts.gstatic.com/s/pangolin/v6/cY9GfjGcW0FPpi-tWMfN79z4i6BH.woff2)"
+    );
+
+    myFont.load();
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
     context.drawImage(image, 0, 0);
 
     // Niswan Name in Arabic
-    context.font = 'bold 46px DUBAI-BOLD';
+    context.font = 'bold 46px Pangolin';
     context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
     context.textAlign = 'center';
     let nameArabic = school.nameArabic ? school.nameArabic : "";
@@ -159,7 +174,7 @@ const getCertificates = async (req, res) => {
       .populate({ path: 'templateId', select: 'code' })
       .populate({ path: 'studentId', select: 'rollNumber' })
       .populate({ path: 'userId', select: 'name' })
-      .populate({ path: 'schoolId', select: 'nameEnglish' })
+      .populate({ path: 'schoolId', select: 'code nameEnglish' })
 
     console.log("Result Sent");
     return res.status(200).json({ success: true, certificates });
