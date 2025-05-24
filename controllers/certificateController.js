@@ -59,46 +59,51 @@ const addCertificate = async (req, res) => {
 
 
     //-----------------------------
-   
-    let response = await fetch('https://www.unis.org.in/Nirmala.ttc');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      let response = await fetch('https://www.unis.org.in/Nirmala.ttc');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      let arrayBuffer = await response.arrayBuffer();
+      let fontBuffer = Buffer.from(arrayBuffer);
+
+      let tempFontPath = path.join('', 'Nirmala.ttc');
+      fs.writeFileSync(tempFontPath, fontBuffer);
+      registerFont(tempFontPath, {
+        family: "Nirmala-UI"
+      });
+
+      response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      arrayBuffer = await response.arrayBuffer();
+      fontBuffer = Buffer.from(arrayBuffer);
+
+      tempFontPath = path.join('', 'DUBAI-BOLD.TTF');
+      fs.writeFileSync(tempFontPath, fontBuffer);
+      registerFont(tempFontPath, {
+        family: "DUBAI-BOLD"
+      });
+
+      response = await fetch('https://www.unis.org.in/ariblk.ttf');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      arrayBuffer = await response.arrayBuffer();
+      fontBuffer = Buffer.from(arrayBuffer);
+
+      tempFontPath = path.join('', 'Arial.ttf');
+      fs.writeFileSync(tempFontPath, fontBuffer);
+      registerFont(tempFontPath, {
+        family: "Arial"
+      });
+    } catch (error) {
+      console.log(error);
+      return res
+        .status(500)
+        .json({ success: false, error: "Font setting Error." + error.toString() });
     }
-    let arrayBuffer = await response.arrayBuffer();
-    let fontBuffer = Buffer.from(arrayBuffer);
-
-    let tempFontPath = path.join('', 'Nirmala.ttc');
-    fs.writeFileSync(tempFontPath, fontBuffer);
-    registerFont(tempFontPath, {
-      family: "Nirmala-UI"
-    });
-
-    response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    arrayBuffer = await response.arrayBuffer();
-    fontBuffer = Buffer.from(arrayBuffer);
-
-    tempFontPath = path.join('', 'DUBAI-BOLD.TTF');
-    fs.writeFileSync(tempFontPath, fontBuffer);
-    registerFont(tempFontPath, {
-      family: "DUBAI-BOLD"
-    });
-
-    response = await fetch('https://www.unis.org.in/ariblk.ttf');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    arrayBuffer = await response.arrayBuffer();
-    fontBuffer = Buffer.from(arrayBuffer);
-
-    tempFontPath = path.join('', 'Arial.ttf');
-    fs.writeFileSync(tempFontPath, fontBuffer);
-    registerFont(tempFontPath, {
-      family: "Arial"
-    });
-
     //------------------------------------
 
     const canvas = createCanvas(image.width, image.height);
