@@ -67,7 +67,7 @@ const addCertificate = async (req, res) => {
       let arrayBuffer = await response.arrayBuffer();
       let fontBuffer = Buffer.from(arrayBuffer);
 
-      let tempFontPath = path.join('', 'Nirmala.ttc');
+      let tempFontPath = path.join('/tmp', 'Nirmala.ttc');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
         family: "Nirmala-UI"
@@ -80,7 +80,7 @@ const addCertificate = async (req, res) => {
       arrayBuffer = await response.arrayBuffer();
       fontBuffer = Buffer.from(arrayBuffer);
 
-      tempFontPath = path.join('', 'DUBAI-BOLD.TTF');
+      tempFontPath = path.join('/tmp', 'DUBAI-BOLD.TTF');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
         family: "DUBAI-BOLD"
@@ -93,7 +93,7 @@ const addCertificate = async (req, res) => {
       arrayBuffer = await response.arrayBuffer();
       fontBuffer = Buffer.from(arrayBuffer);
 
-      tempFontPath = path.join('', 'Arial.ttf');
+      tempFontPath = path.join('/tmp', 'Arial.ttf');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
         family: "Arial"
