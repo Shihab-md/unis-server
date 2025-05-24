@@ -4,7 +4,7 @@ import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
 import { createCanvas, loadImage, registerFont } from "canvas";
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
 import * as path from 'path';
 
 const upload = multer({});
@@ -57,32 +57,46 @@ const addCertificate = async (req, res) => {
     const imageBuffer = Buffer.from(template.template, 'base64');
     const image = await loadImage(imageBuffer);
 
-    //  registerFont('/ariblk.ttf', { family: 'Arial' });
-    //  registerFont('/Nirmala.ttc', { family: 'Nirmala-UI' });
-    //  registerFont('/DUBAI-BOLD.TTF', { family: 'DUBAI-BOLD' });
 
-    // registerFont('comicsans.ttf', { family: 'Comic Sans' })
-// --------
-  //  const fontBuffer = Buffer.from("https://www.unis.org.in/Nirmala.ttc", 'binary');
-  //  const fontFilePath = path.join(process.cwd(), 'public/uploads', `Nirmala1.ttc`);
+    //-----------------------------
+   
+    let response = await fetch('https://www.unis.org.in/Nirmala.ttc');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    let arrayBuffer = await response.arrayBuffer();
+    let fontBuffer = Buffer.from(arrayBuffer);
 
-   // console.log("fontFilePath : "+fontFilePath)
-  //  fs.writeFile(fontFilePath, JSON.stringify(fontBuffer));
-  //  registerFont(path.resolve(fontFilePath), { family: 'Nirmala' });
+    console.log('OK.....')
+    let tempFontPath = path.join('', 'Nirmala.ttc');
+    fs.writeFileSync(tempFontPath, fontBuffer);
+    registerFont(tempFontPath, {
+      family: "Nirmala-UI"
+    });
 
-    let myFont = new FontFace(
-      "Pangolin",
-      "url(https://fonts.gstatic.com/s/pangolin/v6/cY9GfjGcW0FPpi-tWMfN79z4i6BH.woff2)"
-    );
+    response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    arrayBuffer = await response.arrayBuffer();
+    fontBuffer = Buffer.from(arrayBuffer);
 
-    myFont.load();
+    console.log('OK111.....')
+    tempFontPath = path.join('', 'DUBAI-BOLD.TTF');
+    fs.writeFileSync(tempFontPath, fontBuffer);
+    registerFont(tempFontPath, {
+      family: "DUBAI-BOLD"
+    });
+
+    console.log('Good111.....')
+    //------------------------------------
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
     context.drawImage(image, 0, 0);
 
     // Niswan Name in Arabic
-    context.font = 'bold 46px Pangolin';
+    context.font = 'bold 46px DUBAI-BOLD'; // Sans Bold
     context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
     context.textAlign = 'center';
     let nameArabic = school.nameArabic ? school.nameArabic : "";
