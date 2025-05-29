@@ -14,7 +14,7 @@ const login = async (req, res) => {
     if (!isMatch) {
       return res.status(404).json({ success: false, error: "Wrong Password" });
     }
-
+ 
     const token = jwt.sign(
       { _id: user._id, role: user.role },
       process.env.JWT_SECRET,
