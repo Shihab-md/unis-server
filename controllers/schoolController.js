@@ -1,8 +1,10 @@
 import multer from "multer";
+import jwt from "jsonwebtoken";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
+import Employee from "../models/Employee.js";
 
-const upload = multer({ });
+const upload = multer({});
 
 const addSchool = async (req, res) => {
   try {
@@ -96,7 +98,36 @@ const addSchool = async (req, res) => {
 
 const getSchools = async (req, res) => {
   try {
-    const schools = await School.find().sort({ code: 1 });
+    //  const userRole = req.headers['x-u-r'];
+    //  const userId = req.headers['x-u-i'];
+
+    const usertoken = req.headers.authorization;
+    const token = usertoken.split(' ');
+    const decoded = jwt.verify(token[1], process.env.JWT_SECRET);
+    const userId = decoded._id;
+    const userRole = decoded.role;
+
+    let schools = [];
+    if (userRole == 'superadmin' || userRole == 'hquser') {
+      schools = await School.find().sort({ code: 1 });
+
+    } else if (userRole == 'supervisor') {
+
+      let supervisor = await Supervisor.findOne({ userId: userId })
+      if (supervisor && supervisor.supervisorId) {
+        schools = await School.find({ supervisorId: supervisor.supervisorId }).sort({ code: 1 });
+      }
+
+    } else if (userRole == 'admin') {
+
+      let employee = await Employee.findOne({ userId: userId })
+
+    //  console.log(userId + " - " + employee.schoolId)
+      if (employee && employee.schoolId) {
+        schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 });
+      }
+    }
+
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     return res
