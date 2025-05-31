@@ -107,6 +107,7 @@ const getSchools = async (req, res) => {
     const userId = decoded._id;
     const userRole = decoded.role;
 
+    console.log(userId + " , " + userRole)
     let schools = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
       schools = await School.find().sort({ code: 1 })
@@ -121,8 +122,9 @@ const getSchools = async (req, res) => {
 
     } else if (userRole == 'supervisor') {
 
-      let supervisor = await Supervisor.findOne({ userId: userId })
+      const supervisor = await Supervisor.findOne({ userId: userId });
       if (supervisor && supervisor._id) {
+       // console.log(supervisor._id.toString())
         schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
           .populate("supervisorId")
           .populate({
@@ -132,6 +134,8 @@ const getSchools = async (req, res) => {
               select: 'name'
             },
           });
+
+      //    console.log(schools)
       }
 
     } else if (userRole == 'admin') {
