@@ -51,7 +51,7 @@ const addSchool = async (req, res) => {
         .json({ success: false, error: "Niswan Name already exists" });
     }*/}
 
-    const supervisorById = await Supervisor.findOne({ supervisorId });
+    const supervisorById = await Supervisor.findOne({ _id: supervisorId });
     if (supervisorById == null) {
       return res
         .status(404)
@@ -109,27 +109,52 @@ const getSchools = async (req, res) => {
 
     let schools = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
-      schools = await School.find().sort({ code: 1 });
+      schools = await School.find().sort({ code: 1 })
+        .populate("supervisorId")
+        .populate({
+          path: 'supervisorId',
+          populate: {
+            path: 'userId',
+            select: 'name'
+          },
+        });
 
     } else if (userRole == 'supervisor') {
 
       let supervisor = await Supervisor.findOne({ userId: userId })
       if (supervisor && supervisor.supervisorId) {
-        schools = await School.find({ supervisorId: supervisor.supervisorId }).sort({ code: 1 });
+        schools = await School.find({ supervisorId: supervisor.supervisorId }).sort({ code: 1 })
+          .populate("supervisorId")
+          .populate({
+            path: 'supervisorId',
+            populate: {
+              path: 'userId',
+              select: 'name'
+            },
+          });
       }
 
     } else if (userRole == 'admin') {
 
       let employee = await Employee.findOne({ userId: userId })
 
-    //  console.log(userId + " - " + employee.schoolId)
+      //  console.log(userId + " - " + employee.schoolId)
       if (employee && employee.schoolId) {
-        schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 });
+        schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 })
+          .populate("supervisorId")
+          .populate({
+            path: 'supervisorId',
+            populate: {
+              path: 'userId',
+              select: 'name'
+            },
+          });
       }
     }
 
     return res.status(200).json({ success: true, schools });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "get schools server error" });
@@ -140,6 +165,15 @@ const getSchool = async (req, res) => {
   try {
     const { id } = req.params;
     const school = await School.findById({ _id: id })
+      .populate("supervisorId")
+      .populate({
+        path: 'supervisorId',
+        populate: {
+          path: 'userId',
+          select: 'name'
+        },
+      });
+
     return res.status(200).json({ success: true, school })
   } catch (error) {
     return res
@@ -171,7 +205,7 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    const supervisorById = await Supervisor.findOne({ supervisorId });
+    const supervisorById = await Supervisor.findOne({ _id: supervisorId });
     if (supervisorById == null) {
       return res
         .status(404)
