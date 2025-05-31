@@ -123,7 +123,7 @@ const getSchools = async (req, res) => {
 
       let supervisor = await Supervisor.findOne({ userId: userId })
       if (supervisor && supervisor.supervisorId) {
-        schools = await School.find({ supervisorId: supervisor.supervisorId }).sort({ code: 1 })
+        schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
           .populate("supervisorId")
           .populate({
             path: 'supervisorId',
