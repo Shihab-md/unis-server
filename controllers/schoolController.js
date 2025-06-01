@@ -124,7 +124,7 @@ const getSchools = async (req, res) => {
 
       const supervisor = await Supervisor.findOne({ userId: userId });
       if (supervisor && supervisor._id) {
-       // console.log(supervisor._id.toString())
+        // console.log(supervisor._id.toString())
         schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
           .populate("supervisorId")
           .populate({
@@ -135,7 +135,7 @@ const getSchools = async (req, res) => {
             },
           });
 
-      //    console.log(schools)
+        //    console.log(schools)
       }
 
     } else if (userRole == 'admin') {
@@ -236,6 +236,18 @@ const updateSchool = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Niswan data not found" });
     }
+    {/*
+    const schoolList = await School.find({});
+
+    console.log(JSON.stringify(schoolList));
+
+    for (const school of schoolList) {
+      let value = school.district + ", TAMILNADU.";
+      await School.findByIdAndUpdate({ _id: school._id }, {
+        district: value,
+      });
+    }
+      */}
 
     return res.status(200).json({ success: true, message: "Niswan updated." })
 
