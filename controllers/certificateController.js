@@ -71,11 +71,11 @@ const addCertificate = async (req, res) => {
     let certificateNum;
     if (!template.courseId.name.includes("Makthab")) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-    //  if (cert) {
-    //    return res
-    //      .status(404)
-    //      .json({ success: false, error: "Certificate Already Found." });
-    //  }
+      //  if (cert) {
+      //    return res
+      //      .status(404)
+      //      .json({ success: false, error: "Certificate Already Found." });
+      //  }
 
       await Certificate.findOne({}).sort({ _id: -1 }).limit(1).then((certificate, err) => {
         if (certificate) {
@@ -160,31 +160,37 @@ const addCertificate = async (req, res) => {
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     console.log("Arabic length : " + nameArabic.length)
     if (nameArabic.length <= 30) {
-      context.font = '46px DUBAI-BOLD'; // Sans Bold
+      context.font = '46px DUBAI-BOLD';
+    } else if (nameArabic.length <= 43) {
+      context.font = '41px DUBAI-BOLD';
+    } else if (nameArabic.length <= 51) {
+      context.font = '35px DUBAI-BOLD';
     } else {
-      context.font = '41px DUBAI-BOLD'; // Sans Bold
+      context.font = '32px DUBAI-BOLD';
     }
-    context.fillStyle = 'rgb(14, 84, 49)'; // 'darkgreen';
+    context.fillStyle = 'rgb(14, 84, 49)';
     context.textAlign = 'center';
-    context.fillText(nameArabic, image.width / 2, 190);
+    context.fillText(nameArabic, image.width / 2, 189);
 
     let nameNativeOrEnglish = school.nameNative ? school.nameNative : school.nameEnglish ? school.nameEnglish.toUpperCase() : "";
     console.log("Native / English length : " + nameNativeOrEnglish.length)
     if (nameNativeOrEnglish.length <= 22) {
-      context.font = 'bold 34px Nirmala'; // Sans Bold
+      context.font = 'bold 34px Nirmala';
+    } else if (nameNativeOrEnglish.length <= 51) {
+      context.font = 'bold 30px Nirmala';
     } else {
-      context.font = 'bold 30px Nirmala'; // Sans Bold
+      context.font = 'bold 27px Nirmala';
     }
     // context.font = 'bold 34px Nirmala';
     //context.fillStyle = 'red';
     context.fillStyle = 'rgb(161, 14, 94)';
     context.textAlign = 'center';
-    context.fillText(nameNativeOrEnglish, image.width / 2, 245);
+    context.fillText(nameNativeOrEnglish, image.width / 2, 244);
 
     context.font = 'bold 22px Arial';
     context.fillStyle = 'rgb(4, 25, 93)';
     context.textAlign = 'center';
-    context.fillText(school.address ? school.address + ", " + school.district : "", image.width / 2, 290);
+    context.fillText(school.address ? school.address + ", " + school.district : "", image.width / 2, 289);
 
     context.font = 'bold 25px Arial-Bold';
     context.fillStyle = 'rgb(14, 56, 194)';
