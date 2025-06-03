@@ -19,7 +19,13 @@ const supervisorSchema = new Schema({
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+
+  _schoolsCount: { type: Number },
 });
+
+supervisorSchema.virtual('schoolsCount').
+  get(function () { return this._schoolsCount; }).
+  set(function (count) { this._schoolsCount = count; });
 
 const Supervisor = mongoose.model("Supervisor", supervisorSchema);
 export default Supervisor;

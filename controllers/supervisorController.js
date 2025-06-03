@@ -1,6 +1,7 @@
 import multer from "multer";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
+import School from "../models/School.js";
 import bcrypt from "bcrypt";
 
 const upload = multer({});
@@ -73,6 +74,27 @@ const getSupervisors = async (req, res) => {
   try {
     const supervisors = await Supervisor.find()
       .populate("userId", { password: 0 });
+
+    const counts = await School.aggregate([
+      {
+        $group: {
+          _id: '$supervisorId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    if (supervisors.length > 0 && counts.length > 0) {
+      for (const count of counts) {
+        supervisors.map(supervisor => {
+          if (supervisor._id.toString() == count._id.toString()) {
+            supervisor._schoolsCount = count.count;
+            supervisor.toObject({ virtuals: true });
+          };
+        });
+      }
+    }
+
     return res.status(200).json({ success: true, supervisors });
   } catch (error) {
     return res

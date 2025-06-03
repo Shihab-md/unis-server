@@ -37,8 +37,8 @@ const schoolSchema = new Schema({
 });
 
 schoolSchema.virtual('studentsCount').
-  get(function() { return this._studentsCount; }).
-  set(function(count) { this._studentsCount = count; });
+  get(function () { return this._studentsCount; }).
+  set(function (count) { this._studentsCount = count; });
 
 const School = mongoose.model("School", schoolSchema);
 export default School;
