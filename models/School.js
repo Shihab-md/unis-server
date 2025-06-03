@@ -32,7 +32,13 @@ const schoolSchema = new Schema({
   },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+
+  _studentsCount: { type: Number },
 });
+
+schoolSchema.virtual('studentsCount').
+  get(function() { return this._studentsCount; }).
+  set(function(count) { this._studentsCount = count; });
 
 const School = mongoose.model("School", schoolSchema);
 export default School;

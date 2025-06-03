@@ -1,6 +1,7 @@
 import multer from "multer";
 import jwt from "jsonwebtoken";
 import School from "../models/School.js";
+import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
 
@@ -153,6 +154,27 @@ const getSchools = async (req, res) => {
               select: 'name'
             },
           });
+      }
+    }
+
+    const counts = await Student.aggregate([
+      {
+        $group: {
+          _id: '$schoolId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    //  console.log(JSON.stringify(counts));
+
+    if (schools.length > 0 && counts.length > 0) {
+      for (const count of counts) {
+        schools.map(school => {
+          if (school._id.toString() == count._id.toString()) {
+            school._studentsCount = count.count;
+            school.toObject({ virtuals: true });
+          };
+        });
       }
     }
 

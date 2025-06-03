@@ -655,6 +655,27 @@ const deleteStudent = async (req, res) => {
   }
 }
 
+const getStudentsCount = async (req, res) => {
+
+  try {
+    const counts = await Student.aggregate([
+      {
+        $group: {
+          _id: '$schoolId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    res.json(counts);
+
+    return res.status(200).json({ success: true, counts });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "Get Students by School Error." });
+  }
+};
+
 {/*const fetchStudentsByDepId = async (req, res) => {
   const { id } = req.params;
   try {
@@ -667,4 +688,7 @@ const deleteStudent = async (req, res) => {
   }
 }*/}
 
-export { addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate };
+export {
+  addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent,
+  getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount
+};
