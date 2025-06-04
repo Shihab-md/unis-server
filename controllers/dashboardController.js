@@ -14,13 +14,7 @@ const getSummary = async (req, res) => {
         const totalEmployees = await Employee.countDocuments();
         const totalSupervisors = await Supervisor.countDocuments();
         const totalSchools = await School.countDocuments();
-        const totalInstitutes = await Institute.countDocuments();
-        const totalCourses = await Course.countDocuments();
         const totalStudents = await Student.countDocuments();
-        const totalAcademicYears = await AcademicYear.countDocuments();
-        const totalTemplates = await Template.countDocuments();
-
-        const totalDepartments = await Department.countDocuments();
 
         const totalSalaries = await Employee.aggregate([
             { $group: { _id: null, totalSalary: { $sum: "$salary" } } }
@@ -49,19 +43,32 @@ const getSummary = async (req, res) => {
             totalSupervisors,
             totalSchools,
             totalEmployees,
-            totalInstitutes,
-            totalCourses,
             totalStudents,
-            totalAcademicYears,
-            totalDepartments,
-            totalTemplates,
-            totalSalary: totalSalaries[0]?.totalSalary || 0,
-            leaveSummary
         })
     } catch (error) {
         console.log(error.message)
-        return res.status(500).json({ success: false, error: "dashboard summary error" })
+        return res.status(500).json({ success: false, error: "Dashboard summary error" })
     }
 }
 
-export { getSummary }
+const getMasterSummary = async (req, res) => {
+    try {
+        const totalInstitutes = await Institute.countDocuments();
+        const totalCourses = await Course.countDocuments();
+        const totalAcademicYears = await AcademicYear.countDocuments();
+        const totalTemplates = await Template.countDocuments();
+
+        return res.status(200).json({
+            success: true,
+            totalInstitutes,
+            totalCourses,
+            totalAcademicYears,
+            totalTemplates,
+        })
+    } catch (error) {
+        console.log(error.message)
+        return res.status(500).json({ success: false, error: "MASTER summary error" })
+    }
+}
+
+export { getSummary, getMasterSummary }
