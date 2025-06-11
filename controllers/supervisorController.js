@@ -3,6 +3,7 @@ import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
+import redisClient from "../db/redis.js"
 
 const upload = multer({});
 
@@ -83,7 +84,7 @@ const getSupervisors = async (req, res) => {
         },
       },
     ]);
-
+ 
     if (supervisors.length > 0 && counts.length > 0) {
       for (const count of counts) {
         supervisors.map(supervisor => {
@@ -95,6 +96,19 @@ const getSupervisors = async (req, res) => {
       }
     }
 
+    return res.status(200).json({ success: true, supervisors });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get supervisors server error" });
+  }
+};
+
+const getSupervisorsFromCache = async (req, res) => {
+  try {
+
+    const supervisors = JSON.parse(await redisClient.get('supervisors'));
+    // console.log(supervisors);
     return res.status(200).json({ success: true, supervisors });
   } catch (error) {
     return res
@@ -193,4 +207,4 @@ const deleteSupervisor = async (req, res) => {
   }
 }
 
-export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, deleteSupervisor };
+export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, deleteSupervisor, getSupervisorsFromCache };

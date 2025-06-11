@@ -284,7 +284,7 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
   try {
 
     const template = await Template.findById({ _id: templateId })
-      .populate({ path: 'courseId', select: '_id name' });
+      .populate({ path: 'courseId', select: '_id name' }); 
 
     if (!template) {
       return res

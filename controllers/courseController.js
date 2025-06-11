@@ -1,4 +1,5 @@
 import Course from "../models/Course.js";
+import redisClient from "../db/redis.js"
 
 const addCourse = async (req, res) => {
   try {
@@ -98,6 +99,17 @@ const addCourse = async (req, res) => {
 const getCourses = async (req, res) => {
   try {
     const courses = await Course.find();
+    return res.status(200).json({ success: true, courses });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get courses server error" });
+  }
+};
+
+const getCoursesFromCache = async (req, res) => {
+  try {
+    const courses = JSON.parse(await redisClient.get('courses'));
     return res.status(200).json({ success: true, courses });
   } catch (error) {
     return res
@@ -227,4 +239,4 @@ const deleteCourse = async (req, res) => {
   }
 }
 
-export { addCourse, getCourses, getCourse, updateCourse, deleteCourse };
+export { addCourse, getCourses, getCourse, updateCourse, deleteCourse, getCoursesFromCache };

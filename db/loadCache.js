@@ -22,6 +22,13 @@ const loadCache = async () => {
         await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
         await redisClient.set('totalTemplates', await Template.countDocuments());
 
+        await redisClient.set('supervisors', JSON.stringify(await Supervisor.find().select('_id supervisorId')
+            .populate({ path: 'userId', select: 'name' })));
+        await redisClient.set('schools', JSON.stringify(await School.find().sort({ code: 1 }).select('_id code nameEnglish')));
+        await redisClient.set('academicYears', JSON.stringify(await AcademicYear.find().select('_id acYear')));
+        await redisClient.set('institutes', JSON.stringify(await Institute.find().select('_id name type')));
+        await redisClient.set('courses', JSON.stringify(await Course.find().select('_id name type')));
+
         console.log('Cache loaded into Redis!');
     } catch (error) {
         console.log(error)

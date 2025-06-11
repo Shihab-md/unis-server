@@ -1,4 +1,5 @@
 import Institute from "../models/Institute.js";
+import redisClient from "../db/redis.js"
 
 const addInstitute = async (req, res) => {
   try {
@@ -50,6 +51,18 @@ const addInstitute = async (req, res) => {
 const getInstitutes = async (req, res) => {
   try {
     const institutes = await Institute.find();
+    return res.status(200).json({ success: true, institutes });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get institutes server error" });
+  }
+};
+
+const getInstitutesFromCache = async (req, res) => {
+  try {
+    const institutes = JSON.parse(await redisClient.get('institutes'));
+    console.log(institutes)
     return res.status(200).json({ success: true, institutes });
   } catch (error) {
     return res
@@ -130,4 +143,4 @@ const deleteInstitute = async (req, res) => {
   }
 }
 
-export { addInstitute, getInstitutes, getInstitute, updateInstitute, deleteInstitute };
+export { addInstitute, getInstitutes, getInstitute, updateInstitute, deleteInstitute, getInstitutesFromCache };

@@ -4,6 +4,7 @@ import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
+import redisClient from "../db/redis.js"
 
 const upload = multer({});
 
@@ -112,7 +113,7 @@ const getSchools = async (req, res) => {
     let schools = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
       schools = await School.find().sort({ code: 1 })
-        .populate("supervisorId")
+       // .populate("supervisorId")
         .populate({
           path: 'supervisorId',
           populate: {
@@ -127,7 +128,7 @@ const getSchools = async (req, res) => {
       if (supervisor && supervisor._id) {
         // console.log(supervisor._id.toString())
         schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
-          .populate("supervisorId")
+        //  .populate("supervisorId")
           .populate({
             path: 'supervisorId',
             populate: {
@@ -146,7 +147,7 @@ const getSchools = async (req, res) => {
       //  console.log(userId + " - " + employee.schoolId)
       if (employee && employee.schoolId) {
         schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 })
-          .populate("supervisorId")
+        //  .populate("supervisorId")
           .populate({
             path: 'supervisorId',
             populate: {
@@ -157,7 +158,7 @@ const getSchools = async (req, res) => {
       }
     }
 
-    const counts = await Student.aggregate([
+    {/*  const counts = await Student.aggregate([
       {
         $group: {
           _id: '$schoolId',
@@ -176,8 +177,20 @@ const getSchools = async (req, res) => {
           };
         });
       }
-    }
+    }*/}
 
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get schools server error" });
+  }
+};
+
+const getSchoolsFromCache = async (req, res) => {
+  try {
+    const schools = JSON.parse(await redisClient.get('schools'));
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     console.log(error)
@@ -291,4 +304,4 @@ const deleteSchool = async (req, res) => {
   }
 }
 
-export { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool };
+export { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache };

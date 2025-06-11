@@ -1,4 +1,5 @@
 import AcademicYear from "../models/AcademicYear.js";
+import redisClient from "../db/redis.js"
 
 const addAcademicYear = async (req, res) => {
   try {
@@ -32,6 +33,17 @@ const addAcademicYear = async (req, res) => {
 const getAcademicYears = async (req, res) => {
   try {
     const academicYears = await AcademicYear.find();
+    return res.status(200).json({ success: true, academicYears });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get academicYears server error" });
+  }
+};
+
+const getAcademicYearsFromCache = async (req, res) => {
+  try {
+    const academicYears = JSON.parse(await redisClient.get('academicYears'));
     return res.status(200).json({ success: true, academicYears });
   } catch (error) {
     return res
@@ -97,4 +109,4 @@ const deleteAcademicYear = async (req, res) => {
   }
 }
 
-export { addAcademicYear, getAcademicYears, getAcademicYear, updateAcademicYear, deleteAcademicYear };
+export { addAcademicYear, getAcademicYears, getAcademicYear, updateAcademicYear, deleteAcademicYear, getAcademicYearsFromCache };
