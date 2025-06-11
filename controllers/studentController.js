@@ -329,7 +329,7 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
 const getActiveStudents = async (req, res) => {
   try {
     const students = await Student.find({ active: "Active" })
-      .populate("userId", { password: 0 })
+      .populate("userId", { password: 0, profileImage: 0 })
       .populate("schoolId");
     return res.status(200).json({ success: true, students });
   } catch (error) {

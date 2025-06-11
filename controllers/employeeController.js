@@ -80,7 +80,7 @@ const addEmployee = async (req, res) => {
 const getEmployees = async (req, res) => {
   try {
     const employees = await Employee.find()
-      .populate("userId", { password: 0 })
+      .populate("userId", { password: 0, profileImage: 0 })
       .populate("schoolId");
     return res.status(200).json({ success: true, employees });
   } catch (error) {

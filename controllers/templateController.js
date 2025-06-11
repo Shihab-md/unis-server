@@ -27,7 +27,7 @@ const addTemplate = async (req, res) => {
 };
 
 const getTemplates = async (req, res) => {
-  try {
+  try { 
     const templates = await Template.find().select('details')
       .populate({ path: 'courseId', select: 'name' });
 
@@ -51,7 +51,7 @@ const getTemplate = async (req, res) => {
     console.log(error);
     return res
       .status(500)
-      .json({ success: false, error: "get template server error" });
+      .json({ success: false, error: "Get template server error" });
   }
 };
 
@@ -81,7 +81,7 @@ const updateTemplate = async (req, res) => {
     if (!updateTemplate) {
       return res
         .status(404)
-        .json({ success: false, error: "document not found" });
+        .json({ success: false, error: "Document not found" });
     }
 
     return res.status(200).json({ success: true, message: "Template details updated Successfully." })
@@ -89,7 +89,7 @@ const updateTemplate = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "update templates server error" });
+      .json({ success: false, error: "Update templates server error" });
   }
 };
 
@@ -102,7 +102,7 @@ const deleteTemplate = async (req, res) => {
 
     return res.status(200).json({ success: true, updateTemplate })
   } catch (error) {
-    return res.status(500).json({ success: false, error: "delete Template server error" })
+    return res.status(500).json({ success: false, error: "Delete Template server error" })
   }
 }
 

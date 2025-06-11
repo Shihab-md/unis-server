@@ -293,7 +293,7 @@ const getCertificate = async (req, res) => {
       .populate({ path: 'courseId', select: 'name' })
       .populate({ path: 'studentId', select: 'rollNumber' })
       .populate({ path: 'userId', select: 'name' })
-      .populate({ path: 'schoolId', select: 'code nameEnglish' })
+      .populate({ path: 'schoolId', select: 'code nameEnglish' });
 
     console.log("Result Sent");
     return res.status(200).json({ success: true, certificate });

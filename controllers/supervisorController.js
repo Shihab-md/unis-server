@@ -73,7 +73,7 @@ const addSupervisor = async (req, res) => {
 const getSupervisors = async (req, res) => {
   try {
     const supervisors = await Supervisor.find()
-      .populate("userId", { password: 0 });
+      .populate("userId", { password: 0, profileImage: 0 });
 
     const counts = await School.aggregate([
       {
