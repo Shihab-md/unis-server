@@ -18,9 +18,13 @@ import leaveRouter from './routes/leave.js'
 import settingRouter from './routes/setting.js'
 import attendanceRouter from './routes/attendance.js'
 import dashboardRouter from './routes/dashboard.js'
+
 import connectToDatabase from './db/db.js'
+import loadCache from './db/loadCache.js'
 
 connectToDatabase()
+loadCache()
+
 const app = express()
 //app.use(cors()) 
 
