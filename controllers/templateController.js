@@ -1,24 +1,50 @@
 import multer from "multer";
+import { put } from "@vercel/blob";
 import Template from "../models/Template.js";
 
-const upload = multer({});
+const upload = multer({ storage: multer.memoryStorage() });
 
 const addTemplate = async (req, res) => {
+
+  let newTemplate;
   try {
     const {
       courseId,
       details,
     } = req.body;
 
-    const newTemplate = new Template({
+    newTemplate = new Template({
       courseId,
       details,
-      template: req.file ? req.file.buffer.toString('base64') : "",
+      template: "-",
     });
 
-    await newTemplate.save();
+    newTemplate = await newTemplate.save();
+
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("templates/" + newTemplate._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      //  console.log(blob.downloadUrl)
+      const template = await Template.findByIdAndUpdate({ _id: newTemplate._id }, { template: blob.downloadUrl });
+      if (!template) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Template not found." });
+      }
+    }
+
     return res.status(200).json({ success: true, message: "Template Created Successfully." });
   } catch (error) {
+
+    if (newTemplate) {
+      await Template.deleteOne({ _id: newTemplate._id });
+    }
     console.log(error);
     return res
       .status(500)
@@ -27,7 +53,7 @@ const addTemplate = async (req, res) => {
 };
 
 const getTemplates = async (req, res) => {
-  try { 
+  try {
     const templates = await Template.find().select('details')
       .populate({ path: 'courseId', select: 'name' });
 
@@ -67,8 +93,23 @@ const updateTemplate = async (req, res) => {
         .json({ success: false, error: "Template not found." });
     }
 
-    let updateTemplate;
+    let updateTemplate; 
     if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("templates/" + id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details, template: blob.downloadUrl });
+    } else {
+      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details, })
+    }
+
+
+    {/* if (req.file) {
       updateTemplate = await Template.findByIdAndUpdate({ _id: id },
         {
           details,
@@ -77,16 +118,17 @@ const updateTemplate = async (req, res) => {
     } else {
       updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details, })
     }
-
+*/}
     if (!updateTemplate) {
       return res
         .status(404)
-        .json({ success: false, error: "Document not found" });
+        .json({ success: false, error: "Document not Updated" });
     }
 
     return res.status(200).json({ success: true, message: "Template details updated Successfully." })
 
   } catch (error) {
+    console.log(error);
     return res
       .status(500)
       .json({ success: false, error: "Update templates server error" });
