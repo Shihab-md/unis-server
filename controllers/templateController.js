@@ -1,6 +1,7 @@
 import multer from "multer";
 import { put } from "@vercel/blob";
 import Template from "../models/Template.js";
+import redisClient from "../db/redis.js"
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -65,6 +66,17 @@ const getTemplates = async (req, res) => {
   }
 };
 
+const getTemplatesFromCache = async (req, res) => {
+  try {
+    const templates = JSON.parse(await redisClient.get('templates'));
+    return res.status(200).json({ success: true, templates });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get templates server error" });
+  }
+};
+
 const getTemplate = async (req, res) => {
   const { id } = req.params;
   try {
@@ -93,7 +105,7 @@ const updateTemplate = async (req, res) => {
         .json({ success: false, error: "Template not found." });
     }
 
-    let updateTemplate; 
+    let updateTemplate;
     if (req.file) {
       const fileBuffer = req.file.buffer;
       const blob = await put("templates/" + id + ".png", fileBuffer, {
@@ -148,4 +160,4 @@ const deleteTemplate = async (req, res) => {
   }
 }
 
-export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate };
+export { addTemplate, upload, getTemplates, getTemplate, updateTemplate, deleteTemplate, getTemplatesFromCache };

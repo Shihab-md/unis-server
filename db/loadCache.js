@@ -28,6 +28,8 @@ const loadCache = async () => {
         await redisClient.set('academicYears', JSON.stringify(await AcademicYear.find().select('_id acYear')));
         await redisClient.set('institutes', JSON.stringify(await Institute.find().select('_id name type')));
         await redisClient.set('courses', JSON.stringify(await Course.find().select('_id name type')));
+        await redisClient.set('templates', JSON.stringify(await Template.find().select('_id')
+            .populate({ path: 'courseId', select: 'name' })));
 
         console.log('Cache loaded into Redis!');
     } catch (error) {
