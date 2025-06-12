@@ -105,19 +105,21 @@ const addCertificate = async (req, res) => {
       registerFont(tempFontPath, {
         family: "Nirmala"
       });
+      //  fs.closeSync();
 
-      response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
+      response = await fetch('https://www.unis.org.in/majallab.ttf');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       arrayBuffer = await response.arrayBuffer();
       fontBuffer = Buffer.from(arrayBuffer);
 
-      tempFontPath = path.join('/tmp', 'DUBAI-BOLD.TTF');
+      tempFontPath = path.join('/tmp', 'majallab.ttf');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
-        family: "DUBAI-BOLD"
+        family: "majallab"
       });
+      fs.closeSync();
 
       response = await fetch('https://www.unis.org.in/arial.ttf');
       if (!response.ok) {
@@ -131,6 +133,7 @@ const addCertificate = async (req, res) => {
       registerFont(tempFontPath, {
         family: "Arial"
       });
+      fs.closeSync();
 
       response = await fetch('https://www.unis.org.in/arialbd.ttf');
       if (!response.ok) {
@@ -144,6 +147,8 @@ const addCertificate = async (req, res) => {
       registerFont(tempFontPath, {
         family: "Arial-Bold"
       });
+
+      fs.closeSync();
 
     } catch (error) {
       console.log(error);
@@ -161,13 +166,13 @@ const addCertificate = async (req, res) => {
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     console.log("Arabic length : " + nameArabic.length)
     if (nameArabic.length <= 30) {
-      context.font = '46px DUBAI-BOLD';
+      context.font = '46px majallab';
     } else if (nameArabic.length <= 43) {
-      context.font = '41px DUBAI-BOLD';
+      context.font = '41px majallab';
     } else if (nameArabic.length <= 51) {
-      context.font = '35px DUBAI-BOLD';
+      context.font = '35px majallab';
     } else {
-      context.font = '32px DUBAI-BOLD';
+      context.font = '32px majallab';
     }
     context.fillStyle = 'rgb(14, 84, 49)';
     context.textAlign = 'center';
