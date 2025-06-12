@@ -41,6 +41,7 @@ const addCertificate = async (req, res) => {
 
     console.log("Student Roll Number : " + student.rollNumber);
 
+    // Get academic START year
     const academicStart = await Academic.findOne({
       $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }],
       $and: [{
@@ -49,15 +50,16 @@ const addCertificate = async (req, res) => {
     }).sort({ createdAt: 1 }).limit(1)
       .populate({ path: 'acYear', select: 'acYear' });
 
-    if (!academicStart) {
+    if (!academicStart || !academicStart.acYear || !academicStart.acYear.acYear) {
       return res
         .status(404)
-        .json({ success: false, error: "Course not found for the Student." });
+        .json({ success: false, error: "Academics not found for the Student." });
     }
 
     let startYear = academicStart.acYear.acYear.substr(0, 4);
     console.log("Academic Start Year : " + startYear);
 
+    // Get academic END year
     const academicEnd = await Academic.findOne({
       $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }],
       $and: [{
@@ -107,19 +109,19 @@ const addCertificate = async (req, res) => {
       });
       //  fs.closeSync();
 
-      response = await fetch('https://www.unis.org.in/majallab.ttf');
+      response = await fetch('https://www.unis.org.in/DUBAI-BOLD.TTF');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       arrayBuffer = await response.arrayBuffer();
       fontBuffer = Buffer.from(arrayBuffer);
 
-      tempFontPath = path.join('/tmp', 'majallab.ttf');
+      tempFontPath = path.join('/tmp', 'DUBAI-BOLD.TTF');
       fs.writeFileSync(tempFontPath, fontBuffer);
       registerFont(tempFontPath, {
-        family: "majallab"
+        family: "DUBAI-BOLD"
       });
-      fs.closeSync();
+      //  fs.closeSync();
 
       response = await fetch('https://www.unis.org.in/arial.ttf');
       if (!response.ok) {
@@ -133,7 +135,7 @@ const addCertificate = async (req, res) => {
       registerFont(tempFontPath, {
         family: "Arial"
       });
-      fs.closeSync();
+      //  fs.closeSync();
 
       response = await fetch('https://www.unis.org.in/arialbd.ttf');
       if (!response.ok) {
@@ -148,7 +150,20 @@ const addCertificate = async (req, res) => {
         family: "Arial-Bold"
       });
 
-      fs.closeSync();
+      response = await fetch('https://www.unis.org.in/COMICZ.TTF');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      arrayBuffer = await response.arrayBuffer();
+      fontBuffer = Buffer.from(arrayBuffer);
+
+      tempFontPath = path.join('/tmp', 'COMICZ.TTF');
+      fs.writeFileSync(tempFontPath, fontBuffer);
+      registerFont(tempFontPath, {
+        family: "Comic"
+      });
+
+      //  fs.closeSync();
 
     } catch (error) {
       console.log(error);
@@ -166,13 +181,13 @@ const addCertificate = async (req, res) => {
     let nameArabic = school.nameArabic ? school.nameArabic : "";
     console.log("Arabic length : " + nameArabic.length)
     if (nameArabic.length <= 30) {
-      context.font = '46px majallab';
+      context.font = '46px DUBAI-BOLD';
     } else if (nameArabic.length <= 43) {
-      context.font = '41px majallab';
+      context.font = '41px DUBAI-BOLD';
     } else if (nameArabic.length <= 51) {
-      context.font = '35px majallab';
+      context.font = '35px DUBAI-BOLD';
     } else {
-      context.font = '32px majallab';
+      context.font = '32px DUBAI-BOLD';
     }
     context.fillStyle = 'rgb(14, 84, 49)';
     context.textAlign = 'center';
@@ -192,13 +207,16 @@ const addCertificate = async (req, res) => {
     context.fillStyle = 'rgb(161, 14, 94)';
     context.textAlign = 'center';
     context.fillText(nameNativeOrEnglish, image.width / 2, 244);
+    context.fillText(nameNativeOrEnglish, image.width / 2, 245);
+    context.fillText(nameNativeOrEnglish, (image.width / 2) + 1, 245);
 
-    context.font = 'bold 22px Arial';
+    context.font = 'bold 21px Arial-Bold';
     context.fillStyle = 'rgb(4, 25, 93)';
     context.textAlign = 'center';
     context.fillText(school.address ? school.address + ", " + school.district : "", image.width / 2, 289);
 
-    context.font = 'bold 25px Arial-Bold';
+    //  context.font = 'bold 25px Arial-Bold';
+    //context.font = '25px Comic';
     context.fillStyle = 'rgb(14, 56, 194)';
     context.textAlign = 'start';
 
@@ -206,20 +224,25 @@ const addCertificate = async (req, res) => {
     let rollNumber = student.rollNumber ? student.rollNumber : "";
     let fatherName = student.fatherName ? student.fatherName : student.motherName ? student.motherName : student.guardianName ? student.guardianName : "";
 
-    context.font = '25px Arial';
+    //  context.font = '25px Arial';
     let dat = (new Date()).toLocaleDateString();
-    let fileName = template.courseId.name + "_" + rollNumber + "_" + name + ".png";
+    let fileName = template.courseId.name + "_" + rollNumber + "_" + name + "_" + new Date().getTime() + ".png";
     let base64String;
 
     // For Muballiga and Muallama (only saved to DB)
     if (!template.courseId.name.includes("Makthab")) {
 
+      context.font = '25px Comic';
       context.fillText(name.toUpperCase(), 370, 790);
-      context.fillText(rollNumber.toUpperCase(), 1150, 790);
-      context.fillText(fatherName.toUpperCase(), 250, 840);
-      context.fillText("JUNE " + startYear, 475, 890);
-      context.fillText("APRIL " + endYear, 675, 890);
-      context.fillText(certificateNum, 260, 1475);
+      context.fillText(rollNumber.toUpperCase(), 1149, 790);
+      context.fillText(fatherName.toUpperCase(), 249, 840);
+
+      context.font = '23px Comic';
+      context.fillText("JUNE-" + startYear, 470, 890);
+      context.fillText("APRIL-" + endYear, 668, 890);
+
+      context.font = '25px Comic';
+      context.fillText(certificateNum, 259, 1475);
       context.fillText(dat, 260, 1510);
 
       const blob = await put("certificates/" + fileName, canvas.toBuffer(), {
@@ -243,9 +266,11 @@ const addCertificate = async (req, res) => {
       console.log("Saved : " + certificateNum + ", File Name : " + fileName);
 
       return res.status(200).json({ success: true, message: "Certificate Created Successfully.", image: blob.downloadUrl, fileName: fileName, type: 'url' });
+
     } else {
       // For Other than Muballiga and Muallama (NOT saved to DB)
 
+      context.font = '25px Comic';
       context.fillText(name.toUpperCase(), 395, 832);
       context.fillText(rollNumber.toUpperCase(), 1100, 832);
       context.fillText(fatherName.toUpperCase(), 335, 886);
