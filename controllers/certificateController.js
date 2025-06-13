@@ -234,14 +234,14 @@ const addCertificate = async (req, res) => {
 
       context.font = '25px Comic';
       context.fillText(name.toUpperCase(), 370, 790);
-      context.fillText(rollNumber.toUpperCase(), 1149, 790);
       context.fillText(fatherName.toUpperCase(), 249, 840);
 
-      context.font = '23px Comic';
-      context.fillText("JUNE-" + startYear, 470, 890);
-      context.fillText("APRIL-" + endYear, 668, 890);
+      context.font = 'bold 23px Arial-Bold';
+      context.fillText(rollNumber.toUpperCase(), 1150, 790);
 
-      context.font = '25px Comic';
+      context.fillText("JUNE-" + startYear, 475, 890);
+      context.fillText("APRIL-" + endYear, 672, 890);
+
       context.fillText(certificateNum, 259, 1475);
       context.fillText(dat, 260, 1510);
 
@@ -272,8 +272,10 @@ const addCertificate = async (req, res) => {
 
       context.font = '25px Comic';
       context.fillText(name.toUpperCase(), 395, 832);
-      context.fillText(rollNumber.toUpperCase(), 1100, 832);
       context.fillText(fatherName.toUpperCase(), 335, 886);
+
+      context.font = 'bold 23px Arial-Bold';
+      context.fillText(rollNumber.toUpperCase(), 1100, 832);
       context.fillText(new Date().getFullYear(), 640, 1000);
       context.fillText(dat, 260, 1472);
 

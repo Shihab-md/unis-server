@@ -142,7 +142,7 @@ const getSupervisor = async (req, res) => {
 const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, contactNumber, address, routeName, gender,
+    const { name, supervisorId, contactNumber, address, routeName, gender,
       qualification, dob, maritalStatus, doj, salary } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
@@ -170,7 +170,7 @@ const updateSupervisor = async (req, res) => {
       updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, })
     }
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
-      contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
+      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
       doj, salary
     })
 
