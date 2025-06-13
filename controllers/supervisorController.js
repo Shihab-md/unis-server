@@ -23,6 +23,7 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       password,
+      jobType,
     } = req.body;
 
     console.log("user started");
@@ -59,6 +60,7 @@ const addSupervisor = async (req, res) => {
       maritalStatus,
       doj,
       salary,
+      jobType,
     });
 
     await newSupervisor.save();
@@ -84,7 +86,7 @@ const getSupervisors = async (req, res) => {
         },
       },
     ]);
- 
+
     if (supervisors.length > 0 && counts.length > 0) {
       for (const count of counts) {
         supervisors.map(supervisor => {
@@ -143,7 +145,7 @@ const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, supervisorId, contactNumber, address, routeName, gender,
-      qualification, dob, maritalStatus, doj, salary } = req.body;
+      qualification, dob, maritalStatus, doj, jobType, salary } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -170,7 +172,7 @@ const updateSupervisor = async (req, res) => {
       updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, })
     }
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
-      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus,
+      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus, jobType,
       doj, salary
     })
 

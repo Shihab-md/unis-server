@@ -13,6 +13,7 @@ const supervisorSchema = new Schema({
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   salary: { type: Number, required: true },
+  jobType: { type: String, enum: ["Full-Time", "Part-Time"], },
 
   active: { type: String, index: true, enum: ["Active", "In-Active"], default: "Active" },
   remarks: { type: String },
