@@ -175,7 +175,9 @@ const addCertificate = async (req, res) => {
 
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext('2d');
-    context.drawImage(image, 0, 0);
+    context.imageSmoothingEnabled = false;
+    // context.drawImage(image, 0, 0);
+    context.drawImage(image, 0, 0, image.width, image.height);
 
     // Niswan Name in Arabic
     let nameArabic = school.nameArabic ? school.nameArabic : "";
@@ -245,7 +247,7 @@ const addCertificate = async (req, res) => {
       context.fillText(certificateNum, 259, 1475);
       context.fillText(dat, 260, 1510);
 
-      const blob = await put("certificates/" + fileName, canvas.toBuffer(), {
+      const blob = await put("certificates/" + fileName, canvas.toBuffer('image/png', { resolution: 250 }), {
         access: 'public',
         contentType: 'image/png',
         token: process.env.BLOB_READ_WRITE_TOKEN,
