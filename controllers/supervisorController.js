@@ -1,11 +1,12 @@
 import multer from "multer";
+import { put } from "@vercel/blob";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
 import redisClient from "../db/redis.js"
 
-const upload = multer({});
+const upload = multer({ storage: multer.memoryStorage() });
 
 const addSupervisor = async (req, res) => {
   try {
@@ -42,11 +43,10 @@ const addSupervisor = async (req, res) => {
       email,
       password: hashPassword,
       role: "supervisor",
-      profileImage: req.file ? req.file.buffer.toString('base64') : "",
+      profileImage: "-",
+      //profileImage: req.file ? req.file.buffer.toString('base64') : "",
     });
     const savedUser = await newUser.save();
-
-    console.log("user created");
 
     const newSupervisor = new Supervisor({
       userId: savedUser._id,
@@ -64,6 +64,19 @@ const addSupervisor = async (req, res) => {
     });
 
     await newSupervisor.save();
+
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
+    }
+
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
     console.log(error);
@@ -124,11 +137,12 @@ const getSupervisor = async (req, res) => {
   try {
     let supervisor;
     supervisor = await Supervisor.findById({ _id: id })
-      .populate("userId", { password: 0 });
+      .populate("userId", { password: 0, });
 
     if (!supervisor) {
-      supervisor = await Supervisor.findOne({ userId: id })
-        .populate("userId", { password: 0 });
+      return res
+        .status(400)
+        .json({ success: false, error: "Supervisor data not found." });
     }
 
     return res.status(200).json({ success: true, supervisor });
@@ -163,14 +177,19 @@ const updateSupervisor = async (req, res) => {
 
     let updateUser;
     if (req.file) {
-      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId },
-        {
-          name,
-          profileImage: req.file.buffer.toString('base64'),
-        })
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + user._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, profileImage: blob.downloadUrl, })
     } else {
       updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, })
     }
+
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
       supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus, jobType,
       doj, salary
@@ -178,8 +197,8 @@ const updateSupervisor = async (req, res) => {
 
     if (!updateSupervisor || !updateUser) {
       return res
-        .status(404)
-        .json({ success: false, error: "document not found" });
+        .status(400)
+        .json({ success: false, error: "Update Failed..." });
     }
 
     return res.status(200).json({ success: true, message: "Supervisor details updated Successfully." })

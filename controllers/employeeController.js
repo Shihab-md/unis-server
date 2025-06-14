@@ -1,10 +1,11 @@
 import multer from "multer";
+import { put } from "@vercel/blob";
 import Employee from "../models/Employee.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
 
-const upload = multer({});
+const upload = multer({ storage: multer.memoryStorage() });
 
 const addEmployee = async (req, res) => {
   try {
@@ -40,7 +41,7 @@ const addEmployee = async (req, res) => {
       email,
       password: hashPassword,
       role,
-      profileImage: req.file ? req.file.buffer.toString('base64') : "",
+      profileImage: "",
     });
     const savedUser = await newUser.save();
 
@@ -67,6 +68,19 @@ const addEmployee = async (req, res) => {
     });
 
     await newEmployee.save();
+
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
+    }
+
     return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
     //savedUser.deleteOne();
@@ -97,10 +111,11 @@ const getEmployee = async (req, res) => {
     employee = await Employee.findById({ _id: id })
       .populate("userId", { password: 0 })
       .populate("schoolId");
+
     if (!employee) {
-      employee = await Employee.findOne({ userId: id })
-        .populate("userId", { password: 0 })
-        .populate("schoolId");
+      return res
+        .status(400)
+        .json({ success: false, error: "Employee data not found." });
     }
     return res.status(200).json({ success: true, employee });
   } catch (error) {
@@ -146,15 +161,17 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    //  const updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name })
-
     let updateUser;
     if (req.file) {
-      updateUser = await User.findByIdAndUpdate({ _id: employee.userId },
-        {
-          name,
-          profileImage: req.file.buffer.toString('base64'),
-        })
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + user._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name, profileImage: blob.downloadUrl, })
     } else {
       updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name, })
     }

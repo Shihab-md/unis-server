@@ -27,7 +27,7 @@ const loadCache = async () => {
         await redisClient.set('schools', JSON.stringify(await School.find().sort({ code: 1 }).select('_id code nameEnglish')));
         await redisClient.set('academicYears', JSON.stringify(await AcademicYear.find().select('_id acYear')));
         await redisClient.set('institutes', JSON.stringify(await Institute.find().select('_id name type')));
-        await redisClient.set('courses', JSON.stringify(await Course.find().select('_id name type')));
+        await redisClient.set('courses', JSON.stringify(await Course.find().select('_id name type fees')));
         await redisClient.set('templates', JSON.stringify(await Template.find().select('_id')
             .populate({ path: 'courseId', select: 'name' })));
 

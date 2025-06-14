@@ -1,4 +1,5 @@
 import multer from "multer";
+import { put } from "@vercel/blob";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
@@ -8,7 +9,7 @@ import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import bcrypt from "bcrypt";
 
-const upload = multer({});
+const upload = multer({ storage: multer.memoryStorage() });
 
 const addStudent = async (req, res) => {
 
@@ -94,7 +95,7 @@ const addStudent = async (req, res) => {
       email: rollNumber,
       password: hashPassword,
       role: "student",
-      profileImage: req.file ? req.file.buffer.toString('base64') : "",
+      profileImage: "-",
     });
     savedUser = await newUser.save();
 
@@ -216,6 +217,18 @@ const addStudent = async (req, res) => {
 
     savedAccount = await newAccount.save();
 
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
+    }
+
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
 
@@ -284,7 +297,7 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
   try {
 
     const template = await Template.findById({ _id: templateId })
-      .populate({ path: 'courseId', select: '_id name' }); 
+      .populate({ path: 'courseId', select: '_id name' });
 
     if (!template) {
       return res
@@ -350,9 +363,9 @@ const getStudent = async (req, res) => {
       .populate("schoolId");
 
     if (!student) {
-      student = await Student.findOne({ userId: id })
-        .populate("userId", { password: 0 })
-        .populate("schoolId");
+      return res
+        .status(404)
+        .json({ success: false, error: "Student data not found." });
     }
     return res.status(200).json({ success: true, student });
   } catch (error) {
@@ -378,6 +391,7 @@ const getAcademic = async (req, res) => {
         .json({ success: false, error: "Academic Year Not found : " + accYear });
     }
 
+    {/*
     let academic;
     if (acaYear != "vieww") {
       academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
@@ -406,7 +420,20 @@ const getAcademic = async (req, res) => {
         .populate("instituteId5")
         .populate("courseId5");
     }
+    */}
 
+    let academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
+      .populate("acYear")
+      .populate("instituteId1")
+      .populate("courseId1")
+      .populate("instituteId2")
+      .populate("courseId2")
+      .populate("instituteId3")
+      .populate("courseId3")
+      .populate("instituteId4")
+      .populate("courseId4")
+      .populate("instituteId5")
+      .populate("courseId5");
     if (!academic) {
       return res
         .status(404)
@@ -508,15 +535,17 @@ const updateStudent = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    //  const updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name })
-
     let updateUser;
     if (req.file) {
-      updateUser = await User.findByIdAndUpdate({ _id: student.userId },
-        {
-          name,
-          profileImage: req.file.buffer.toString('base64'),
-        })
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + student._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name, profileImage: blob.downloadUrl, })
     } else {
       updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name, })
     }
@@ -622,6 +651,7 @@ const updateStudent = async (req, res) => {
       paidDate: Date.now(),
       remarks: "Admission-updated",
     })
+
 
     if (!updateStudent || !updateUser || !updateAcademicById) {
       return res
