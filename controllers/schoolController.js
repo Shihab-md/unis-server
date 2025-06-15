@@ -18,6 +18,7 @@ const addSchool = async (req, res) => {
       address,
       district,
       contactNumber,
+      doe,
       email,
       supervisorId,
       incharge1,
@@ -68,6 +69,7 @@ const addSchool = async (req, res) => {
       address,
       district,
       contactNumber,
+      doe,
       email,
       supervisorId,
       incharge1,
@@ -226,7 +228,7 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, contactNumber, doe, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
@@ -254,7 +256,7 @@ const updateSchool = async (req, res) => {
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, contactNumber, doe, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,

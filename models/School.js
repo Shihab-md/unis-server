@@ -9,6 +9,7 @@ const schoolSchema = new Schema({
   address: { type: String, required: true },
   district: { type: String, required: true },
   contactNumber: { type: Number },
+  doe: { type: Date },
   email: { type: String },
   supervisorId: { type: Schema.Types.ObjectId, ref: "Supervisor", required: true, index: true },
   incharge1: { type: String, required: true },
