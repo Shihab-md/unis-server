@@ -4,7 +4,7 @@ import { Schema } from "mongoose";
 const courseSchema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
-  type: { type: String, enum: ["Deeniyath Education", "School Education", "College Education", "Vocational Courses"], },
+  type: { type: String, enum: ["Deeniyath Education", "Teacher Training", "School Education", "College Education", "Islamic Home Science", "Vocational Courses"], },
   remarks: { type: String },
   fees: { type: Number, required: true },
 
@@ -50,7 +50,13 @@ const courseSchema = new Schema({
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+
+  _subjectsCount: { type: Number },
 });
+
+courseSchema.virtual('subjectsCount').
+  get(function () { return this._subjectsCount; }).
+  set(function (count) { this._subjectsCount = count; });
 
 const Course = mongoose.model("Course", courseSchema);
 export default Course;

@@ -56,7 +56,7 @@ const addTemplate = async (req, res) => {
 const getTemplates = async (req, res) => {
   try {
     const templates = await Template.find().select('details')
-      .populate({ path: 'courseId', select: 'name' });
+      .populate({ path: 'courseId', select: 'code name', sort: 'code' });
 
     return res.status(200).json({ success: true, templates });
   } catch (error) {

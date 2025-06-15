@@ -98,7 +98,49 @@ const addCourse = async (req, res) => {
 
 const getCourses = async (req, res) => {
   try {
-    const courses = await Course.find();
+    const courses = await Course.find().sort({ code: 1 });
+ 
+    if (courses.length > 0) {
+      let subjectsCount = 0;
+      for (const course of courses) {
+        if (course.subject1) {
+          subjectsCount++;
+        }
+        if (course.subject2) {
+          subjectsCount++;
+        }
+        if (course.subject3) {
+          subjectsCount++;
+        }
+        if (course.subject4) {
+          subjectsCount++;
+        }
+        if (course.subject5) {
+          subjectsCount++;
+        }
+        if (course.subject6) {
+          subjectsCount++;
+        }
+        if (course.subject7) {
+          subjectsCount++;
+        }
+        if (course.subject8) {
+          subjectsCount++;
+        }
+        if (course.subject9) {
+          subjectsCount++;
+        }
+        if (course.subject10) {
+          subjectsCount++;
+        }
+
+        course._subjectsCount = subjectsCount;
+        course.toObject({ virtuals: true });
+
+        subjectsCount = 0;
+      }
+    }
+
     return res.status(200).json({ success: true, courses });
   } catch (error) {
     return res
@@ -216,7 +258,7 @@ const updateCourse = async (req, res) => {
     if (!updateCourse) {
       return res
         .status(404)
-        .json({ success: false, error: "document not found" });
+        .json({ success: false, error: "Course update failed." });
     }
 
     return res.status(200).json({ success: true, message: "Course details updated Successfully." })
@@ -224,7 +266,7 @@ const updateCourse = async (req, res) => {
   } catch (error) {
     return res
       .status(500)
-      .json({ success: false, error: "update courses server error" });
+      .json({ success: false, error: "Update courses server error" });
   }
 };
 
