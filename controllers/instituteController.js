@@ -62,7 +62,7 @@ const getInstitutes = async (req, res) => {
 const getInstitutesFromCache = async (req, res) => {
   try {
     const institutes = JSON.parse(await redisClient.get('institutes'));
-    console.log(institutes)
+  //  console.log(institutes)
     return res.status(200).json({ success: true, institutes });
   } catch (error) {
     return res
