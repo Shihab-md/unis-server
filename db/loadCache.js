@@ -16,7 +16,6 @@ const loadCache = async () => {
         await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
         await redisClient.set('totalSchools', await School.countDocuments());
         await redisClient.set('totalStudents', await Student.countDocuments());
-
         await redisClient.set('totalInstitutes', await Institute.countDocuments());
         await redisClient.set('totalCourses', await Course.countDocuments());
         await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());

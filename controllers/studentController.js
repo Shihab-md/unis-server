@@ -95,7 +95,7 @@ const addStudent = async (req, res) => {
       email: rollNumber,
       password: hashPassword,
       role: "student",
-      profileImage: "-",
+      profileImage: "",
     });
     savedUser = await newUser.save();
 
@@ -262,6 +262,7 @@ const getStudents = async (req, res) => {
     const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
       .populate("userId", { password: 0, profileImage: 0 })
       .populate("schoolId");
+    //  console.log(students);
     return res.status(200).json({ success: true, students });
   } catch (error) {
     return res
@@ -277,7 +278,8 @@ const getStudentsBySchool = async (req, res) => {
   console.log("getStudentsBySchool : " + schoolId);
   try {
     const students = await Student.find({ schoolId: schoolId }).sort({ rollNumber: 1 })
-      .populate("userId", { password: 0, profileImage: 0 });
+      .populate("userId", { password: 0, profileImage: 0 })
+      .populate("schoolId");
 
     return res.status(200).json({ success: true, students });
 
