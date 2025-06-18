@@ -255,6 +255,250 @@ const addStudent = async (req, res) => {
   }
 };
 
+const importStudentsData = async (req, res) => {
+
+  console.log("Inside Import data Method");
+
+  const studentsDataList = req.body;
+
+  studentsDataList.forEach((studentData) => {
+    console.log(studentData.name);
+    console.log(studentData.schoolId);
+    console.log(studentData.rollNumber);
+    console.log(studentData.doa);
+  });
+
+  console.log(studentsDataList.length);
+
+  let savedUser;
+  let savedStudent;
+  let savedAcademic;
+  let savedAccount;
+
+  try {
+
+    /*
+    const {
+      name,
+      schoolId,
+      rollNumber,
+      doa,
+      dob,
+      gender,
+      maritalStatus,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      fatherOccupation,
+      motherName,
+      motherNumber,
+      motherOccupation,
+      guardianName,
+      guardianNumber,
+      guardianOccupation,
+      guardianRelation,
+      address,
+      district,
+
+      hostel,
+      hostelRefNumber,
+      hostelFees,
+      hostelDiscount,
+
+      acYear,
+
+      instituteId1,
+      courseId1,
+      refNumber1,
+      fees1,
+      discount1,
+
+      instituteId2,
+      courseId2,
+      refNumber2,
+      fees2,
+      discount2,
+
+      instituteId3,
+      courseId3,
+      refNumber3,
+      fees3,
+      discount3,
+
+      instituteId4,
+      courseId4,
+      refNumber4,
+      fees4,
+      discount4,
+
+      instituteId5,
+      courseId5,
+      refNumber5,
+      fees5,
+      discount5,
+
+    } = req.body;
+
+    const user = await User.findOne({ email: rollNumber });
+    if (user) {
+      return res
+        .status(400)
+        .json({ success: false, error: "User already registered in Student" });
+    }
+
+    const hashPassword = await bcrypt.hash(rollNumber, 10);
+
+    const newUser = new User({
+      name,
+      email: rollNumber,
+      password: hashPassword,
+      role: "student",
+      profileImage: "",
+    });
+    savedUser = await newUser.save();
+
+    const schoolById = await School.findById({ _id: schoolId });
+    if (schoolById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Niswan Not exists" });
+    }
+
+    let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
+    const newStudent = new Student({
+      userId: savedUser._id,
+      schoolId: schoolById._id,
+      rollNumber,
+      doa,
+      dob,
+      gender,
+      maritalStatus,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      fatherName,
+      fatherNumber,
+      fatherOccupation,
+      motherName,
+      motherNumber,
+      motherOccupation,
+      guardianName,
+      guardianNumber,
+      guardianOccupation,
+      guardianRelation,
+      address,
+      district,
+      hostel,
+      hostelRefNumber,
+      hostelFees,
+      hostelDiscount,
+      hostelFinalFees: hostelFinalFeesVal,
+      active: "Active",
+    });
+
+    savedStudent = await newStudent.save();
+    if (savedStudent == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Error: Student NOT added." });
+    }
+
+    const academicYearById = await AcademicYear.findById({ _id: acYear });
+    if (academicYearById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not exists" });
+    }
+
+    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
+    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
+    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
+    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
+    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
+
+    const newAcademic = new Academic({
+      studentId: savedStudent._id,
+      acYear: academicYearById._id,
+
+      instituteId1,
+      courseId1,
+      refNumber1,
+      fees1,
+      discount1,
+      finalFees1: finalFees1Val,
+
+      instituteId2,
+      courseId2,
+      refNumber2,
+      fees2,
+      discount2,
+      finalFees2: finalFees2Val,
+
+      instituteId3,
+      courseId3,
+      refNumber3,
+      fees3,
+      discount3,
+      finalFees3: finalFees3Val,
+
+      instituteId4,
+      courseId4,
+      refNumber4,
+      fees4,
+      discount4,
+      finalFees4: finalFees4Val,
+
+      instituteId5,
+      courseId5,
+      refNumber5,
+      fees5,
+      discount5,
+      finalFees5: finalFees5Val,
+    });
+
+    savedAcademic = await newAcademic.save();
+
+    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
+
+    const newAccount = new Account({
+      userId: savedStudent._id,
+      acYear: academicYearById._id,
+      academicId: savedAcademic._id,
+
+      receiptNumber: "Admission",
+      type: "fees",
+      fees: totalFees,
+      paidDate: Date.now(),
+      balance: totalFees,
+      remarks: "Admission",
+    });
+
+    savedAccount = await newAccount.save();
+
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
+        access: 'public',
+        contentType: 'image/png',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
+    }
+*/
+    return res.status(200).json({ success: true, message: "Students data Imported." });
+  } catch (error) {
+
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "server error in adding student" });
+  }
+};
+
 const getStudents = async (req, res) => {
   try {
     console.log("getStudents called : ");
@@ -722,5 +966,5 @@ const getStudentsCount = async (req, res) => {
 
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent,
-  getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount
+  getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData
 };
