@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 import { Schema } from "mongoose";
-import Academic from "../models/Academic.js";
 
 const studentSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -37,13 +36,20 @@ const studentSchema = new Schema({
   hostelFees: { type: Number },
   hostelDiscount: { type: Number },
   hostelFinalFees: { type: Number },
- 
+
   active: { type: String, index: true, enum: ["Active", "In-Active", "Transferred", "Graduated", "Discontinued"], default: "Active" },
   remarks: { type: String },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+
+  courses: [{ type: Schema.Types.ObjectId, ref: 'Course', required: true }],
+  _course: { type: String },
 });
+
+studentSchema.virtual('course').
+  get(function () { return this._course; }).
+  set(function (courseName) { this._course = courseName; });
 
 const Student = mongoose.model("Student", studentSchema);
 export default Student;

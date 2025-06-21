@@ -7,7 +7,11 @@ import Academic from "../models/Academic.js";
 import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
+import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
+import redisClient from "../db/redis.js"
+import * as fs from 'fs';
+import * as path from 'path';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -21,7 +25,6 @@ const addStudent = async (req, res) => {
     const {
       name,
       schoolId,
-      rollNumber,
       doa,
       dob,
       gender,
@@ -52,6 +55,7 @@ const addStudent = async (req, res) => {
       instituteId1,
       courseId1,
       refNumber1,
+      year,
       fees1,
       discount1,
 
@@ -81,6 +85,30 @@ const addStudent = async (req, res) => {
 
     } = req.body;
 
+    const schoolById = await School.findById({ _id: schoolId });
+    if (schoolById == null) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Niswan Not exists" });
+    }
+
+    let numbering = await Numbering.findOne({ name: "Roll" });
+    if (numbering == null) {
+      console.log("Numbering not available");
+      const newNumbering = new Numbering({
+        name: "Roll",
+        currentNumber: 0,
+      });
+      numbering = await newNumbering.save();
+    }
+
+    let nextNumber = numbering.currentNumber + 1;
+    let schoolCode = schoolById.code;
+    const rollNumber = schoolCode.replaceAll("-", "") + String(nextNumber).padStart(7, '0');
+
+    console.log("RollNumber : " + rollNumber)
+    await Numbering.findByIdAndUpdate({ _id: numbering._id }, { currentNumber: nextNumber });
+
     const user = await User.findOne({ email: rollNumber });
     if (user) {
       return res
@@ -99,18 +127,11 @@ const addStudent = async (req, res) => {
     });
     savedUser = await newUser.save();
 
-    const schoolById = await School.findById({ _id: schoolId });
-    if (schoolById == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Niswan Not exists" });
-    }
-
     let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const newStudent = new Student({
       userId: savedUser._id,
       schoolId: schoolById._id,
-      rollNumber,
+      rollNumber: rollNumber,
       doa,
       dob,
       gender,
@@ -136,6 +157,7 @@ const addStudent = async (req, res) => {
       hostelDiscount,
       hostelFinalFees: hostelFinalFeesVal,
       active: "Active",
+      courses: courseId1
     });
 
     savedStudent = await newStudent.save();
@@ -165,6 +187,7 @@ const addStudent = async (req, res) => {
       instituteId1,
       courseId1,
       refNumber1,
+      year,
       fees1,
       discount1,
       finalFees1: finalFees1Val,
@@ -229,23 +252,43 @@ const addStudent = async (req, res) => {
       await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
     }
 
+    const coursesArray = [courseId1];
+    if (courseId2) {
+      coursesArray.push(courseId2);
+    }
+    if (courseId3) {
+      coursesArray.push(courseId3);
+    }
+    if (courseId4) {
+      coursesArray.push(courseId4);
+    }
+    if (courseId5) {
+      coursesArray.push(courseId5);
+    }
+    await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
+
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
 
     if (savedUser != null) {
-      savedUser.deleteOne();
+      await User.findByIdAndDelete({ _id: savedUser._id });
+      console.log("User data rollback completed.");
     }
 
     if (savedStudent != null) {
-      savedStudent.deleteOne();
-    }
+      const academicList = await Academic.find({ studentId: savedStudent._id })
+      academicList.forEach(async academic =>
+        await Academic.findByIdAndDelete({ _id: academic._id })
+      );
+      console.log("Academic data rollback completed.");
 
-    if (savedAcademic != null) {
-      savedAcademic.deleteOne();
-    }
-
-    if (savedAccount != null) {
-      savedAccount.deleteOne();
+      const account = await Account.find({ userId: savedUser._id });
+      if (!account) {
+        await Account.findByIdAndDelete({ _id: account._id });
+        console.log("Account data rollback completed.");
+      }
+      await Student.findByIdAndDelete({ _id: savedStudent._id });
+      console.log("Student data rollback completed.");
     }
 
     console.log(error);
@@ -257,245 +300,253 @@ const addStudent = async (req, res) => {
 
 const importStudentsData = async (req, res) => {
 
-  console.log("Inside Import data Method");
+  console.log("Import student data - start");
 
-  const studentsDataList = req.body;
-
-  studentsDataList.forEach((studentData) => {
-    console.log(studentData.name);
-    console.log(studentData.schoolId);
-    console.log(studentData.rollNumber);
-    console.log(studentData.doa);
-  });
-
-  console.log(studentsDataList.length);
-
+  let finalResultData = "";
   let savedUser;
   let savedStudent;
   let savedAcademic;
   let savedAccount;
-
   try {
+    const studentsDataList = req.body;
 
-    /*
-    const {
-      name,
-      schoolId,
-      rollNumber,
-      doa,
-      dob,
-      gender,
-      maritalStatus,
-      bloodGroup,
-      idMark1,
-      idMark2,
-      fatherName,
-      fatherNumber,
-      fatherOccupation,
-      motherName,
-      motherNumber,
-      motherOccupation,
-      guardianName,
-      guardianNumber,
-      guardianOccupation,
-      guardianRelation,
-      address,
-      district,
-
-      hostel,
-      hostelRefNumber,
-      hostelFees,
-      hostelDiscount,
-
-      acYear,
-
-      instituteId1,
-      courseId1,
-      refNumber1,
-      fees1,
-      discount1,
-
-      instituteId2,
-      courseId2,
-      refNumber2,
-      fees2,
-      discount2,
-
-      instituteId3,
-      courseId3,
-      refNumber3,
-      fees3,
-      discount3,
-
-      instituteId4,
-      courseId4,
-      refNumber4,
-      fees4,
-      discount4,
-
-      instituteId5,
-      courseId5,
-      refNumber5,
-      fees5,
-      discount5,
-
-    } = req.body;
-
-    const user = await User.findOne({ email: rollNumber });
-    if (user) {
+    console.log("Student data import row count : " + studentsDataList.length)
+    if (!studentsDataList || studentsDataList.length <= 0) {
       return res
         .status(400)
-        .json({ success: false, error: "User already registered in Student" });
+        .json({ success: false, error: "Please check the document. Students data not received." });
     }
 
-    const hashPassword = await bcrypt.hash(rollNumber, 10);
+    let row = 1;
+    let resultData = "";
+    for (const studentData of studentsDataList) {
+      console.log("Iteration : " + row + " / " + studentsDataList.length);
 
-    const newUser = new User({
-      name,
-      email: rollNumber,
-      password: hashPassword,
-      role: "student",
-      profileImage: "",
-    });
-    savedUser = await newUser.save();
+      // Check Mandatory fields.
+      if (!studentData.name || studentData.name === "") {
+        resultData += ", Name not given";
+      }
+      if (!studentData.rollNumber || studentData.rollNumber === "") {
+        resultData += ", RollNumber not given";
+      }
+      if (!studentData.niswanCode || studentData.niswanCode === "") {
+        resultData += ", NiswanCode not given";
+      }
+      //  if (!studentData.dob || studentData.dob === "") {
+      //    resultData += ", DOB not given";
+      //  }
+      //if (!studentData.district || studentData.district === "") {
+      //  resultData += ", District not given";
+      //}
+      if (studentData.course) {
+        if (!(studentData.course === "Muballiga" || studentData.course === "Muallama" || studentData.course === "Makthab")) {
+          resultData += ", Course not given";
+        }
+        if (!studentData.year || studentData.year === "") {
+          resultData += ", Year not given";
+        }
+        if (!studentData.fees || studentData.fees === "") {
+          resultData += ", Fees not given";
+        }
+      }
 
-    const schoolById = await School.findById({ _id: schoolId });
-    if (schoolById == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Niswan Not exists" });
-    }
+      const user = await User.findOne({ email: studentData.rollNumber });
+      if (user) {
+        resultData = resultData + ", User already registered. RollNumber : " + studentData.rollNumber;
+      }
 
-    let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
-    const newStudent = new Student({
-      userId: savedUser._id,
-      schoolId: schoolById._id,
-      rollNumber,
-      doa,
-      dob,
-      gender,
-      maritalStatus,
-      bloodGroup,
-      idMark1,
-      idMark2,
-      fatherName,
-      fatherNumber,
-      fatherOccupation,
-      motherName,
-      motherNumber,
-      motherOccupation,
-      guardianName,
-      guardianNumber,
-      guardianOccupation,
-      guardianRelation,
-      address,
-      district,
-      hostel,
-      hostelRefNumber,
-      hostelFees,
-      hostelDiscount,
-      hostelFinalFees: hostelFinalFeesVal,
-      active: "Active",
-    });
+      const school = await School.findOne({ code: studentData.niswanCode });
+      if (school == null) {
+        resultData = resultData + ", NiswanCode not available : " + studentData.niswanCode;
+      }
 
-    savedStudent = await newStudent.save();
-    if (savedStudent == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Error: Student NOT added." });
-    }
+      // If any error found, continue to next record.
+      if (resultData != "") {
+        finalResultData += "\nRow : " + row + resultData + ". \n";
+        resultData = "";
+        row++;
+        console.log("Skipped")
+        continue;
+      }
 
-    const academicYearById = await AcademicYear.findById({ _id: acYear });
-    if (academicYearById == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic Year Not exists" });
-    }
-
-    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
-    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
-    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
-    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
-    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
-
-    const newAcademic = new Academic({
-      studentId: savedStudent._id,
-      acYear: academicYearById._id,
-
-      instituteId1,
-      courseId1,
-      refNumber1,
-      fees1,
-      discount1,
-      finalFees1: finalFees1Val,
-
-      instituteId2,
-      courseId2,
-      refNumber2,
-      fees2,
-      discount2,
-      finalFees2: finalFees2Val,
-
-      instituteId3,
-      courseId3,
-      refNumber3,
-      fees3,
-      discount3,
-      finalFees3: finalFees3Val,
-
-      instituteId4,
-      courseId4,
-      refNumber4,
-      fees4,
-      discount4,
-      finalFees4: finalFees4Val,
-
-      instituteId5,
-      courseId5,
-      refNumber5,
-      fees5,
-      discount5,
-      finalFees5: finalFees5Val,
-    });
-
-    savedAcademic = await newAcademic.save();
-
-    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
-
-    const newAccount = new Account({
-      userId: savedStudent._id,
-      acYear: academicYearById._id,
-      academicId: savedAcademic._id,
-
-      receiptNumber: "Admission",
-      type: "fees",
-      fees: totalFees,
-      paidDate: Date.now(),
-      balance: totalFees,
-      remarks: "Admission",
-    });
-
-    savedAccount = await newAccount.save();
-
-    if (req.file) {
-      const fileBuffer = req.file.buffer;
-      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
-        access: 'public',
-        contentType: 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-        allowOverwrite: true,
+      // Create User.
+      const hashPassword = await bcrypt.hash(studentData.rollNumber, 10);
+      const newUser = new User({
+        name: studentData.name,
+        email: studentData.rollNumber,
+        password: hashPassword,
+        role: "student",
+        profileImage: "",
       });
 
-      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
-    }
-*/
-    return res.status(200).json({ success: true, message: "Students data Imported." });
-  } catch (error) {
+      savedUser = await newUser.save();
+      if (!savedUser) {
+        finalResultData += "\nRow : " + row + ", User registration failed. \n";
+        resultData = "";
+        row++;
+        continue;
+      }
 
+      let parts;
+      try {
+        parts = studentData.dob && studentData.dob != "" ? studentData.dob.split('/') : "1/1/2000".split('/');
+      } catch {
+        parts = "1/1/2000".split('/');
+      }
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // Subtract 1 for 0-indexed month
+      const year = parseInt(parts[2], 10);
+
+      // Create Student data.
+      const newStudent = new Student({
+        userId: savedUser._id,
+        schoolId: school._id,
+        rollNumber: studentData.rollNumber,
+        doa: new Date(),
+        dob: new Date(year, month, day),
+        gender: "Female",
+        maritalStatus: "Single",
+        idMark1: "-",
+        fatherName: studentData.fatherName ? studentData.fatherName : "",
+        fatherNumber: studentData.fatherNumber ? studentData.fatherNumber : "",
+        motherName: studentData.motherName ? studentData.motherName : "",
+        motherNumber: studentData.motherNumber ? studentData.motherNumber : "",
+        guardianName: studentData.guardianName ? studentData.guardianName : "",
+        guardianNumber: studentData.guardianNumber ? studentData.guardianNumber : "",
+        guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
+        address: "-",
+        district: "-",
+        hostel: "No",
+        active: studentData.course ? "Active" : "Graduated",
+        courses: ["-"]
+      });
+
+      savedStudent = await newStudent.save();
+      if (!savedStudent) {
+        finalResultData += "\nRow : " + row + ", Student registration failed.";
+        resultData = "";
+        row++;
+        continue;
+      }
+
+      const courses = JSON.parse(await redisClient.get('courses'));
+      let courseId = "680cf72e79e49fb103ddb97c";
+      if (studentData.course) {
+        courseId = courses.filter(course => course.name === studentData.course).map(course => course._id);
+        console.log("courseId - " + courseId)
+        if (!courseId) {
+          finalResultData += "\nRow : " + row + ", Course not found. Course Name : " + studentData.course;
+          resultData = "";
+          row++;
+          continue;
+        }
+      }
+
+      const instituteId = "67fbba7bcd590bacd4badef0";
+
+      let yearCount = studentData.year;
+      if (studentData.course === "Makthab") {
+        yearCount = 1;
+      }
+
+      let currentAcademicId;
+      let accYearId = "680485d9361ed06368c57f7c";
+      for (let i = 0; i < yearCount; i++) {
+
+        if (i == 1) {
+          accYearId = "68039133200583d3d5c01faf";
+        } if (i == 2) {
+          accYearId = "6803911e200583d3d5c01fa9";
+        }
+
+        const newAcademic = new Academic({
+          studentId: savedStudent._id,
+          acYear: accYearId,
+          instituteId1: instituteId,
+          courseId1: courseId,
+          refNumber1: studentData.rollNumber,
+          year: studentData.year,
+          fees1: studentData.fees,
+          finalFees1: studentData.fees,
+        });
+
+        savedAcademic = await newAcademic.save();
+        if (!savedAcademic) {
+          finalResultData += "\nRow : " + row + ", Student Academic registration failed. AC year : " + accYearId;
+          resultData = "";
+          row++;
+          continue;
+        }
+
+        if (i == 0) {
+          currentAcademicId = savedAcademic._id;
+        }
+      }
+
+      const newAccount = new Account({
+        userId: savedStudent._id,
+        acYear: accYearId,
+        academicId: currentAcademicId,
+
+        receiptNumber: "Admission",
+        type: "fees",
+        fees: studentData.fees,
+        paidDate: Date.now(),
+        balance: 0,
+        remarks: "Admission",
+      });
+
+      savedAccount = await newAccount.save();
+      if (!savedAccount) {
+        finalResultData += "\nRow : " + row + ", Account registration failed. AC year : " + accYearId;
+        resultData = "";
+        row++;
+        continue;
+      }
+
+      const coursesArray = [courseId];
+      await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
+
+      finalResultData += "\nRow : " + row + ", RollNumber : " + studentData.rollNumber + ", Imported Successfully!";
+      row++;
+    }
+
+
+    //  let tempFilePath = path.join('/tmp', 'Import_data_Result.txt');
+    //  fs.writeFileSync(tempFilePath, finalResultData);
+
+    console.log("Import student data - end NORMAL \n" + finalResultData);
+    return res.status(200)
+      .json({ success: true, message: "Students data Imported.", finalResultData: finalResultData });
+
+  } catch (error) {
+    console.log("Import student data - end ERROR \n" + finalResultData);
     console.log(error);
+
+    if (savedUser != null) {
+      await User.findByIdAndDelete({ _id: savedUser._id });
+      console.log("User data rollback completed.");
+    }
+
+    if (savedStudent != null) {
+      const academicList = await Academic.find({ studentId: savedStudent._id })
+      academicList.forEach(async academic =>
+        await Academic.findByIdAndDelete({ _id: academic._id })
+      );
+      console.log("Academic data rollback completed.");
+
+      const account = await Account.find({ userId: savedUser._id });
+      if (!account) {
+        await Account.findByIdAndDelete({ _id: account._id });
+        console.log("Account data rollback completed.");
+      }
+      await Student.findByIdAndDelete({ _id: savedStudent._id });
+      console.log("Student data rollback completed.");
+    }
+
     return res
       .status(500)
-      .json({ success: false, error: "server error in adding student" });
+      .json({ success: false, error: "server error in adding student", finalResultData: finalResultData });
   }
 };
 
@@ -523,7 +574,32 @@ const getStudentsBySchool = async (req, res) => {
   try {
     const students = await Student.find({ schoolId: schoolId }).sort({ rollNumber: 1 })
       .populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId");
+      .populate("courses");
+
+    {/*}  let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+    if (new Date().getMonth() + 1 >= 4) {
+      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+    }
+
+    let acadYear = await AcademicYear.findOne({ acYear: accYear });
+    if (!acadYear) {
+      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+      acadYear = await AcademicYear.findOne({ acYear: accYear });
+      if (!acadYear) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Academic Year Not found : " + accYear });
+      }
+    }
+
+    for (const student of students) {
+      const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
+        .populate("courseId1");
+      if (academic) {
+        student._course = academic.courseId1.name;
+        student.toObject({ virtuals: true });
+      }
+    } */}
 
     return res.status(200).json({ success: true, students });
 
@@ -630,43 +706,16 @@ const getAcademic = async (req, res) => {
       accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     }
 
-    const acadYear = await AcademicYear.findOne({ acYear: accYear });
+    let acadYear = await AcademicYear.findOne({ acYear: accYear });
     if (!acadYear) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic Year Not found : " + accYear });
+      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+      acadYear = await AcademicYear.findOne({ acYear: accYear });
+      if (!acadYear) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Academic Year Not found : " + accYear });
+      }
     }
-
-    {/*
-    let academic;
-    if (acaYear != "vieww") {
-      academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
-        .populate("acYear")
-        .populate("instituteId1")
-        .populate("courseId1")
-        .populate("instituteId2")
-        .populate("courseId2")
-        .populate("instituteId3")
-        .populate("courseId3")
-        .populate("instituteId4")
-        .populate("courseId4")
-        .populate("instituteId5")
-        .populate("courseId5");
-    } else {
-      academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
-        .populate("acYear")
-        .populate("instituteId1")
-        .populate("courseId1")
-        .populate("instituteId2")
-        .populate("courseId2")
-        .populate("instituteId3")
-        .populate("courseId3")
-        .populate("instituteId4")
-        .populate("courseId4")
-        .populate("instituteId5")
-        .populate("courseId5");
-    }
-    */}
 
     let academic = await Academic.findOne({ studentId: studentId, acYear: acadYear._id })
       .populate("acYear")
@@ -680,6 +729,7 @@ const getAcademic = async (req, res) => {
       .populate("courseId4")
       .populate("instituteId5")
       .populate("courseId5");
+
     if (!academic) {
       return res
         .status(404)
@@ -732,6 +782,7 @@ const updateStudent = async (req, res) => {
       instituteId1,
       courseId1,
       refNumber1,
+      year,
       fees1,
       discount1,
 
@@ -850,6 +901,7 @@ const updateStudent = async (req, res) => {
       instituteId1: instituteId1 ? instituteId1 : null,
       courseId1: courseId1 ? courseId1 : null,
       refNumber1,
+      year,
       fees1,
       discount1,
       finalFees1: finalFees1Val,
@@ -898,6 +950,21 @@ const updateStudent = async (req, res) => {
       remarks: "Admission-updated",
     })
 
+    const coursesArray = [courseId1];
+    if (courseId2) {
+      coursesArray.push(courseId2);
+    }
+    if (courseId3) {
+      coursesArray.push(courseId3);
+    }
+    if (courseId4) {
+      coursesArray.push(courseId4);
+    }
+    if (courseId5) {
+      coursesArray.push(courseId5);
+    }
+    await Student.findByIdAndUpdate({ _id: updateStudent._id }, { courses: coursesArray });
+
 
     if (!updateStudent || !updateUser || !updateAcademicById) {
       return res
@@ -917,16 +984,41 @@ const updateStudent = async (req, res) => {
 const deleteStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    //  const deleteStudent = await Student.findById({ _id: id })
-    //  await User.findByIdAndDelete({ _id: deleteStudent.userId._id })
+
+    const deleteStudent = await Student.findById({ _id: id })
+      .populate("userId", { password: 0, profileImage: 0 });
+
+    if (deleteStudent.userId && deleteStudent.userId._id) {
+      await User.findByIdAndDelete({ _id: deleteStudent.userId._id });
+    }
+    console.log("User data Successfully Deleted...")
+
+    const academicList = await Academic.find({ studentId: deleteStudent._id })
+    academicList.forEach(async academic =>
+      await Academic.findByIdAndDelete({ _id: academic._id })
+    );
+    console.log("Academic data Successfully Deleted...")
+
+    if (deleteStudent.userId && deleteStudent.userId._id) {
+      const account = await Account.find({ userId: deleteStudent.userId._id });
+      if (!account) {
+        await Account.findByIdAndDelete({ _id: account._id });
+        console.log("Account data Successfully Deleted...")
+      }
+    }
+
+    await Student.findByIdAndDelete({ _id: deleteStudent._id });
+
+    console.log("Student data Successfully Deleted...")
     //  await deleteStudent.deleteOne()
 
-    const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
-      active: "In-Active",
-      remarks: "Deleted",
-    })
-    return res.status(200).json({ success: true, updateStudent })
+    //  const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
+    //    active: "In-Active",
+    //    remarks: "Deleted",
+    //  })
+    return res.status(200).json({ success: true, message: "Successfully deleted" })
   } catch (error) {
+    console.log(error)
     return res.status(500).json({ success: false, error: "delete Student server error" })
   }
 }

@@ -9,6 +9,9 @@ import redisClient from "../db/redis.js"
 const upload = multer({ storage: multer.memoryStorage() });
 
 const addSupervisor = async (req, res) => {
+
+  let savedUser;
+  let savedSupervisor;
   try {
     const {
       name,
@@ -63,7 +66,7 @@ const addSupervisor = async (req, res) => {
       jobType,
     });
 
-    await newSupervisor.save();
+    savedSupervisor = await newSupervisor.save();
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -80,9 +83,17 @@ const addSupervisor = async (req, res) => {
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
     console.log(error);
+
+    if (savedUser != null) {
+      await User.findByIdAndDelete({ _id: savedUser._id });
+    }
+    if (savedSupervisor != null) {
+      await Supervisor.findByIdAndDelete({ _id: savedSupervisor._id });
+    }
+
     return res
       .status(500)
-      .json({ success: false, error: "server error in adding supervisor" });
+      .json({ success: false, error: "Server error in adding supervisor" });
   }
 };
 
