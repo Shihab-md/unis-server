@@ -29,6 +29,7 @@ const addStudent = async (req, res) => {
       dob,
       gender,
       maritalStatus,
+      motherTongue,
       bloodGroup,
       idMark1,
       idMark2,
@@ -44,6 +45,7 @@ const addStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      state,
 
       hostel,
       hostelRefNumber,
@@ -136,6 +138,7 @@ const addStudent = async (req, res) => {
       dob,
       gender,
       maritalStatus,
+      motherTongue,
       bloodGroup,
       idMark1,
       idMark2,
@@ -151,6 +154,7 @@ const addStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      state,
       hostel,
       hostelRefNumber,
       hostelFees,
@@ -416,6 +420,7 @@ const importStudentsData = async (req, res) => {
         guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
         address: "-",
         district: "-",
+        state: "-",
         hostel: "No",
         active: studentData.course ? "Active" : "Graduated",
         courses: ["-"]
@@ -689,6 +694,29 @@ const getStudent = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Student data not found." });
     }
+
+    const academics = await Academic.find({ studentId: student._id })
+      .populate({ path: 'acYear', select: '_id acYear' })
+      .populate({ path: 'instituteId1', select: '_id code name' })
+      .populate({ path: 'courseId1', select: '_id iCode name' })
+      .populate({ path: 'instituteId2', select: '_id code name' })
+      .populate({ path: 'courseId2', select: '_id iCode name' })
+      .populate({ path: 'instituteId3', select: '_id code name' })
+      .populate({ path: 'courseId3', select: '_id iCode name' })
+      .populate({ path: 'instituteId4', select: '_id code name' })
+      .populate({ path: 'courseId4', select: '_id iCode name' })
+      .populate({ path: 'instituteId5', select: '_id code name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' })
+
+    if (!academics) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic details Not found : " + studentId + ", " + accYear });
+    }
+
+    student._academics = academics;
+    student.toObject({ virtuals: true });
+
     return res.status(200).json({ success: true, student });
   } catch (error) {
     return res
@@ -698,7 +726,10 @@ const getStudent = async (req, res) => {
 };
 
 const getAcademic = async (req, res) => {
+
   const { studentId, acaYear } = req.params;
+
+  console.log("getAcademic : " + studentId);
   try {
 
     let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
@@ -753,6 +784,7 @@ const updateStudent = async (req, res) => {
       dob,
       gender,
       maritalStatus,
+      motherTongue,
       bloodGroup,
       idMark1,
       idMark2,
@@ -768,6 +800,7 @@ const updateStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      state,
 
       active,
       remarks,
@@ -853,6 +886,7 @@ const updateStudent = async (req, res) => {
       dob,
       gender,
       maritalStatus,
+      motherTongue,
       bloodGroup,
       idMark1,
       idMark2,
@@ -868,6 +902,7 @@ const updateStudent = async (req, res) => {
       guardianRelation,
       address,
       district,
+      state,
       hostel,
       hostelRefNumber,
       hostelFees,

@@ -8,6 +8,7 @@ const schoolSchema = new Schema({
   nameNative: { type: String },
   address: { type: String, required: true },
   district: { type: String, required: true },
+  state: { type: String, required: true },
   contactNumber: { type: Number },
   doe: { type: Date },
   email: { type: String },

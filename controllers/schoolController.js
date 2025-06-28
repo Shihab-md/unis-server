@@ -17,6 +17,7 @@ const addSchool = async (req, res) => {
       nameNative,
       address,
       district,
+      state,
       contactNumber,
       doe,
       email,
@@ -68,6 +69,7 @@ const addSchool = async (req, res) => {
       nameNative,
       address,
       district,
+      state,
       contactNumber,
       doe,
       email,
@@ -228,7 +230,8 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, doe, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, state, contactNumber, doe, email, active, 
+      supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
@@ -256,7 +259,8 @@ const updateSchool = async (req, res) => {
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
-      nameNative, address, district, contactNumber, doe, email, active, supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative, address, district, state, contactNumber, doe, email, active, 
+      supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
       incharge4Number,
@@ -298,8 +302,8 @@ const updateSchool = async (req, res) => {
 const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteSchool = await School.findById({ _id: id })
-    await deleteSchool.deleteOne()
+    await School.findByIdAndDelete({ _id: id })
+   // await deleteSchool.deleteOne()
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete School server error" })

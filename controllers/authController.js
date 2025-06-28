@@ -29,11 +29,11 @@ const login = async (req, res) => {
       let employee = await Employee.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
-          select: 'code nameEnglish district'
+          select: 'code nameEnglish district state'
         });
 
       schoolId = employee.schoolId._id;
-      schoolName = employee.schoolId.code + " : " + employee.schoolId.nameEnglish + ", " + employee.schoolId.district;
+      schoolName = employee.schoolId.code + " : " + employee.schoolId.nameEnglish + ", " + employee.schoolId.district + ", " + employee.schoolId.state;
 
     } else if (user.role === "student"
       || user.role === "parent") {
@@ -41,11 +41,11 @@ const login = async (req, res) => {
       let student = await Student.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
-          select: 'code nameEnglish district'
+          select: 'code nameEnglish district state'
         });
 
       schoolId = student.schoolId._id;
-      schoolName = student.schoolId.code + " : " + student.schoolId.nameEnglish + ", " + employee.schoolId.district;
+      schoolName = student.schoolId.code + " : " + student.schoolId.nameEnglish + ", " + student.schoolId.district + ", " + student.schoolId.state;
     }
 
     const token = jwt.sign(

@@ -11,6 +11,7 @@ const studentSchema = new Schema({
   dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
+  motherTongue: { type: String, enum: ["Tamil", "Urdu", "Telugu", "English"], },
   bloodGroup: { type: String },
   idMark1: { type: String, required: true },
   idMark2: { type: String },
@@ -30,6 +31,7 @@ const studentSchema = new Schema({
 
   address: { type: String, required: true },
   district: { type: String, required: true },
+  state: { type: String, required: true },
 
   hostel: { type: String, index: true, enum: ["Yes", "No"], },
   hostelRefNumber: { type: String },
@@ -44,12 +46,18 @@ const studentSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 
   courses: [{ type: Schema.Types.ObjectId, ref: 'Course', required: true }],
+
   _course: { type: String },
+  _academics: [{ type: Schema.Types.ObjectId, ref: 'Academic', required: true }],
 });
 
 studentSchema.virtual('course').
   get(function () { return this._course; }).
   set(function (courseName) { this._course = courseName; });
+
+studentSchema.virtual('academics').
+  get(function () { return this._academics; }).
+  set(function (academics) { this._academics = academics; });
 
 const Student = mongoose.model("Student", studentSchema);
 export default Student;
