@@ -200,6 +200,7 @@ const addStudent = async (req, res) => {
       fees1,
       discount1,
       finalFees1: finalFees1Val,
+      status1: "Admission",
 
       instituteId2,
       courseId2,
@@ -208,6 +209,7 @@ const addStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2: finalFees2Val,
+      status2: instituteId2 && courseId2 ? "Admission" : null,
 
       instituteId3,
       courseId3,
@@ -216,6 +218,7 @@ const addStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3: finalFees3Val,
+      status3: instituteId3 && courseId3 ? "Admission" : null,
 
       instituteId4,
       courseId4,
@@ -224,6 +227,7 @@ const addStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4: finalFees4Val,
+      status4: instituteId4 && courseId4 ? "Admission" : null,
 
       instituteId5,
       courseId5,
@@ -232,6 +236,7 @@ const addStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5: finalFees5Val,
+      status5: instituteId5 && courseId5 ? "Admission" : null,
     });
 
     savedAcademic = await newAcademic.save();
@@ -961,6 +966,7 @@ const updateStudent = async (req, res) => {
       fees2,
       discount2,
       finalFees2: finalFees2Val,
+      status2: instituteId2 && courseId2 ? "Admission" : null,
 
       instituteId3: instituteId3 ? instituteId3 : null,
       courseId3: courseId3 ? courseId3 : null,
@@ -969,6 +975,7 @@ const updateStudent = async (req, res) => {
       fees3,
       discount3,
       finalFees3: finalFees3Val,
+      status3: instituteId3 && courseId3 ? "Admission" : null,
 
       instituteId4: instituteId4 ? instituteId4 : null,
       courseId4: courseId4 ? courseId4 : null,
@@ -977,6 +984,7 @@ const updateStudent = async (req, res) => {
       fees4,
       discount4,
       finalFees4: finalFees4Val,
+      status4: instituteId4 && courseId4 ? "Admission" : null,
 
       instituteId5: instituteId5 ? instituteId5 : null,
       courseId5: courseId5 ? courseId5 : null,
@@ -985,6 +993,7 @@ const updateStudent = async (req, res) => {
       fees5,
       discount5,
       finalFees5: finalFees5Val,
+      status5: instituteId5 && courseId5 ? "Admission" : null,
     })
 
     const updateAccount = await Account.findOne({ userId: updateStudent._id, acYear: acYear, academicId: updateAcademic._id });
