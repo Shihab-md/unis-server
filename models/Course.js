@@ -7,6 +7,7 @@ const courseSchema = new Schema({
   type: { type: String, enum: ["Deeniyath Education", "Teacher Training", "School Education", "College Education", "Islamic Home Science", "Vocational Courses"], },
   remarks: { type: String },
   fees: { type: Number, required: true },
+  years: { type: Number, required: true },
 
   subject1: { type: String, required: true },
   subject1MaxMark: { type: Number, required: true },
