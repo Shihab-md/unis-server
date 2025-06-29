@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -42,7 +43,7 @@ const addSupervisor = async (req, res) => {
     const hashPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
-      name,
+      name: toCamelCase(name),
       email,
       password: hashPassword,
       role: "supervisor",
@@ -54,10 +55,10 @@ const addSupervisor = async (req, res) => {
     const newSupervisor = new Supervisor({
       userId: savedUser._id,
       supervisorId,
-      address,
+      address: toCamelCase(address),
       contactNumber,
-      routeName,
-      qualification,
+      routeName: toCamelCase(routeName),
+      qualification: toCamelCase(qualification),
       dob,
       gender,
       maritalStatus,
@@ -196,13 +197,23 @@ const updateSupervisor = async (req, res) => {
         allowOverwrite: true,
       });
 
-      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, profileImage: blob.downloadUrl, })
+      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, {
+        name: toCamelCase(name),
+        profileImage: blob.downloadUrl,
+      })
     } else {
-      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, { name, })
+      updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, {
+        name: toCamelCase(name),
+      })
     }
 
     const updateSupervisor = await Supervisor.findByIdAndUpdate({ _id: id }, {
-      supervisorId, contactNumber, address, routeName, gender, qualification, dob, maritalStatus, jobType,
+      supervisorId, contactNumber,
+      address: toCamelCase(address),
+      routeName: toCamelCase(routeName),
+      gender,
+      qualification: toCamelCase(qualification),
+      dob, maritalStatus, jobType,
       doj, salary
     })
 

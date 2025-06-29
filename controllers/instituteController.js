@@ -1,5 +1,6 @@
 import Institute from "../models/Institute.js";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const addInstitute = async (req, res) => {
   try {
@@ -30,11 +31,11 @@ const addInstitute = async (req, res) => {
       type,
       contactNumber,
       email,
-      address,
-      district,
-      incharge1,
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      incharge1: toCamelCase(incharge1),
       incharge1Number,
-      incharge2,
+      incharge2: toCamelCase(incharge2),
       incharge2Number,
     });
 
@@ -62,7 +63,7 @@ const getInstitutes = async (req, res) => {
 const getInstitutesFromCache = async (req, res) => {
   try {
     const institutes = JSON.parse(await redisClient.get('institutes'));
-  //  console.log(institutes)
+    //  console.log(institutes)
     return res.status(200).json({ success: true, institutes });
   } catch (error) {
     return res
@@ -109,11 +110,11 @@ const updateInstitute = async (req, res) => {
       type,
       contactNumber,
       email,
-      address,
-      district,
-      incharge1,
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      incharge1: toCamelCase(incharge1),
       incharge1Number,
-      incharge2,
+      incharge2: toCamelCase(incharge2),
       incharge2Number,
     })
 

@@ -1,5 +1,6 @@
 import AcademicYear from "../models/AcademicYear.js";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const addAcademicYear = async (req, res) => {
   try {
@@ -17,7 +18,7 @@ const addAcademicYear = async (req, res) => {
 
     const newAcademicYear = new AcademicYear({
       acYear,
-      desc,
+      desc: toCamelCase(desc),
     });
 
     await newAcademicYear.save()
@@ -80,7 +81,7 @@ const updateAcademicYear = async (req, res) => {
 
     const updateAcademicYear = await AcademicYear.findByIdAndUpdate({ _id: id }, {
       acYear,
-      desc,
+      desc: toCamelCase(desc),
     })
 
     if (!updateAcademicYear) {

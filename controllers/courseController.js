@@ -1,5 +1,6 @@
 import Course from "../models/Course.js";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const addCourse = async (req, res) => {
   try {
@@ -51,39 +52,39 @@ const addCourse = async (req, res) => {
 
     const newCourse = new Course({
       code,
-      name,
+      name: toCamelCase(name),
       type,
-      remarks,
+      remarks: toCamelCase(remarks),
       fees,
       years,
-      subject1,
+      subject1: toCamelCase(subject1),
       subject1MaxMark,
       subject1PassMark,
-      subject2,
+      subject2: toCamelCase(subject2),
       subject2MaxMark,
       subject2PassMark,
-      subject3,
+      subject3: toCamelCase(subject3),
       subject3MaxMark,
       subject3PassMark,
-      subject4,
+      subject4: toCamelCase(subject4),
       subject4MaxMark,
       subject4PassMark,
-      subject5,
+      subject5: toCamelCase(subject5),
       subject5MaxMark,
       subject5PassMark,
-      subject6,
+      subject6: toCamelCase(subject6),
       subject6MaxMark,
       subject6PassMark,
-      subject7,
+      subject7: toCamelCase(subject7),
       subject7MaxMark,
       subject7PassMark,
-      subject8,
+      subject8: toCamelCase(subject8),
       subject8MaxMark,
       subject8PassMark,
-      subject9,
+      subject9: toCamelCase(subject9),
       subject9MaxMark,
       subject9PassMark,
-      subject10,
+      subject10: toCamelCase(subject10),
       subject10MaxMark,
       subject10PassMark,
     });
@@ -101,7 +102,7 @@ const addCourse = async (req, res) => {
 const getCourses = async (req, res) => {
   try {
     const courses = await Course.find().sort({ code: 1 });
- 
+
     if (courses.length > 0) {
       let subjectsCount = 0;
       for (const course of courses) {
@@ -222,39 +223,39 @@ const updateCourse = async (req, res) => {
     }
 
     const updateCourse = await Course.findByIdAndUpdate({ _id: id }, {
-      name,
+      name: toCamelCase(name),
       type,
-      remarks,
+      remarks: toCamelCase(remarks),
       fees,
       years,
-      subject1,
+      subject1: toCamelCase(subject1),
       subject1MaxMark,
       subject1PassMark,
-      subject2,
+      subject2: toCamelCase(subject2),
       subject2MaxMark,
       subject2PassMark,
-      subject3,
+      subject3: toCamelCase(subject3),
       subject3MaxMark,
       subject3PassMark,
-      subject4,
+      subject4: toCamelCase(subject4),
       subject4MaxMark,
       subject4PassMark,
-      subject5,
+      subject5: toCamelCase(subject5),
       subject5MaxMark,
       subject5PassMark,
-      subject6,
+      subject6: toCamelCase(subject6),
       subject6MaxMark,
       subject6PassMark,
-      subject7,
+      subject7: toCamelCase(subject7),
       subject7MaxMark,
       subject7PassMark,
-      subject8,
+      subject8: toCamelCase(subject8),
       subject8MaxMark,
       subject8PassMark,
-      subject9,
+      subject9: toCamelCase(subject9),
       subject9MaxMark,
       subject9PassMark,
-      subject10,
+      subject10: toCamelCase(subject10),
       subject10MaxMark,
       subject10PassMark,
     })

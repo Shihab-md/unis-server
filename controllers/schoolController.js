@@ -1,10 +1,10 @@
 import multer from "multer";
 import jwt from "jsonwebtoken";
 import School from "../models/School.js";
-import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const upload = multer({});
 
@@ -67,26 +67,26 @@ const addSchool = async (req, res) => {
       nameEnglish,
       nameArabic,
       nameNative,
-      address,
-      district,
-      state,
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      state: toCamelCase(state),
       contactNumber,
       doe,
       email,
       supervisorId,
-      incharge1,
+      incharge1: toCamelCase(incharge1),
       incharge1Number,
-      incharge2,
+      incharge2: toCamelCase(incharge2),
       incharge2Number,
-      incharge3,
+      incharge3: toCamelCase(incharge3),
       incharge3Number,
-      incharge4,
+      incharge4: toCamelCase(incharge4),
       incharge4Number,
-      incharge5,
+      incharge5: toCamelCase(incharge5),
       incharge5Number,
-      incharge6,
+      incharge6: toCamelCase(incharge6),
       incharge6Number,
-      incharge7,
+      incharge7: toCamelCase(incharge7),
       incharge7Number,
       active,
       createdAt,
@@ -117,7 +117,7 @@ const getSchools = async (req, res) => {
     let schools = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
       schools = await School.find().sort({ code: 1 })
-       // .populate("supervisorId")
+        // .populate("supervisorId")
         .populate({
           path: 'supervisorId',
           populate: {
@@ -132,7 +132,7 @@ const getSchools = async (req, res) => {
       if (supervisor && supervisor._id) {
         // console.log(supervisor._id.toString())
         schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
-        //  .populate("supervisorId")
+          //  .populate("supervisorId")
           .populate({
             path: 'supervisorId',
             populate: {
@@ -151,7 +151,7 @@ const getSchools = async (req, res) => {
       //  console.log(userId + " - " + employee.schoolId)
       if (employee && employee.schoolId) {
         schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 })
-        //  .populate("supervisorId")
+          //  .populate("supervisorId")
           .populate({
             path: 'supervisorId',
             populate: {
@@ -230,7 +230,7 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { code, nameEnglish,
       nameArabic,
-      nameNative, address, district, state, contactNumber, doe, email, active, 
+      nameNative, address, district, state, contactNumber, doe, email, active,
       supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
       incharge3Number,
       incharge4,
@@ -259,16 +259,25 @@ const updateSchool = async (req, res) => {
     const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
       code, nameEnglish,
       nameArabic,
-      nameNative, address, district, state, contactNumber, doe, email, active, 
-      supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative,
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      state: toCamelCase(state),
+      contactNumber, doe, email, active,
+      supervisorId,
+      incharge1: toCamelCase(incharge1),
+      incharge1Number,
+      incharge2: toCamelCase(incharge2),
+      incharge2Number,
+      incharge3: toCamelCase(incharge3),
       incharge3Number,
-      incharge4,
+      incharge4: toCamelCase(incharge4),
       incharge4Number,
-      incharge5,
+      incharge5: toCamelCase(incharge5),
       incharge5Number,
-      incharge6,
+      incharge6: toCamelCase(incharge6),
       incharge6Number,
-      incharge7,
+      incharge7: toCamelCase(incharge7),
       incharge7Number,
     })
 
@@ -303,7 +312,7 @@ const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
     await School.findByIdAndDelete({ _id: id })
-   // await deleteSchool.deleteOne()
+    // await deleteSchool.deleteOne()
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete School server error" })

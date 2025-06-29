@@ -10,6 +10,7 @@ import Account from "../models/Account.js";
 import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -125,7 +126,7 @@ const addStudent = async (req, res) => {
     const hashPassword = await bcrypt.hash(rollNumber, 10);
 
     const newUser = new User({
-      name,
+      name: toCamelCase(name),
       email: rollNumber,
       password: hashPassword,
       role: "student",
@@ -143,22 +144,22 @@ const addStudent = async (req, res) => {
       gender,
       maritalStatus,
       motherTongue,
-      bloodGroup,
-      idMark1,
-      idMark2,
-      fatherName,
+      bloodGroup: toCamelCase(bloodGroup),
+      idMark1: toCamelCase(idMark1),
+      idMark2: toCamelCase(idMark2),
+      fatherName: toCamelCase(fatherName),
       fatherNumber,
-      fatherOccupation,
-      motherName,
+      fatherOccupation: toCamelCase(fatherOccupation),
+      motherName: toCamelCase(motherName),
       motherNumber,
-      motherOccupation,
-      guardianName,
+      motherOccupation: toCamelCase(motherOccupation),
+      guardianName: toCamelCase(guardianName),
       guardianNumber,
-      guardianOccupation,
-      guardianRelation,
-      address,
-      district,
-      state,
+      guardianOccupation: toCamelCase(guardianOccupation),
+      guardianRelation: toCamelCase(guardianRelation),
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      state: toCamelCase(state),
       hostel,
       hostelRefNumber,
       hostelFees,
@@ -887,9 +888,9 @@ const updateStudent = async (req, res) => {
         allowOverwrite: true,
       });
 
-      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name, profileImage: blob.downloadUrl, })
+      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name: toCamelCase(name), profileImage: blob.downloadUrl, })
     } else {
-      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name, })
+      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name: toCamelCase(name), })
     }
 
     let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
@@ -899,29 +900,29 @@ const updateStudent = async (req, res) => {
       gender,
       maritalStatus,
       motherTongue,
-      bloodGroup,
-      idMark1,
-      idMark2,
-      fatherName,
+      bloodGroup: toCamelCase(bloodGroup),
+      idMark1: toCamelCase(idMark1),
+      idMark2: toCamelCase(idMark2),
+      fatherName: toCamelCase(fatherName),
       fatherNumber,
-      fatherOccupation,
-      motherName,
+      fatherOccupation: toCamelCase(fatherOccupation),
+      motherName: toCamelCase(motherName),
       motherNumber,
-      motherOccupation,
-      guardianName,
+      motherOccupation: toCamelCase(motherOccupation),
+      guardianName: toCamelCase(guardianName),
       guardianNumber,
-      guardianOccupation,
-      guardianRelation,
-      address,
-      district,
-      state,
+      guardianOccupation: toCamelCase(guardianOccupation),
+      guardianRelation: toCamelCase(guardianRelation),
+      address: toCamelCase(address),
+      district: toCamelCase(district),
+      state: toCamelCase(state),
       hostel,
       hostelRefNumber,
       hostelFees,
       hostelDiscount,
       hostelFinalFees: hostelFinalFeesVal,
       active,
-      remarks,
+      remarks: toCamelCase(remarks),
     })
 
     const academicYearById = await AcademicYear.findById({ _id: acYear });

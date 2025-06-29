@@ -2,6 +2,7 @@ import multer from "multer";
 import { put } from "@vercel/blob";
 import Template from "../models/Template.js";
 import redisClient from "../db/redis.js"
+import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -16,7 +17,7 @@ const addTemplate = async (req, res) => {
 
     newTemplate = new Template({
       courseId,
-      details,
+      details: toCamelCase(details),
       template: "-",
     });
 
@@ -115,9 +116,9 @@ const updateTemplate = async (req, res) => {
         allowOverwrite: true,
       });
 
-      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details, template: blob.downloadUrl });
+      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details: toCamelCase(details), template: blob.downloadUrl });
     } else {
-      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details, })
+      updateTemplate = await Template.findByIdAndUpdate({ _id: id }, { details: toCamelCase(details), })
     }
 
 

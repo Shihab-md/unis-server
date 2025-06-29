@@ -4,6 +4,7 @@ import Employee from "../models/Employee.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
+import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -37,7 +38,7 @@ const addEmployee = async (req, res) => {
     const hashPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
-      name,
+      name: toCamelCase(name),
       email,
       password: hashPassword,
       role,
@@ -57,9 +58,9 @@ const addEmployee = async (req, res) => {
       schoolId: schoolById._id,
       employeeId,
       contactNumber,
-      address,
-      designation,
-      qualification,
+      address: toCamelCase(address),
+      designation: toCamelCase(designation),
+      qualification: toCamelCase(qualification),
       dob,
       gender,
       maritalStatus,
@@ -171,17 +172,17 @@ const updateEmployee = async (req, res) => {
         allowOverwrite: true,
       });
 
-      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name, profileImage: blob.downloadUrl, })
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name: toCamelCase(name), profileImage: blob.downloadUrl, })
     } else {
-      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name, })
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name: toCamelCase(name), })
     }
 
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
       schoolId: school._id,
       contactNumber,
-      address,
-      designation,
-      qualification,
+      address: toCamelCase(address),
+      designation: toCamelCase(designation),
+      qualification: toCamelCase(qualification),
       dob,
       gender,
       maritalStatus,
