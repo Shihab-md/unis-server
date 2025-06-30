@@ -789,6 +789,78 @@ const getAcademic = async (req, res) => {
   }
 };
 
+const getStudentForPromote = async (req, res) => {
+
+  try {
+    const { id } = req.params;
+    console.log("getStudentForPromote : " + id);
+
+    let student = await Student.findById({ _id: id })
+      .populate("userId", { password: 0 })
+      .populate("schoolId");
+
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Student data not found." });
+    }
+
+    let accYear;
+    if (new Date().getMonth() + 1 >= 4) {
+      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+    }
+
+    const academicYears = JSON.parse(await redisClient.get('academicYears'));
+    let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+
+    let academics = await Academic.find({ studentId: student._id, acYear: accYearId })
+      .populate({ path: 'acYear', select: '_id acYear' })
+      .populate({ path: 'instituteId1', select: '_id code name' })
+      .populate({ path: 'courseId1', select: '_id iCode name' })
+      .populate({ path: 'instituteId2', select: '_id code name' })
+      .populate({ path: 'courseId2', select: '_id iCode name' })
+      .populate({ path: 'instituteId3', select: '_id code name' })
+      .populate({ path: 'courseId3', select: '_id iCode name' })
+      .populate({ path: 'instituteId4', select: '_id code name' })
+      .populate({ path: 'courseId4', select: '_id iCode name' })
+      .populate({ path: 'instituteId5', select: '_id code name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' })
+
+    if (!academics) {
+      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+      accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+
+      academics = await Academic.find({ studentId: student._id, acYear: accYearId })
+        .populate({ path: 'acYear', select: '_id acYear' })
+        .populate({ path: 'instituteId1', select: '_id code name' })
+        .populate({ path: 'courseId1', select: '_id iCode name' })
+        .populate({ path: 'instituteId2', select: '_id code name' })
+        .populate({ path: 'courseId2', select: '_id iCode name' })
+        .populate({ path: 'instituteId3', select: '_id code name' })
+        .populate({ path: 'courseId3', select: '_id iCode name' })
+        .populate({ path: 'instituteId4', select: '_id code name' })
+        .populate({ path: 'courseId4', select: '_id iCode name' })
+        .populate({ path: 'instituteId5', select: '_id code name' })
+        .populate({ path: 'courseId5', select: '_id iCode name' })
+
+      if (!academics) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
+      }
+    }
+
+    student._academics = academics;
+    student.toObject({ virtuals: true });
+
+    return res.status(200).json({ success: true, student });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "Get student For Promote server error" });
+  }
+};
 const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1119,5 +1191,6 @@ const getStudentsCount = async (req, res) => {
 
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent,
-  getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData
+  getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
+  getStudentForPromote
 };
