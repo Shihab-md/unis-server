@@ -1455,18 +1455,6 @@ const getStudentsCount = async (req, res) => {
   }
 };
 
-{/*const fetchStudentsByDepId = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const students = await Student.find({ department: id })
-    return res.status(200).json({ success: true, students });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get studentsbyDepId server error" });
-  }
-}*/}
-
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
