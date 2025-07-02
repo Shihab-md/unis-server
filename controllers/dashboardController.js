@@ -54,6 +54,7 @@ const getMasterSummary = async (req, res) => {
         const totalCourses = await redisClient.get('totalCourses');
         const totalAcademicYears = await redisClient.get('totalAcademicYears');
         const totalTemplates = await redisClient.get('totalTemplates');
+        const totalDistrictStates = await redisClient.get('totalDistrictStates');
 
         return res.status(200).json({
             success: true,
@@ -61,6 +62,7 @@ const getMasterSummary = async (req, res) => {
             totalCourses,
             totalAcademicYears,
             totalTemplates,
+            totalDistrictStates,
         })
     } catch (error) {
         console.log(error.message)
