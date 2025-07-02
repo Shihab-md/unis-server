@@ -11,7 +11,7 @@ const studentSchema = new Schema({
   dob: { type: Date, required: true },
   gender: { type: String, enum: ["Male", "Female"], },
   maritalStatus: { type: String, enum: ["Married", "Single"], },
-  motherTongue: { type: String, enum: ["Tamil", "Urdu", "Telugu", "English"], },
+  motherTongue: { type: String },
   bloodGroup: { type: String },
   idMark1: { type: String, required: true },
   idMark2: { type: String },
