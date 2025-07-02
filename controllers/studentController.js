@@ -725,7 +725,53 @@ const getStudent = async (req, res) => {
     if (!academics) {
       return res
         .status(404)
-        .json({ success: false, error: "Academic details Not found : " + studentId + ", " + accYear });
+        .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
+    }
+
+    student._academics = academics;
+    student.toObject({ virtuals: true });
+
+    return res.status(200).json({ success: true, student });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get student by ID server error" });
+  }
+};
+
+const getStudentForEdit = async (req, res) => {
+  const { id } = req.params;
+
+  console.log("getStudentForEdit : " + id);
+
+  try {
+    let student = await Student.findById({ _id: id })
+      .populate("userId", { password: 0 })
+      .populate("schoolId");
+
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Student data not found." });
+    }
+
+    const academics = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
+      .populate({ path: 'acYear', select: '_id acYear' })
+      .populate({ path: 'instituteId1', select: '_id code name' })
+      .populate({ path: 'courseId1', select: '_id iCode name' })
+      .populate({ path: 'instituteId2', select: '_id code name' })
+      .populate({ path: 'courseId2', select: '_id iCode name' })
+      .populate({ path: 'instituteId3', select: '_id code name' })
+      .populate({ path: 'courseId3', select: '_id iCode name' })
+      .populate({ path: 'instituteId4', select: '_id code name' })
+      .populate({ path: 'courseId4', select: '_id iCode name' })
+      .populate({ path: 'instituteId5', select: '_id code name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' })
+
+    if (!academics) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
     }
 
     student._academics = academics;
@@ -805,13 +851,11 @@ const getStudentForPromote = async (req, res) => {
         .json({ success: false, error: "Student data not found." });
     }
 
-    let accYear;
-    if (new Date().getMonth() + 1 >= 4) {
-      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
-    }
-
     const academicYears = JSON.parse(await redisClient.get('academicYears'));
+
+    let accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+    console.log("Ac Id - 1 : " + accYearId)
 
     let academics = await Academic.find({ studentId: student._id, acYear: accYearId })
       .populate({ path: 'acYear', select: '_id acYear' })
@@ -826,28 +870,33 @@ const getStudentForPromote = async (req, res) => {
       .populate({ path: 'instituteId5', select: '_id code name' })
       .populate({ path: 'courseId5', select: '_id iCode name' })
 
-    if (!academics) {
-      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
-      accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+    if (academics && academics.length > 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Academic details Already Found : " + student._id + ", " + accYear });
+    }
 
-      academics = await Academic.find({ studentId: student._id, acYear: accYearId })
-        .populate({ path: 'acYear', select: '_id acYear' })
-        .populate({ path: 'instituteId1', select: '_id code name' })
-        .populate({ path: 'courseId1', select: '_id iCode name' })
-        .populate({ path: 'instituteId2', select: '_id code name' })
-        .populate({ path: 'courseId2', select: '_id iCode name' })
-        .populate({ path: 'instituteId3', select: '_id code name' })
-        .populate({ path: 'courseId3', select: '_id iCode name' })
-        .populate({ path: 'instituteId4', select: '_id code name' })
-        .populate({ path: 'courseId4', select: '_id iCode name' })
-        .populate({ path: 'instituteId5', select: '_id code name' })
-        .populate({ path: 'courseId5', select: '_id iCode name' })
+    accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+    accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+    console.log("Ac Id - 2 : " + accYearId)
 
-      if (!academics) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
-      }
+    academics = await Academic.find({ studentId: student._id, acYear: accYearId })
+      .populate({ path: 'acYear', select: '_id acYear' })
+      .populate({ path: 'instituteId1', select: '_id code name' })
+      .populate({ path: 'courseId1', select: '_id iCode name' })
+      .populate({ path: 'instituteId2', select: '_id code name' })
+      .populate({ path: 'courseId2', select: '_id iCode name' })
+      .populate({ path: 'instituteId3', select: '_id code name' })
+      .populate({ path: 'courseId3', select: '_id iCode name' })
+      .populate({ path: 'instituteId4', select: '_id code name' })
+      .populate({ path: 'courseId4', select: '_id iCode name' })
+      .populate({ path: 'instituteId5', select: '_id code name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' })
+
+    if (!academics || academics.length <= 0) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Previous Academic details Not found : " + student._id + ", " + accYear });
     }
 
     student._academics = academics;
@@ -861,6 +910,7 @@ const getStudentForPromote = async (req, res) => {
       .json({ success: false, error: "Get student For Promote server error" });
   }
 };
+
 const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1114,6 +1164,234 @@ const updateStudent = async (req, res) => {
   }
 };
 
+const promoteStudent = async (req, res) => {
+
+  console.log("promoteStudent")
+  try {
+    const { id } = req.params;
+    const {
+      acYear,
+
+      instituteId1,
+      courseId1,
+      refNumber1,
+      year1,
+      fees1,
+      discount1,
+      status1,
+
+      instituteId2,
+      courseId2,
+      refNumber2,
+      year2,
+      fees2,
+      discount2,
+      status2,
+
+      instituteId3,
+      courseId3,
+      refNumber3,
+      year3,
+      fees3,
+      discount3,
+      status3,
+
+      instituteId4,
+      courseId4,
+      refNumber4,
+      year4,
+      fees4,
+      discount4,
+      status4,
+
+      instituteId5,
+      courseId5,
+      refNumber5,
+      year5,
+      fees5,
+      discount5,
+      status5,
+    } = req.body;
+
+    const student = await Student.findById({ _id: id });
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Student not found" });
+    }
+
+    const user = await User.findById({ _id: student.userId })
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, error: "User data not found" });
+    }
+
+    console.log("School Id : " + student.schoolId)
+    const school = await School.findById({ _id: student.schoolId })
+    if (!school) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Niswan not found" });
+    }
+
+    const accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+    const academicYears = JSON.parse(await redisClient.get('academicYears'));
+    const accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+
+    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
+    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
+    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
+    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
+    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
+
+    let updateAcademic = await Academic.findOne({ studentId: student._id, acYear: accYearId });
+    if (updateAcademic != null) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Check the Academic Data - Already Promote data found." });
+    }
+
+    // To complete.
+    if (status1 === "Completed" || status2 === "Completed" || status3 === "Completed"
+      || status4 === "Completed" || status5 === "Completed") {
+
+      const academic = await Academic.findOne({ studentId: student._id, acYear: acYear });
+      if (academic != null) {
+        await Academic.findByIdAndUpdate({ _id: academic._id }, {
+          status1: status1 && status1 === "Completed" ? status1 : academic.status1,
+          status2: status2 && status2 === "Completed" ? status2 : academic.status2,
+          status3: status3 && status3 === "Completed" ? status3 : academic.status3,
+          status4: status4 && status4 === "Completed" ? status4 : academic.status4,
+          status5: status5 && status5 === "Completed" ? status5 : academic.status5,
+        });
+      }
+    }
+
+    // To promote.
+    if (!(status1 === "Completed" && status2 === "Completed" && status3 === "Completed"
+      && status4 === "Completed" && status5 === "Completed")) {
+
+      const newAcademic = new Academic({
+        studentId: student._id,
+        acYear: accYearId,
+
+        // Deeniyath Education.
+        instituteId1: status1 && status1 === "Completed" ? null : instituteId1 ? instituteId1 : null,
+        courseId1: status1 && status1 === "Completed" ? null : courseId1 ? courseId1 : null,
+        refNumber1: status1 && status1 === "Completed" ? null : refNumber1,
+        year1: status1 && status1 === "Completed" ? null : instituteId1 ?
+          status1 && status1 === "Not-Promoted" ? year1 : year1 ? Number(year1) + 1 : 1 : null,
+        fees1: status1 && status1 === "Completed" ? null : fees1,
+        discount1: status1 && status1 === "Completed" ? null : discount1,
+        finalFees1: status1 && status1 === "Completed" ? null : finalFees1Val,
+        status1: status1 && status1 === "Completed" ? null : status1,
+
+        // School Education.
+        instituteId2: status2 && status2 === "Completed" ? null : instituteId2 ? instituteId2 : null,
+        courseId2: status2 && status2 === "Completed" ? null : courseId2 ? courseId2 : null,
+        refNumber2: status2 && status2 === "Completed" ? null : refNumber2,
+        year2: status2 && status2 === "Completed" ? null : instituteId2 ?
+          status2 && status2 === "Not-Promoted" ? year2 : year2 ? Number(year2) + 1 : 1 : null,
+        fees2: status2 && status2 === "Completed" ? null : fees2,
+        discount2: status2 && status2 === "Completed" ? null : discount2,
+        finalFees2: status2 && status2 === "Completed" ? null : finalFees2Val,
+        status2: status2 && status2 === "Completed" ? null : status2,
+
+        // College Education.
+        instituteId3: status3 && status3 === "Completed" ? null : instituteId3 ? instituteId3 : null,
+        courseId3: status3 && status3 === "Completed" ? null : courseId3 ? courseId3 : null,
+        refNumber3: status3 && status3 === "Completed" ? null : refNumber3,
+        year3: status3 && status3 === "Completed" ? null : instituteId3 ?
+          status3 && status3 === "Not-Promoted" ? year3 : year3 ? Number(year3) + 1 : 1 : null,
+        fees3: status3 && status3 === "Completed" ? null : fees3,
+        discount3: status3 && status3 === "Completed" ? null : discount3,
+        finalFees3: status3 && status3 === "Completed" ? null : finalFees3Val,
+        status3: status3 && status3 === "Completed" ? null : status3,
+
+        // Islamic Home Science.
+        instituteId4: status4 && status4 === "Completed" ? null : instituteId4 ? instituteId4 : null,
+        courseId4: status4 && status4 === "Completed" ? null : courseId4 ? courseId4 : null,
+        refNumber4: status4 && status4 === "Completed" ? null : refNumber4,
+        year4: status4 && status4 === "Completed" ? null : instituteId4 ?
+          status4 && status4 === "Not-Promoted" ? year4 : year4 ? Number(year4) + 1 : 1 : null,
+        fees4: status4 && status4 === "Completed" ? null : fees4,
+        discount4: status4 && status4 === "Completed" ? null : discount4,
+        finalFees4: status4 && status4 === "Completed" ? null : finalFees4Val,
+        status4: status4 && status4 === "Completed" ? null : status4,
+
+        // Vocational Course.
+        instituteId5: status5 && status5 === "Completed" ? null : instituteId5 ? instituteId5 : null,
+        courseId5: status5 && status5 === "Completed" ? null : courseId5 ? courseId5 : null,
+        refNumber5: status5 && status5 === "Completed" ? null : refNumber5,
+        year5: status5 && status5 === "Completed" ? null : instituteId5 ?
+          status5 && status5 === "Not-Promoted" ? year5 : year5 ? Number(year5) + 1 : 1 : null,
+        fees5: status5 && status5 === "Completed" ? null : fees5,
+        discount5: status5 && status5 === "Completed" ? null : discount5,
+        finalFees5: status5 && status5 === "Completed" ? null : finalFees5Val,
+        status5: status5 && status5 === "Completed" ? null : status5,
+      })
+
+      updateAcademic = await newAcademic.save();
+    }
+
+    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val;
+
+    const newAccount = new Account({
+      userId: student._id,
+      acYear: accYearId,
+      academicId: updateAcademic._id,
+
+      receiptNumber: "Promote",
+      type: "fees",
+      fees: totalFees,
+      paidDate: Date.now(),
+      balance: totalFees,
+      remarks: "Promote",
+    });
+
+    const savedAccount = await newAccount.save();
+
+    const coursesArray = [];
+    if (courseId1 && status1 && status1 != "Completed") {
+      coursesArray.push(courseId1);
+    }
+    if (courseId2 && status2 && status2 != "Completed") {
+      coursesArray.push(courseId2);
+    }
+    if (courseId3 && status3 && status3 != "Completed") {
+      coursesArray.push(courseId3);
+    }
+    if (courseId4 && status4 && status4 != "Completed") {
+      coursesArray.push(courseId4);
+    }
+    if (courseId5 && status5 && status5 != "Completed") {
+      coursesArray.push(courseId5);
+    }
+    await Student.findByIdAndUpdate({ _id: student._id }, { courses: coursesArray });
+
+
+    if (!student || !updateAcademic || !savedAccount) {
+      return res
+        .status(404)
+        .json({ success: false, error: "document not found" });
+    }
+
+    return res.status(200).json({ success: true, message: "Student promote done" })
+
+  } catch (error) {
+    console.log(error)
+
+
+
+
+
+    return res
+      .status(500)
+      .json({ success: false, error: "Promote students server error" });
+  }
+};
+
 const deleteStudent = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1190,7 +1468,7 @@ const getStudentsCount = async (req, res) => {
 }*/}
 
 export {
-  addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent,
+  addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
-  getStudentForPromote
+  getStudentForPromote, promoteStudent
 };
