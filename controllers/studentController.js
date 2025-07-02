@@ -1194,6 +1194,7 @@ const promoteStudent = async (req, res) => {
 
       instituteId2,
       courseId2,
+      nextCourseId,
       refNumber2,
       year2,
       fees2,
@@ -1301,7 +1302,7 @@ const promoteStudent = async (req, res) => {
 
         // School Education.
         instituteId2: status2 && status2 === "Completed" ? null : instituteId2 ? instituteId2 : null,
-        courseId2: status2 && status2 === "Completed" ? null : courseId2 ? courseId2 : null,
+        courseId2: status2 && status2 === "Completed" ? null : nextCourseId ? nextCourseId : null,
         refNumber2: status2 && status2 === "Completed" ? null : refNumber2,
         year2: status2 && status2 === "Completed" ? null : instituteId2 ?
           status2 && status2 === "Not-Promoted" ? year2 : year2 ? Number(year2) + 1 : 1 : null,
@@ -1372,8 +1373,8 @@ const promoteStudent = async (req, res) => {
     if (courseId1 && status1 && status1 != "Completed") {
       coursesArray.push(courseId1);
     }
-    if (courseId2 && status2 && status2 != "Completed") {
-      coursesArray.push(courseId2);
+    if (nextCourseId && status2 && status2 != "Completed") {
+      coursesArray.push(nextCourseId);
     }
     if (courseId3 && status3 && status3 != "Completed") {
       coursesArray.push(courseId3);
