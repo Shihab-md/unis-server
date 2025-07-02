@@ -34,6 +34,7 @@ const addStudent = async (req, res) => {
       bloodGroup,
       idMark1,
       idMark2,
+      about,
       fatherName,
       fatherNumber,
       fatherOccupation,
@@ -45,8 +46,8 @@ const addStudent = async (req, res) => {
       guardianOccupation,
       guardianRelation,
       address,
-      district,
-      state,
+      city,
+      districtStateId,
 
       hostel,
       hostelRefNumber,
@@ -147,6 +148,7 @@ const addStudent = async (req, res) => {
       bloodGroup: toCamelCase(bloodGroup),
       idMark1: toCamelCase(idMark1),
       idMark2: toCamelCase(idMark2),
+      about: toCamelCase(about),
       fatherName: toCamelCase(fatherName),
       fatherNumber,
       fatherOccupation: toCamelCase(fatherOccupation),
@@ -158,8 +160,9 @@ const addStudent = async (req, res) => {
       guardianOccupation: toCamelCase(guardianOccupation),
       guardianRelation: toCamelCase(guardianRelation),
       address: toCamelCase(address),
-      district: toCamelCase(district),
-      state: toCamelCase(state),
+      city: toCamelCase(city),
+      districtStateId,
+
       hostel,
       hostelRefNumber,
       hostelFees,
@@ -575,7 +578,8 @@ const getStudents = async (req, res) => {
 
     const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
       .populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId");
+      .populate("schoolId")
+      .populate("districtStateId");
     //  console.log(students);
     return res.status(200).json({ success: true, students });
   } catch (error) {
@@ -593,6 +597,7 @@ const getStudentsBySchool = async (req, res) => {
   try {
     const students = await Student.find({ schoolId: schoolId }).sort({ rollNumber: 1 })
       .populate("userId", { password: 0, profileImage: 0 })
+      .populate("districtStateId")
       .populate("courses");
 
     {/*}  let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
@@ -684,7 +689,8 @@ const getActiveStudents = async (req, res) => {
   try {
     const students = await Student.find({ active: "Active" })
       .populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId");
+      .populate("schoolId")
+      .populate("districtStateId");
     return res.status(200).json({ success: true, students });
   } catch (error) {
     return res
@@ -701,7 +707,8 @@ const getStudent = async (req, res) => {
   try {
     let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
-      .populate("schoolId");
+      .populate("schoolId")
+      .populate("districtStateId");
 
     if (!student) {
       return res
@@ -747,7 +754,8 @@ const getStudentForEdit = async (req, res) => {
   try {
     let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
-      .populate("schoolId");
+      .populate("schoolId")
+      .populate("districtStateId");
 
     if (!student) {
       return res
@@ -843,7 +851,8 @@ const getStudentForPromote = async (req, res) => {
 
     let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
-      .populate("schoolId");
+      .populate("schoolId")
+      .populate("districtStateId");
 
     if (!student) {
       return res
@@ -924,6 +933,7 @@ const updateStudent = async (req, res) => {
       bloodGroup,
       idMark1,
       idMark2,
+      about,
       fatherName,
       fatherNumber,
       fatherOccupation,
@@ -935,8 +945,8 @@ const updateStudent = async (req, res) => {
       guardianOccupation,
       guardianRelation,
       address,
-      district,
-      state,
+      city,
+      districtStateId,
 
       active,
       remarks,
@@ -1022,7 +1032,8 @@ const updateStudent = async (req, res) => {
 
     let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
     const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
-      schoolId, doa,
+      schoolId,
+      doa,
       dob,
       gender,
       maritalStatus,
@@ -1030,6 +1041,7 @@ const updateStudent = async (req, res) => {
       bloodGroup: toCamelCase(bloodGroup),
       idMark1: toCamelCase(idMark1),
       idMark2: toCamelCase(idMark2),
+      about: toCamelCase(about),
       fatherName: toCamelCase(fatherName),
       fatherNumber,
       fatherOccupation: toCamelCase(fatherOccupation),
@@ -1041,8 +1053,8 @@ const updateStudent = async (req, res) => {
       guardianOccupation: toCamelCase(guardianOccupation),
       guardianRelation: toCamelCase(guardianRelation),
       address: toCamelCase(address),
-      district: toCamelCase(district),
-      state: toCamelCase(state),
+      city: toCamelCase(city),
+      districtStateId,
       hostel,
       hostelRefNumber,
       hostelFees,
@@ -1335,7 +1347,11 @@ const promoteStudent = async (req, res) => {
       updateAcademic = await newAcademic.save();
     }
 
-    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val;
+    let totalFees = (finalFees1Val && status1 != "Completed" ? finalFees1Val : 0)
+      + (finalFees2Val && status2 != "Completed" ? finalFees2Val : 0)
+      + (finalFees3Val && status3 != "Completed" ? finalFees3Val : 0)
+      + (finalFees4Val && status4 != "Completed" ? finalFees4Val : 0)
+      + (finalFees5Val && status5 != "Completed" ? finalFees5Val : 0);
 
     const newAccount = new Account({
       userId: student._id,

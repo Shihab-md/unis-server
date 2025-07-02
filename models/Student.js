@@ -15,6 +15,7 @@ const studentSchema = new Schema({
   bloodGroup: { type: String },
   idMark1: { type: String, required: true },
   idMark2: { type: String },
+  about: { type: String },
 
   fatherName: { type: String },
   fatherNumber: { type: Number },
@@ -30,8 +31,8 @@ const studentSchema = new Schema({
   guardianRelation: { type: String },
 
   address: { type: String, required: true },
-  district: { type: String, required: true },
-  state: { type: String, required: true },
+  city: { type: String, required: true },
+  districtStateId: { type: Schema.Types.ObjectId, ref: "DistrictState", required: true },
 
   hostel: { type: String, index: true, enum: ["Yes", "No"], },
   hostelRefNumber: { type: String },
