@@ -16,6 +16,11 @@ const addSchool = async (req, res) => {
       nameArabic,
       nameNative,
       address,
+      city,
+      districtStateId,
+      landmark,
+      pincode,
+
       district,
       state,
       contactNumber,
@@ -23,19 +28,26 @@ const addSchool = async (req, res) => {
       email,
       supervisorId,
       incharge1,
+      designation1,
       incharge1Number,
       incharge2,
+      designation2,
       incharge2Number,
       incharge3,
+      designation3,
       incharge3Number,
       incharge4,
+      designation4,
       incharge4Number,
       incharge5,
+      designation5,
       incharge5Number,
       incharge6,
+      designation6,
       incharge6Number,
       incharge7,
       incharge7Number,
+      designation7,
       active,
       createdAt,
       updatedAt,
@@ -67,27 +79,49 @@ const addSchool = async (req, res) => {
       nameEnglish,
       nameArabic,
       nameNative,
+
       address: toCamelCase(address),
+      city: toCamelCase(city),
+      districtStateId,
+      landmark: toCamelCase(landmark),
+      pincode,
+
       district: toCamelCase(district),
       state: toCamelCase(state),
+
       contactNumber,
       doe,
       email,
       supervisorId,
+
       incharge1: toCamelCase(incharge1),
       incharge1Number,
+      designation1: toCamelCase(designation1),
+
       incharge2: toCamelCase(incharge2),
       incharge2Number,
+      designation2: toCamelCase(designation2),
+
       incharge3: toCamelCase(incharge3),
       incharge3Number,
+      designation3: toCamelCase(designation3),
+
       incharge4: toCamelCase(incharge4),
       incharge4Number,
+      designation4: toCamelCase(designation4),
+
       incharge5: toCamelCase(incharge5),
       incharge5Number,
+      designation5: toCamelCase(designation5),
+
       incharge6: toCamelCase(incharge6),
       incharge6Number,
+      designation6: toCamelCase(designation6),
+
       incharge7: toCamelCase(incharge7),
       incharge7Number,
+      designation7: toCamelCase(designation7),
+
       active,
       createdAt,
       updatedAt,
@@ -118,6 +152,7 @@ const getSchools = async (req, res) => {
     if (userRole == 'superadmin' || userRole == 'hquser') {
       schools = await School.find().sort({ code: 1 })
         // .populate("supervisorId")
+        .populate("districtStateId")
         .populate({
           path: 'supervisorId',
           populate: {
@@ -133,6 +168,7 @@ const getSchools = async (req, res) => {
         // console.log(supervisor._id.toString())
         schools = await School.find({ supervisorId: supervisor._id }).sort({ code: 1 })
           //  .populate("supervisorId")
+          .populate("districtStateId")
           .populate({
             path: 'supervisorId',
             populate: {
@@ -209,6 +245,7 @@ const getSchool = async (req, res) => {
     const { id } = req.params;
     const school = await School.findById({ _id: id })
       .populate("supervisorId")
+      .populate("districtStateId")
       .populate({
         path: 'supervisorId',
         populate: {
@@ -230,17 +267,40 @@ const updateSchool = async (req, res) => {
     const { id } = req.params;
     const { code, nameEnglish,
       nameArabic,
-      nameNative, address, district, state, contactNumber, doe, email, active,
-      supervisorId, incharge1, incharge1Number, incharge2, incharge2Number, incharge3,
+      nameNative,
+      address,
+      city,
+      districtStateId,
+      landmark,
+      pincode,
+
+      district, state,
+
+      contactNumber, doe, email, active,
+      supervisorId,
+
+      incharge1,
+      designation1,
+      incharge1Number,
+      incharge2,
+      designation2,
+      incharge2Number,
+      incharge3,
+      designation3,
       incharge3Number,
       incharge4,
+      designation4,
       incharge4Number,
       incharge5,
+      designation5,
       incharge5Number,
       incharge6,
+      designation6,
       incharge6Number,
       incharge7,
-      incharge7Number, } = req.body;
+      incharge7Number,
+      designation7,
+    } = req.body;
 
     const school = await School.findById({ _id: id });
     if (!school) {
@@ -260,25 +320,46 @@ const updateSchool = async (req, res) => {
       code, nameEnglish,
       nameArabic,
       nameNative,
+
       address: toCamelCase(address),
+      city: toCamelCase(city),
+      districtStateId,
+      landmark: toCamelCase(landmark),
+      pincode,
+
       district: toCamelCase(district),
       state: toCamelCase(state),
+
       contactNumber, doe, email, active,
       supervisorId,
+
       incharge1: toCamelCase(incharge1),
       incharge1Number,
+      designation1: toCamelCase(designation1),
+
       incharge2: toCamelCase(incharge2),
       incharge2Number,
+      designation2: toCamelCase(designation2),
+
       incharge3: toCamelCase(incharge3),
       incharge3Number,
+      designation3: toCamelCase(designation3),
+
       incharge4: toCamelCase(incharge4),
       incharge4Number,
+      designation4: toCamelCase(designation4),
+
       incharge5: toCamelCase(incharge5),
       incharge5Number,
+      designation5: toCamelCase(designation5),
+
       incharge6: toCamelCase(incharge6),
       incharge6Number,
+      designation6: toCamelCase(designation6),
+
       incharge7: toCamelCase(incharge7),
       incharge7Number,
+      designation7: toCamelCase(designation7),
     })
 
     if (!updateSchool) {
