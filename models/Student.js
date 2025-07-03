@@ -32,6 +32,8 @@ const studentSchema = new Schema({
 
   address: { type: String, required: true },
   city: { type: String, required: true },
+  landmark: { type: String },
+  pincode: { type: Number },
   districtStateId: { type: Schema.Types.ObjectId, ref: "DistrictState", required: true },
 
   hostel: { type: String, index: true, enum: ["Yes", "No"], },

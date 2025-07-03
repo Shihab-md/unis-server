@@ -45,9 +45,12 @@ const addStudent = async (req, res) => {
       guardianNumber,
       guardianOccupation,
       guardianRelation,
+
       address,
       city,
       districtStateId,
+      landmark,
+      pincode,
 
       hostel,
       hostelRefNumber,
@@ -162,6 +165,8 @@ const addStudent = async (req, res) => {
       address: toCamelCase(address),
       city: toCamelCase(city),
       districtStateId,
+      landmark: toCamelCase(landmark),
+      pincode,
 
       hostel,
       hostelRefNumber,
@@ -944,9 +949,12 @@ const updateStudent = async (req, res) => {
       guardianNumber,
       guardianOccupation,
       guardianRelation,
+
       address,
       city,
       districtStateId,
+      landmark,
+      pincode,
 
       active,
       remarks,
@@ -1055,6 +1063,8 @@ const updateStudent = async (req, res) => {
       address: toCamelCase(address),
       city: toCamelCase(city),
       districtStateId,
+      landmark: toCamelCase(landmark),
+      pincode,
       hostel,
       hostelRefNumber,
       hostelFees,

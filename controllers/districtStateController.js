@@ -1,4 +1,5 @@
 import DistrictState from "../models/DistrictState.js";
+import Student from "../models/Student.js";
 import redisClient from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
@@ -34,9 +35,31 @@ const addDistrictState = async (req, res) => {
 
 const getDistrictStates = async (req, res) => {
   try {
-    const districtStates = await DistrictState.find();
+    const districtStates = await DistrictState.find().sort({ state: 1, district: 1 });
+
+    const counts = await Student.aggregate([
+      {
+        $group: {
+          _id: '$districtStateId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    if (districtStates.length > 0 && counts.length > 0) {
+      for (const count of counts) {
+        districtStates.map(districtState => {
+          if (districtState?._id?.toString() == count?._id?.toString()) {
+            districtState._studentsCount = count.count;
+            districtState.toObject({ virtuals: true });
+          };
+        });
+      }
+    }
+
     return res.status(200).json({ success: true, districtStates });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "get district and States server error" });
