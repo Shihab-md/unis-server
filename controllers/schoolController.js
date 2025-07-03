@@ -219,6 +219,28 @@ const getSchools = async (req, res) => {
       }
     }*/}
 
+    {/*
+    const districtStates = JSON.parse(await redisClient.get('districtStates'));
+
+    let count = 0;
+    if (schools.length > 0 && districtStates.length > 0) {
+      schools.map(school => {
+      //  console.log("1 - " + school.district + ", " + school.state)
+        districtStates.map(async districtState => {
+
+      //    console.log("2 - " + districtState.district + ", " + districtState.state)
+          if ((districtState.district + ", " + districtState.state).toLowerCase() == (school.district + ", " + school.state).toLowerCase()) {
+            school.districtStateId = districtState._id;
+            await School.findByIdAndUpdate({ _id: school._id }, { districtStateId: districtState._id });
+            console.log("OK");
+            count++;
+          };
+        });
+      });
+    }
+    console.log("Count - " + count)
+    */}
+
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     console.log(error)

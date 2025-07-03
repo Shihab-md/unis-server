@@ -8,13 +8,10 @@ const schoolSchema = new Schema({
   nameNative: { type: String },
 
   address: { type: String, required: true },
-  city: { type: String, required: true },
+  city: { type: String },
   landmark: { type: String },
   pincode: { type: Number },
   districtStateId: { type: Schema.Types.ObjectId, ref: "DistrictState", required: true },
-
-  district: { type: String, required: true },
-  state: { type: String, required: true },
 
   contactNumber: { type: Number },
   doe: { type: Date },
