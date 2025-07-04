@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 
 const redisClient = createClient({
     url: process.env.REDIS_URL,
-    connectTimeout: 25000 // 25 seconds
+    connectTimeout: 43000 // 43 seconds
 });
 
 redisClient.on('error', err => console.log('Redis Client Error', err));
