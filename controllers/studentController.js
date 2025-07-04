@@ -734,11 +734,11 @@ const getStudent = async (req, res) => {
       .populate({ path: 'instituteId5', select: '_id code name' })
       .populate({ path: 'courseId5', select: '_id iCode name' })
 
-    if (!academics) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
-    }
+    //  if (!academics) {
+    //    return res
+    //      .status(404)
+    //      .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
+    //  }
 
     student._academics = academics;
     student.toObject({ virtuals: true });
@@ -768,7 +768,19 @@ const getStudentForEdit = async (req, res) => {
         .json({ success: false, error: "Student data not found." });
     }
 
-    const academics = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
+    let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+    if (new Date().getMonth() + 1 >= 4) {
+      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+    }
+
+    let acadYear = await AcademicYear.findOne({ acYear: accYear });
+    if (!acadYear) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Academic Year Not found : " + accYear });
+    }
+
+    const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
       .populate({ path: 'acYear', select: '_id acYear' })
       .populate({ path: 'instituteId1', select: '_id code name' })
       .populate({ path: 'courseId1', select: '_id iCode name' })
@@ -779,19 +791,28 @@ const getStudentForEdit = async (req, res) => {
       .populate({ path: 'instituteId4', select: '_id code name' })
       .populate({ path: 'courseId4', select: '_id iCode name' })
       .populate({ path: 'instituteId5', select: '_id code name' })
-      .populate({ path: 'courseId5', select: '_id iCode name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' });
 
-    if (!academics) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
-    }
+    /*  const academics = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
+        .populate({ path: 'acYear', select: '_id acYear' })
+        .populate({ path: 'instituteId1', select: '_id code name' })
+        .populate({ path: 'courseId1', select: '_id iCode name' })
+        .populate({ path: 'instituteId2', select: '_id code name' })
+        .populate({ path: 'courseId2', select: '_id iCode name' })
+        .populate({ path: 'instituteId3', select: '_id code name' })
+        .populate({ path: 'courseId3', select: '_id iCode name' })
+        .populate({ path: 'instituteId4', select: '_id code name' })
+        .populate({ path: 'courseId4', select: '_id iCode name' })
+        .populate({ path: 'instituteId5', select: '_id code name' })
+        .populate({ path: 'courseId5', select: '_id iCode name' })
+  */
 
-    student._academics = academics;
+    student._academics = academic ? [academic] : [];
     student.toObject({ virtuals: true });
 
     return res.status(200).json({ success: true, student });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "get student by ID server error" });
