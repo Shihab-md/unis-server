@@ -1089,71 +1089,139 @@ const updateStudent = async (req, res) => {
 
     const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: academicYearById._id });
     if (updateAcademic == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic Data Not exists" });
+
+      const newAcademic = new Academic({
+        studentId: student._id,
+        acYear: academicYearById._id,
+
+        instituteId1,
+        courseId1,
+        refNumber1,
+        year1,
+        fees1,
+        discount1,
+        finalFees1: finalFees1Val,
+        status1: "Admission",
+
+        instituteId2,
+        courseId2,
+        refNumber2,
+        year2,
+        fees2,
+        discount2,
+        finalFees2: finalFees2Val,
+        status2: instituteId2 && courseId2 ? "Admission" : null,
+
+        instituteId3,
+        courseId3,
+        refNumber3,
+        year3,
+        fees3,
+        discount3,
+        finalFees3: finalFees3Val,
+        status3: instituteId3 && courseId3 ? "Admission" : null,
+
+        instituteId4,
+        courseId4,
+        refNumber4,
+        year4,
+        fees4,
+        discount4,
+        finalFees4: finalFees4Val,
+        status4: instituteId4 && courseId4 ? "Admission" : null,
+
+        instituteId5: instituteId5 ? instituteId5 : null,
+        courseId5: courseId5 ? courseId5 : null,
+        refNumber5,
+        year5,
+        fees5,
+        discount5,
+        finalFees5: finalFees5Val,
+        status5: instituteId5 && courseId5 ? "Admission" : null,
+      });
+
+      let savedAcademic = await newAcademic.save();
+
+      let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
+
+      const newAccount = new Account({
+        userId: student._id,
+        acYear: academicYearById._id,
+        academicId: savedAcademic._id,
+
+        receiptNumber: "Admission",
+        type: "fees",
+        fees: totalFees,
+        paidDate: Date.now(),
+        balance: totalFees,
+        remarks: "Admission",
+      });
+
+      let savedAccount = await newAccount.save();
+
+    } else {
+
+      const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
+        instituteId1: instituteId1 ? instituteId1 : null,
+        courseId1: courseId1 ? courseId1 : null,
+        refNumber1,
+        year1,
+        fees1,
+        discount1,
+        finalFees1: finalFees1Val,
+
+        instituteId2: instituteId2 ? instituteId2 : null,
+        courseId2: courseId2 ? courseId2 : null,
+        refNumber2,
+        year2,
+        fees2,
+        discount2,
+        finalFees2: finalFees2Val,
+        status2: instituteId2 && courseId2 ? "Admission" : null,
+
+        instituteId3: instituteId3 ? instituteId3 : null,
+        courseId3: courseId3 ? courseId3 : null,
+        refNumber3,
+        year3,
+        fees3,
+        discount3,
+        finalFees3: finalFees3Val,
+        status3: instituteId3 && courseId3 ? "Admission" : null,
+
+        instituteId4: instituteId4 ? instituteId4 : null,
+        courseId4: courseId4 ? courseId4 : null,
+        refNumber4,
+        year4,
+        fees4,
+        discount4,
+        finalFees4: finalFees4Val,
+        status4: instituteId4 && courseId4 ? "Admission" : null,
+
+        instituteId5: instituteId5 ? instituteId5 : null,
+        courseId5: courseId5 ? courseId5 : null,
+        refNumber5,
+        year5,
+        fees5,
+        discount5,
+        finalFees5: finalFees5Val,
+        status5: instituteId5 && courseId5 ? "Admission" : null,
+      })
+
+      const updateAccount = await Account.findOne({ userId: updateStudent._id, acYear: acYear, academicId: updateAcademic._id });
+      if (updateAccount == null) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Account Data Not exists" });
+      }
+
+      let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
+
+      const updateAccountById = await Account.findByIdAndUpdate({ _id: updateAccount._id }, {
+        fees: totalFees,
+        paidDate: Date.now(),
+        remarks: "Admission-updated",
+      })
     }
-
-    const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
-      instituteId1: instituteId1 ? instituteId1 : null,
-      courseId1: courseId1 ? courseId1 : null,
-      refNumber1,
-      year1,
-      fees1,
-      discount1,
-      finalFees1: finalFees1Val,
-
-      instituteId2: instituteId2 ? instituteId2 : null,
-      courseId2: courseId2 ? courseId2 : null,
-      refNumber2,
-      year2,
-      fees2,
-      discount2,
-      finalFees2: finalFees2Val,
-      status2: instituteId2 && courseId2 ? "Admission" : null,
-
-      instituteId3: instituteId3 ? instituteId3 : null,
-      courseId3: courseId3 ? courseId3 : null,
-      refNumber3,
-      year3,
-      fees3,
-      discount3,
-      finalFees3: finalFees3Val,
-      status3: instituteId3 && courseId3 ? "Admission" : null,
-
-      instituteId4: instituteId4 ? instituteId4 : null,
-      courseId4: courseId4 ? courseId4 : null,
-      refNumber4,
-      year4,
-      fees4,
-      discount4,
-      finalFees4: finalFees4Val,
-      status4: instituteId4 && courseId4 ? "Admission" : null,
-
-      instituteId5: instituteId5 ? instituteId5 : null,
-      courseId5: courseId5 ? courseId5 : null,
-      refNumber5,
-      year5,
-      fees5,
-      discount5,
-      finalFees5: finalFees5Val,
-      status5: instituteId5 && courseId5 ? "Admission" : null,
-    })
-
-    const updateAccount = await Account.findOne({ userId: updateStudent._id, acYear: acYear, academicId: updateAcademic._id });
-    if (updateAccount == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Account Data Not exists" });
-    }
-
-    let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
-
-    const updateAccountById = await Account.findByIdAndUpdate({ _id: updateAccount._id }, {
-      fees: totalFees,
-      paidDate: Date.now(),
-      remarks: "Admission-updated",
-    })
 
     const coursesArray = [courseId1];
     if (courseId2) {
@@ -1170,16 +1238,11 @@ const updateStudent = async (req, res) => {
     }
     await Student.findByIdAndUpdate({ _id: updateStudent._id }, { courses: coursesArray });
 
-
-    if (!updateStudent || !updateUser || !updateAcademicById) {
-      return res
-        .status(404)
-        .json({ success: false, error: "document not found" });
-    }
-
-    return res.status(200).json({ success: true, message: "Student update done" })
+    return res.status(200).json({ success: true, message: "Student updated successfully." })
 
   } catch (error) {
+
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "update students server error" });
@@ -1291,9 +1354,10 @@ const promoteStudent = async (req, res) => {
       }
     }
 
+    let savedAccount;
     // To promote.
-    if (!(status1 === "Completed" && status2 === "Completed" && status3 === "Completed"
-      && status4 === "Completed" && status5 === "Completed")) {
+    if ((status1 && status1 != "Completed") || (status2 && status3 != "Completed") || (status3 && status3 != "Completed")
+      || (status4 && status4 != "Completed") || (status5 && status5 != "Completed")) {
 
       const newAcademic = new Academic({
         studentId: student._id,
@@ -1356,28 +1420,28 @@ const promoteStudent = async (req, res) => {
       })
 
       updateAcademic = await newAcademic.save();
+
+      let totalFees = (finalFees1Val && status1 != "Completed" ? finalFees1Val : 0)
+        + (finalFees2Val && status2 != "Completed" ? finalFees2Val : 0)
+        + (finalFees3Val && status3 != "Completed" ? finalFees3Val : 0)
+        + (finalFees4Val && status4 != "Completed" ? finalFees4Val : 0)
+        + (finalFees5Val && status5 != "Completed" ? finalFees5Val : 0);
+
+      const newAccount = new Account({
+        userId: student._id,
+        acYear: accYearId,
+        academicId: updateAcademic._id,
+
+        receiptNumber: "Promote",
+        type: "fees",
+        fees: totalFees,
+        paidDate: Date.now(),
+        balance: totalFees,
+        remarks: "Promote",
+      });
+
+      savedAccount = await newAccount.save();
     }
-
-    let totalFees = (finalFees1Val && status1 != "Completed" ? finalFees1Val : 0)
-      + (finalFees2Val && status2 != "Completed" ? finalFees2Val : 0)
-      + (finalFees3Val && status3 != "Completed" ? finalFees3Val : 0)
-      + (finalFees4Val && status4 != "Completed" ? finalFees4Val : 0)
-      + (finalFees5Val && status5 != "Completed" ? finalFees5Val : 0);
-
-    const newAccount = new Account({
-      userId: student._id,
-      acYear: accYearId,
-      academicId: updateAcademic._id,
-
-      receiptNumber: "Promote",
-      type: "fees",
-      fees: totalFees,
-      paidDate: Date.now(),
-      balance: totalFees,
-      remarks: "Promote",
-    });
-
-    const savedAccount = await newAccount.save();
 
     const coursesArray = [];
     if (courseId1 && status1 && status1 != "Completed") {
@@ -1397,21 +1461,10 @@ const promoteStudent = async (req, res) => {
     }
     await Student.findByIdAndUpdate({ _id: student._id }, { courses: coursesArray });
 
-
-    if (!student || !updateAcademic || !savedAccount) {
-      return res
-        .status(404)
-        .json({ success: false, error: "document not found" });
-    }
-
-    return res.status(200).json({ success: true, message: "Student promote done" })
+    return res.status(200).json({ success: true, message: "Student promoted Successfully." })
 
   } catch (error) {
     console.log(error)
-
-
-
-
 
     return res
       .status(500)
