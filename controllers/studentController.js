@@ -4,6 +4,7 @@ import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
+import Course from "../models/Course.js";
 import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
@@ -701,6 +702,61 @@ const getActiveStudents = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "get active students server error" });
+  }
+};
+
+const getByFilter = async (req, res) => {
+
+  const { schoolId, courseId, status } = req.params;
+
+  console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + courseId?.length + ",  " + status + ",  " + status?.length);
+
+  let students;
+  try {
+    if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined'
+      && status && status?.length > 0 && status != 'null' && status != 'undefined') {
+
+      console.log("getBy CourseName and Active")
+      console.log("Course Id : " + courseId);
+
+      students = await Student.find({ schoolId: schoolId, courses: { $in: courseId }, active: status }).sort({ rollNumber: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .populate("schoolId")
+        .populate("districtStateId")
+        .populate("courses");
+
+    } else if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
+
+      console.log("getBy CourseName")
+      console.log("Course Id : " + courseId);
+
+      students = await Student.find({ schoolId: schoolId, courses: { $in: courseId } }).sort({ rollNumber: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .populate("schoolId")
+        .populate("districtStateId")
+        .populate("courses");
+
+    } else if (status && status?.length > 0 && status != 'null' && status != 'undefined') {
+
+      console.log("getBy Active")
+
+      students = await Student.find({ schoolId: schoolId, active: status }).sort({ rollNumber: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .populate("schoolId")
+        .populate("districtStateId")
+        .populate("courses");
+
+    } else {
+      students = []
+    }
+
+    console.log("Students : " + students?.length)
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get active students by FILTER server error" });
   }
 };
 
@@ -1559,5 +1615,5 @@ const getStudentsCount = async (req, res) => {
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
-  getStudentForPromote, promoteStudent
+  getStudentForPromote, promoteStudent, getByFilter
 };
