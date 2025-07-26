@@ -62,7 +62,7 @@ const login = async (req, res) => {
         user: { _id: user._id, name: user.name, role: user.role, schoolId: schoolId, schoolName: schoolName },
       });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message })
+    return res.status(500).json({ success: false, error: error.message })
   }
 };
 
