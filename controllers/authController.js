@@ -7,12 +7,14 @@ import bcrypt from "bcrypt";
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.find({ email: email });
+    const user = await User.findOne({ email: email });
+    //  console.log(user._id);
     if (!user) {
       return res.status(404).json({ success: false, error: "User Not Found." });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    //  console.log("Pass : " + password + ", user pass : " + user.password)
+    const isMatch = bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(404).json({ success: false, error: "Please give correct Password." });
     }
@@ -26,7 +28,7 @@ const login = async (req, res) => {
       || user.role === "warden"
       || user.role === "staff") {
 
-      let employee = await Employee.find({ userId: user._id })
+      let employee = await Employee.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
           select: 'code nameEnglish district state'
@@ -38,7 +40,7 @@ const login = async (req, res) => {
     } else if (user.role === "student"
       || user.role === "parent") {
 
-      let student = await Student.find({ userId: user._id })
+      let student = await Student.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
           select: 'code nameEnglish district state'
@@ -49,7 +51,7 @@ const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { _id: user._id, role: user.role, schoolId: schoolId, schoolName: schoolName },
+      { _id: user._id, role: user.role, schoolId: schoolId ? schoolId : null, schoolName: schoolName ? schoolName : null },
       process.env.JWT_SECRET,
       { expiresIn: "10h" }
     );
@@ -59,7 +61,10 @@ const login = async (req, res) => {
       .json({
         success: true,
         token,
-        user: { _id: user._id, name: user.name, role: user.role, schoolId: schoolId, schoolName: schoolName },
+        user: {
+          _id: user._id, name: user.name, role: user.role,
+          schoolId: schoolId ? schoolId : null, schoolName: schoolName ? schoolName : null
+        },
       });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message })
