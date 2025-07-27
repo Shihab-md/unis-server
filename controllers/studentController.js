@@ -707,48 +707,59 @@ const getActiveStudents = async (req, res) => {
 
 const getByFilter = async (req, res) => {
 
-  const { schoolId, courseId, status } = req.params;
+  const { schoolId, courseId, status, acYear, maritalStatus, hosteller } = req.params;
 
   console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + courseId?.length + ",  " + status + ",  " + status?.length);
 
-  let students;
   try {
-    if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined'
-      && status && status?.length > 0 && status != 'null' && status != 'undefined') {
 
-      console.log("getBy CourseName and Active")
-      console.log("Course Id : " + courseId);
+    let filterQuery = Student.find();
+    filterQuery = filterQuery.where('schoolId').eq(schoolId);
 
-      students = await Student.find({ schoolId: schoolId, courses: { $in: courseId }, active: status }).sort({ rollNumber: 1 })
-        .populate("userId", { password: 0, profileImage: 0 })
-        .populate("schoolId")
-        .populate("districtStateId")
-        .populate("courses");
+    if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
 
-    } else if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
-
-      console.log("getBy CourseName")
-      console.log("Course Id : " + courseId);
-
-      students = await Student.find({ schoolId: schoolId, courses: { $in: courseId } }).sort({ rollNumber: 1 })
-        .populate("userId", { password: 0, profileImage: 0 })
-        .populate("schoolId")
-        .populate("districtStateId")
-        .populate("courses");
-
-    } else if (status && status?.length > 0 && status != 'null' && status != 'undefined') {
-
-      console.log("getBy Active")
-
-      students = await Student.find({ schoolId: schoolId, active: status }).sort({ rollNumber: 1 })
-        .populate("userId", { password: 0, profileImage: 0 })
-        .populate("schoolId")
-        .populate("districtStateId")
-        .populate("courses");
-
-    } else {
-      students = []
+      console.log("Course Id Added : " + courseId);
+      filterQuery = filterQuery.where('courses').in(courseId);
     }
+
+    if (status && status?.length > 0 && status != 'null' && status != 'undefined') {
+
+      console.log("Status Added : " + status);
+      filterQuery = filterQuery.where('active').eq(status);
+    }
+
+    if (maritalStatus && maritalStatus?.length > 0 && maritalStatus != 'null' && maritalStatus != 'undefined') {
+
+      console.log("maritalStatus Added : " + maritalStatus);
+      filterQuery = filterQuery.where('maritalStatus').eq(maritalStatus);
+    }
+
+    if (hosteller && hosteller?.length > 0 && hosteller != 'null' && hosteller != 'undefined') {
+
+      console.log("hosteller Added : " + maritalStatus);
+      filterQuery = filterQuery.where('hostel').eq(hosteller);
+    }
+
+    if (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined') {
+
+      console.log("acYear Added : " + acYear);
+
+      const academics = await Academic.find({ acYear: acYear })
+      let studentIds = [];
+      academics.forEach(academic => studentIds.push(academic.studentId));
+      console.log("Student Ids : " + studentIds)
+      filterQuery = filterQuery.where('_id').in(studentIds);
+    }
+
+    filterQuery.sort({ rollNumber: 1 });
+    filterQuery.populate("userId", { password: 0, profileImage: 0 })
+      .populate("schoolId")
+      .populate("districtStateId")
+      .populate("courses");
+
+    // console.log(filterQuery);
+
+    const students = await filterQuery.exec();
 
     console.log("Students : " + students?.length)
     return res.status(200).json({ success: true, students });
