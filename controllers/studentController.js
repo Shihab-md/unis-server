@@ -767,7 +767,7 @@ const getByFilter = async (req, res) => {
     console.log(error)
     return res
       .status(500)
-      .json({ success: false, error: "get active students by FILTER server error" });
+      .json({ success: false, error: "get students by FILTER server error" });
   }
 };
 

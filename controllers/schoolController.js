@@ -250,6 +250,58 @@ const getSchools = async (req, res) => {
   }
 };
 
+const getBySchFilter = async (req, res) => {
+
+  const { supervisorId, districtStateId, schStatus } = req.params;
+
+  console.log("getBy School Filter : " + supervisorId + ", " + districtStateId + ",  " + schStatus);
+
+  try {
+
+    let filterQuery = School.find();
+
+    if (supervisorId && supervisorId?.length > 0 && supervisorId != 'null' && supervisorId != 'undefined') {
+
+      console.log("supervisorId Added : " + supervisorId);
+      filterQuery = filterQuery.where('supervisorId').eq(supervisorId);
+    }
+
+    if (districtStateId && districtStateId?.length > 0 && districtStateId != 'null' && districtStateId != 'undefined') {
+
+      console.log("districtStateId Added : " + districtStateId);
+      filterQuery = filterQuery.where('districtStateId').eq(districtStateId);
+    }
+
+    if (schStatus && schStatus?.length > 0 && schStatus != 'null' && schStatus != 'undefined') {
+
+      console.log("schStatus Added : " + schStatus);
+      filterQuery = filterQuery.where('active').eq(schStatus);
+    }
+
+    filterQuery.sort({ code: 1 });
+    filterQuery.populate("districtStateId")
+      .populate({
+        path: 'supervisorId',
+        populate: {
+          path: 'userId',
+          select: 'name'
+        },
+      });
+
+    // console.log(filterQuery);
+
+    const schools = await filterQuery.exec(); 
+
+    console.log("schools : " + schools?.length)
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get schools by FILTER server error" });
+  }
+};
+
 const getSchoolsFromCache = async (req, res) => {
   try {
     const schools = JSON.parse(await redisClient.get('schools'));
@@ -422,4 +474,4 @@ const deleteSchool = async (req, res) => {
   }
 }
 
-export { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache };
+export { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache, getBySchFilter };

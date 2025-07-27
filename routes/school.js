@@ -1,6 +1,6 @@
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
-import { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache } from '../controllers/schoolController.js'
+import { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache, getBySchFilter } from '../controllers/schoolController.js'
 
 const router = express.Router()
 
@@ -12,6 +12,7 @@ router.get('/fromCache/', authMiddleware, getSchoolsFromCache)
 router.get('/:id', authMiddleware, getSchool)
 router.put('/:id', authMiddleware, updateSchool)
 router.delete('/:id', authMiddleware, deleteSchool)
+router.get('/bySchFilter/:supervisorId/:districtStateId/:schStatus', authMiddleware, getBySchFilter)
 // router.get('/department/:id', authMiddleware, fetchSchoolsByDepId)
 
 export default router
