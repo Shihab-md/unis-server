@@ -94,7 +94,7 @@ const addEmployee = async (req, res) => {
 
 const getEmployees = async (req, res) => {
   try {
-    const employees = await Employee.find()
+    const employees = await Employee.find().sort({ employeeId: 1 })
       .populate("userId", { password: 0, profileImage: 0 })
       .populate("schoolId");
     return res.status(200).json({ success: true, employees });
@@ -102,6 +102,57 @@ const getEmployees = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "get employees server error" });
+  }
+};
+
+const getByEmpFilter = async (req, res) => {
+
+  const { empSchoolId, empRole, empStatus } = req.params;
+
+  console.log("getBy Employee Filter : " + empSchoolId + ", " + empRole + ",  " + empStatus);
+
+  try {
+
+    let filterQuery = Employee.find();
+
+    if (empSchoolId && empSchoolId?.length > 0 && empSchoolId != 'null' && empSchoolId != 'undefined') {
+
+      console.log("empSchoolId Added : " + empSchoolId);
+      filterQuery = filterQuery.where('schoolId').eq(empSchoolId);
+    }
+
+    if (empRole && empRole?.length > 0 && empRole != 'null' && empRole != 'undefined') {
+
+      console.log("empRole Added : " + empRole);
+
+      const users = await User.find({ role: empRole })
+      let userIds = [];
+      users.forEach(user => userIds.push(user._id));
+      console.log("User Ids : " + userIds)
+      filterQuery = filterQuery.where('userId').in(userIds);
+    }
+
+    if (empStatus && empStatus?.length > 0 && empStatus != 'null' && empStatus != 'undefined') {
+
+      console.log("empStatus Added : " + empStatus);
+      filterQuery = filterQuery.where('active').eq(empStatus);
+    }
+
+    filterQuery.sort({ employeeId: 1 });
+    filterQuery.populate("userId", { password: 0, profileImage: 0 })
+      .populate("schoolId");
+
+    // console.log(filterQuery);
+
+    const employees = await filterQuery.exec();
+
+    console.log("Employees : " + employees?.length)
+    return res.status(200).json({ success: true, employees });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get employees by FILTER server error" });
   }
 };
 
@@ -139,7 +190,7 @@ const updateEmployee = async (req, res) => {
       gender,
       maritalStatus,
       doj,
-      salary, } = req.body;
+      salary, role } = req.body;
 
     const employee = await Employee.findById({ _id: id });
     if (!employee) {
@@ -172,9 +223,11 @@ const updateEmployee = async (req, res) => {
         allowOverwrite: true,
       });
 
-      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name: toCamelCase(name), profileImage: blob.downloadUrl, })
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId },
+        { name: toCamelCase(name), role: role, profileImage: blob.downloadUrl, })
     } else {
-      updateUser = await User.findByIdAndUpdate({ _id: employee.userId }, { name: toCamelCase(name), })
+      updateUser = await User.findByIdAndUpdate({ _id: employee.userId },
+        { name: toCamelCase(name), role: role, })
     }
 
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
@@ -235,4 +288,4 @@ const deleteEmployee = async (req, res) => {
   }
 }*/}
 
-export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee };
+export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee, getByEmpFilter };
