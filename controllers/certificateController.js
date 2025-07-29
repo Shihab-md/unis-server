@@ -328,6 +328,60 @@ const getCertificates = async (req, res) => {
   }
 };
 
+const getByCertFilter = async (req, res) => {
+
+  const { certSchoolId, certCourseId, certACYearId } = req.params;
+
+  console.log("getByCertFilter : " + certSchoolId + ", " + certCourseId + ",  " + certACYearId);
+
+  try {
+
+    let filterQuery = Certificate.find().select('code');
+
+    if (certSchoolId && certSchoolId?.length > 0 && certSchoolId != 'null' && certSchoolId != 'undefined') {
+
+      console.log("School Id Added : " + certSchoolId);
+      filterQuery = filterQuery.where('schoolId').in(certSchoolId);
+    }
+
+    if (certCourseId && certCourseId?.length > 0 && certCourseId != 'null' && certCourseId != 'undefined') {
+
+      console.log("Course Id Added : " + certCourseId);
+      filterQuery = filterQuery.where('courseId').in(certCourseId);
+    }
+
+    if (certACYearId && certACYearId?.length > 0 && certACYearId != 'null' && certACYearId != 'undefined') {
+
+      console.log("acYear Added : " + certACYearId);
+
+      const academics = await Academic.find({ acYear: certACYearId })
+      let studentIds = [];
+      academics.forEach(academic => studentIds.push(academic.studentId));
+      console.log("Student Ids : " + studentIds)
+      filterQuery = filterQuery.where('studentId').in(studentIds);
+    }
+
+    filterQuery.sort({ code: 1 });
+    filterQuery.populate({ path: 'templateId', select: 'code' })
+      .populate({ path: 'courseId', select: 'name' })
+      .populate({ path: 'studentId', select: 'rollNumber' })
+      .populate({ path: 'userId', select: 'name' })
+      .populate({ path: 'schoolId', select: 'code nameEnglish' })
+
+    // console.log(filterQuery);
+
+    const certificates = await filterQuery.exec();
+
+    console.log("Certificates : " + certificates?.length)
+    return res.status(200).json({ success: true, certificates });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get Certificates by FILTER server error" });
+  }
+};
+
 const getCertificate = async (req, res) => {
   const { id } = req.params;
   try {
@@ -349,4 +403,4 @@ const getCertificate = async (req, res) => {
   }
 };
 
-export { addCertificate, upload, getCertificates, getCertificate };
+export { addCertificate, upload, getCertificates, getCertificate, getByCertFilter };
