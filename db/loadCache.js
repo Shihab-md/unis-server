@@ -9,6 +9,7 @@ import Student from "../models/Student.js"
 import AcademicYear from "../models/AcademicYear.js"
 import Template from "../models/Template.js"
 import DistrictState from "../models/DistrictState.js"
+import Certificate from "../models/Certificate.js"
 
 const loadCache = async () => {
     try {
@@ -22,6 +23,7 @@ const loadCache = async () => {
         await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
         await redisClient.set('totalTemplates', await Template.countDocuments());
         await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
+        await redisClient.set('totalCertificates', await Certificate.countDocuments());
 
         await redisClient.set('supervisors', JSON.stringify(await Supervisor.find().select('_id supervisorId')
             .populate({ path: 'userId', select: 'name' })));

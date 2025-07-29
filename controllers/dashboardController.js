@@ -6,6 +6,7 @@ const getSummary = async (req, res) => {
         const totalSupervisors = await redisClient.get('totalSupervisors');
         const totalSchools = await redisClient.get('totalSchools');
         const totalStudents = await redisClient.get('totalStudents');
+        const totalCertificates = await redisClient.get('totalCertificates');
 
         {/*   
             
@@ -41,6 +42,7 @@ const getSummary = async (req, res) => {
             totalSchools,
             totalEmployees,
             totalStudents,
+            totalCertificates,
         })
     } catch (error) {
         console.log(error.message)
