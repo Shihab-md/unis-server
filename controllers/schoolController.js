@@ -127,6 +127,9 @@ const addSchool = async (req, res) => {
       updatedAt,
     });
     await newSchool.save();
+
+    await redisClient.set('totalSchools', await School.countDocuments());
+
     return res.status(200).json({ success: true, message: "Niswan is created." });
   } catch (error) {
     console.log(error);
@@ -290,7 +293,7 @@ const getBySchFilter = async (req, res) => {
 
     // console.log(filterQuery);
 
-    const schools = await filterQuery.exec(); 
+    const schools = await filterQuery.exec();
 
     console.log("schools : " + schools?.length)
     return res.status(200).json({ success: true, schools });
@@ -468,6 +471,9 @@ const deleteSchool = async (req, res) => {
     const { id } = req.params;
     await School.findByIdAndDelete({ _id: id })
     // await deleteSchool.deleteOne()
+
+    await redisClient.set('totalSchools', await School.countDocuments());
+
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete School server error" })

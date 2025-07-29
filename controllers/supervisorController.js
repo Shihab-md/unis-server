@@ -69,6 +69,8 @@ const addSupervisor = async (req, res) => {
 
     savedSupervisor = await newSupervisor.save();
 
+    await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
+
     if (req.file) {
       const fileBuffer = req.file.buffer;
       const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
@@ -243,6 +245,8 @@ const deleteSupervisor = async (req, res) => {
       active: "In-Active",
       remarks: "Deleted",
     })
+
+    await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
 
     return res.status(200).json({ success: true, updateSupervisor })
   } catch (error) {

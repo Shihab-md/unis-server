@@ -39,7 +39,10 @@ const addInstitute = async (req, res) => {
       incharge2Number,
     });
 
-    await newInstitute.save()
+    await newInstitute.save();
+
+    await redisClient.set('totalInstitutes', await Institute.countDocuments());
+
     return res.status(200).json({ success: true, message: "Institute Created Successfully." });
   } catch (error) {
     console.log(error);
@@ -137,7 +140,10 @@ const deleteInstitute = async (req, res) => {
   try {
     const { id } = req.params;
     const deleteInstitute = await Institute.findById({ _id: id })
-    await deleteInstitute.deleteOne()
+    await deleteInstitute.deleteOne();
+
+    await redisClient.set('totalInstitutes', await Institute.countDocuments());
+
     return res.status(200).json({ success: true, deleteInstitute })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Institute server error" })

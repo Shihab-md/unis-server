@@ -4,6 +4,7 @@ import Employee from "../models/Employee.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
+import redisClient from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -69,6 +70,8 @@ const addEmployee = async (req, res) => {
     });
 
     await newEmployee.save();
+
+    await redisClient.set('totalEmployees', await Employee.countDocuments());
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -269,6 +272,8 @@ const deleteEmployee = async (req, res) => {
       active: "In-Active",
       remarks: "Deleted",
     })
+
+    await redisClient.set('totalEmployees', await Employee.countDocuments());
 
     return res.status(200).json({ success: true, updateEmployee })
   } catch (error) {

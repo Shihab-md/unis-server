@@ -23,6 +23,8 @@ const addTemplate = async (req, res) => {
 
     newTemplate = await newTemplate.save();
 
+    await redisClient.set('totalTemplates', await Template.countDocuments());
+
     if (req.file) {
       const fileBuffer = req.file.buffer;
       const blob = await put("templates/" + newTemplate._id + ".png", fileBuffer, {
@@ -153,7 +155,9 @@ const deleteTemplate = async (req, res) => {
     const { id } = req.params;
     const deleteTemplate = await Template.findById({ _id: id })
     //await User.findByIdAndDelete({ _id: deleteTemplate.userId._id })
-    await deleteTemplate.deleteOne()
+    await deleteTemplate.deleteOne();
+
+    await redisClient.set('totalTemplates', await Template.countDocuments());
 
     return res.status(200).json({ success: true, updateTemplate })
   } catch (error) {

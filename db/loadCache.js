@@ -14,16 +14,18 @@ import Certificate from "../models/Certificate.js"
 const loadCache = async () => {
     try {
 
-        await redisClient.set('totalEmployees', await Employee.countDocuments());
         await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
         await redisClient.set('totalSchools', await School.countDocuments());
         await redisClient.set('totalStudents', await Student.countDocuments());
+        await redisClient.set('totalEmployees', await Employee.countDocuments());
+        await redisClient.set('totalCertificates', await Certificate.countDocuments());
+
         await redisClient.set('totalInstitutes', await Institute.countDocuments());
         await redisClient.set('totalCourses', await Course.countDocuments());
         await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
         await redisClient.set('totalTemplates', await Template.countDocuments());
         await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
-        await redisClient.set('totalCertificates', await Certificate.countDocuments());
+
 
         await redisClient.set('supervisors', JSON.stringify(await Supervisor.find().select('_id supervisorId')
             .populate({ path: 'userId', select: 'name' })));

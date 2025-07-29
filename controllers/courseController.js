@@ -89,7 +89,10 @@ const addCourse = async (req, res) => {
       subject10PassMark,
     });
 
-    await newCourse.save()
+    await newCourse.save();
+
+    await redisClient.set('totalCourses', await Course.countDocuments());
+
     return res.status(200).json({ success: true, message: "Course Created Successfully." });
   } catch (error) {
     console.log(error);
@@ -279,7 +282,10 @@ const deleteCourse = async (req, res) => {
   try {
     const { id } = req.params;
     const deleteCourse = await Course.findById({ _id: id })
-    await deleteCourse.deleteOne()
+    await deleteCourse.deleteOne();
+
+    await redisClient.set('totalCourses', await Course.countDocuments());
+
     return res.status(200).json({ success: true, deleteCourse })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete Course server error" })

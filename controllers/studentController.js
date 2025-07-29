@@ -294,6 +294,8 @@ const addStudent = async (req, res) => {
     }
     await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
 
+    await redisClient.set('totalStudents', await Student.countDocuments());
+
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
 
@@ -1587,6 +1589,8 @@ const deleteStudent = async (req, res) => {
     }
 
     await Student.findByIdAndDelete({ _id: deleteStudent._id });
+
+    await redisClient.set('totalStudents', await Student.countDocuments());
 
     console.log("Student data Successfully Deleted...")
     //  await deleteStudent.deleteOne()

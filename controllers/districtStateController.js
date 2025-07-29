@@ -22,7 +22,10 @@ const addDistrictState = async (req, res) => {
       state: toCamelCase(state),
     });
 
-    await newDistrictState.save()
+    await newDistrictState.save();
+
+    await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
+
     return res.status(200).json({ success: true, message: "District and State Created Successfully." });
 
   } catch (error) {
@@ -126,7 +129,10 @@ const updateDistrictState = async (req, res) => {
 const deleteDistrictState = async (req, res) => {
   try {
     const { id } = req.params;
-    await DistrictState.findByIdAndDelete({ _id: id })
+    await DistrictState.findByIdAndDelete({ _id: id });
+
+    await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
+
     return res.status(200).json({ success: true, message: "deleteDistrictState" })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete DistrictState server error" })

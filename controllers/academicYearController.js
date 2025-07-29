@@ -21,7 +21,10 @@ const addAcademicYear = async (req, res) => {
       desc: toCamelCase(desc),
     });
 
-    await newAcademicYear.save()
+    await newAcademicYear.save();
+
+    await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
+
     return res.status(200).json({ success: true, message: "AcademicYear Created Successfully." });
   } catch (error) {
     console.log(error);
@@ -103,7 +106,10 @@ const deleteAcademicYear = async (req, res) => {
   try {
     const { id } = req.params;
     const deleteAcademicYear = await AcademicYear.findById({ _id: id })
-    await deleteAcademicYear.deleteOne()
+    await deleteAcademicYear.deleteOne();
+
+    await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
+
     return res.status(200).json({ success: true, deleteAcademicYear })
   } catch (error) {
     return res.status(500).json({ success: false, error: "delete AcademicYear server error" })
