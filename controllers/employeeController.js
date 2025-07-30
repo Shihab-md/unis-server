@@ -1,4 +1,5 @@
 import multer from "multer";
+import jwt from "jsonwebtoken";
 import { put } from "@vercel/blob";
 import Employee from "../models/Employee.js";
 import User from "../models/User.js";
@@ -97,11 +98,33 @@ const addEmployee = async (req, res) => {
 
 const getEmployees = async (req, res) => {
   try {
-    const employees = await Employee.find().sort({ employeeId: 1 })
-      .populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId");
+
+    const usertoken = req.headers.authorization;
+    const token = usertoken.split(' ');
+    const decoded = jwt.verify(token[1], process.env.JWT_SECRET);
+    const userId = decoded._id;
+    const userRole = decoded.role;
+    const schoolId = decoded.schoolId;
+
+    console.log(userId + " , " + userRole)
+    // let schools = [];
+    let employees = [];
+    if (userRole == 'superadmin' || userRole == 'hquser') {
+
+      employees = await Employee.find().sort({ employeeId: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .populate("schoolId");
+
+    } else {
+
+      employees = await Employee.find({ schoolId: schoolId }).sort({ employeeId: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .populate("schoolId");
+    }
+
     return res.status(200).json({ success: true, employees });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ success: false, error: "get employees server error" });

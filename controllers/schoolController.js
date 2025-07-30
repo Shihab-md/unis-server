@@ -191,6 +191,7 @@ const getSchools = async (req, res) => {
       if (employee && employee.schoolId) {
         schools = await School.find({ _id: employee.schoolId }).sort({ code: 1 })
           //  .populate("supervisorId")
+          .populate("districtStateId")
           .populate({
             path: 'supervisorId',
             populate: {
