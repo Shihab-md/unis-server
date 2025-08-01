@@ -128,7 +128,7 @@ const addSchool = async (req, res) => {
     });
     await newSchool.save();
 
-    await redisClient.set('totalSchools', await School.countDocuments());
+    await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
     return res.status(200).json({ success: true, message: "Niswan is created." });
   } catch (error) {
@@ -473,7 +473,7 @@ const deleteSchool = async (req, res) => {
     await School.findByIdAndDelete({ _id: id })
     // await deleteSchool.deleteOne()
 
-    await redisClient.set('totalSchools', await School.countDocuments());
+    await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {

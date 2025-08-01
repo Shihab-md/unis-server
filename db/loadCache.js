@@ -15,7 +15,7 @@ const loadCache = async () => {
     try {
 
         await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
-        await redisClient.set('totalSchools', await School.countDocuments());
+        await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
         await redisClient.set('totalStudents', await Student.countDocuments());
         await redisClient.set('totalEmployees', await Employee.countDocuments());
         await redisClient.set('totalCertificates', await Certificate.countDocuments());
