@@ -55,6 +55,13 @@ const addEmployee = async (req, res) => {
         .json({ success: false, error: "Niswan Not exists" });
     }
 
+    const employee = await Employee.findOne({ employeeId: employeeId });
+    if (employee) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Employee Id already found" });
+    }
+
     const newEmployee = new Employee({
       userId: savedUser._id,
       schoolId: schoolById._id,
