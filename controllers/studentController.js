@@ -847,7 +847,8 @@ const getStudentForEdit = async (req, res) => {
     let student = await Student.findById({ _id: id })
       .populate("userId", { password: 0 })
       .populate("schoolId")
-      .populate("districtStateId");
+      .populate("districtStateId")
+      .populate("courses");
 
     if (!student) {
       return res
@@ -867,7 +868,9 @@ const getStudentForEdit = async (req, res) => {
         .json({ success: false, error: "Academic Year Not found : " + accYear });
     }
 
-    const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
+    console.log("Student : " + student._id + ", AC Year : " + acadYear._id);
+
+    /*const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
       .populate({ path: 'acYear', select: '_id acYear' })
       .populate({ path: 'instituteId1', select: '_id code name' })
       .populate({ path: 'courseId1', select: '_id iCode name' })
@@ -879,22 +882,23 @@ const getStudentForEdit = async (req, res) => {
       .populate({ path: 'courseId4', select: '_id iCode name' })
       .populate({ path: 'instituteId5', select: '_id code name' })
       .populate({ path: 'courseId5', select: '_id iCode name' });
+*/
+    const academic = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
+      .populate({ path: 'acYear', select: '_id acYear' })
+      .populate({ path: 'instituteId1', select: '_id code name' })
+      .populate({ path: 'courseId1', select: '_id iCode name' })
+      .populate({ path: 'instituteId2', select: '_id code name' })
+      .populate({ path: 'courseId2', select: '_id iCode name' })
+      .populate({ path: 'instituteId3', select: '_id code name' })
+      .populate({ path: 'courseId3', select: '_id iCode name' })
+      .populate({ path: 'instituteId4', select: '_id code name' })
+      .populate({ path: 'courseId4', select: '_id iCode name' })
+      .populate({ path: 'instituteId5', select: '_id code name' })
+      .populate({ path: 'courseId5', select: '_id iCode name' })
 
-    /*  const academics = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
-        .populate({ path: 'acYear', select: '_id acYear' })
-        .populate({ path: 'instituteId1', select: '_id code name' })
-        .populate({ path: 'courseId1', select: '_id iCode name' })
-        .populate({ path: 'instituteId2', select: '_id code name' })
-        .populate({ path: 'courseId2', select: '_id iCode name' })
-        .populate({ path: 'instituteId3', select: '_id code name' })
-        .populate({ path: 'courseId3', select: '_id iCode name' })
-        .populate({ path: 'instituteId4', select: '_id code name' })
-        .populate({ path: 'courseId4', select: '_id iCode name' })
-        .populate({ path: 'instituteId5', select: '_id code name' })
-        .populate({ path: 'courseId5', select: '_id iCode name' })
-  */
+    console.log(academic[0])
 
-    student._academics = academic ? [academic] : [];
+    student._academics = academic[0] ? [academic[0]] : [];
     student.toObject({ virtuals: true });
 
     return res.status(200).json({ success: true, student });
@@ -1486,8 +1490,8 @@ const promoteStudent = async (req, res) => {
         instituteId2: status2 && status2 === "Completed" ? null : instituteId2 ? instituteId2 : null,
         courseId2: status2 && status2 === "Completed" ? null : nextCourseId ? nextCourseId : null,
         refNumber2: status2 && status2 === "Completed" ? null : refNumber2,
-        year2: status2 && status2 === "Completed" ? null : instituteId2 ?
-          status2 && status2 === "Not-Promoted" ? year2 : year2 ? Number(year2) + 1 : 1 : null,
+        //  year2: status2 && status2 === "Completed" ? null : instituteId2 ?
+        //    status2 && status2 === "Not-Promoted" ? year2 : year2 ? Number(year2) + 1 : 1 : null,
         fees2: status2 && status2 === "Completed" ? null : fees2,
         discount2: status2 && status2 === "Completed" ? null : discount2,
         finalFees2: status2 && status2 === "Completed" ? null : finalFees2Val,
@@ -1508,8 +1512,8 @@ const promoteStudent = async (req, res) => {
         instituteId4: status4 && status4 === "Completed" ? null : instituteId4 ? instituteId4 : null,
         courseId4: status4 && status4 === "Completed" ? null : courseId4 ? courseId4 : null,
         refNumber4: status4 && status4 === "Completed" ? null : refNumber4,
-        year4: status4 && status4 === "Completed" ? null : instituteId4 ?
-          status4 && status4 === "Not-Promoted" ? year4 : year4 ? Number(year4) + 1 : 1 : null,
+        //  year4: status4 && status4 === "Completed" ? null : instituteId4 ?
+        //    status4 && status4 === "Not-Promoted" ? year4 : year4 ? Number(year4) + 1 : 1 : null,
         fees4: status4 && status4 === "Completed" ? null : fees4,
         discount4: status4 && status4 === "Completed" ? null : discount4,
         finalFees4: status4 && status4 === "Completed" ? null : finalFees4Val,
@@ -1519,8 +1523,8 @@ const promoteStudent = async (req, res) => {
         instituteId5: status5 && status5 === "Completed" ? null : instituteId5 ? instituteId5 : null,
         courseId5: status5 && status5 === "Completed" ? null : courseId5 ? courseId5 : null,
         refNumber5: status5 && status5 === "Completed" ? null : refNumber5,
-        year5: status5 && status5 === "Completed" ? null : instituteId5 ?
-          status5 && status5 === "Not-Promoted" ? year5 : year5 ? Number(year5) + 1 : 1 : null,
+        //  year5: status5 && status5 === "Completed" ? null : instituteId5 ?
+        //    status5 && status5 === "Not-Promoted" ? year5 : year5 ? Number(year5) + 1 : 1 : null,
         fees5: status5 && status5 === "Completed" ? null : fees5,
         discount5: status5 && status5 === "Completed" ? null : discount5,
         finalFees5: status5 && status5 === "Completed" ? null : finalFees5Val,
