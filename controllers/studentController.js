@@ -709,9 +709,10 @@ const getActiveStudents = async (req, res) => {
 
 const getByFilter = async (req, res) => {
 
-  const { schoolId, courseId, status, acYear, maritalStatus, hosteller } = req.params;
+  const { schoolId, courseId, status, acYear, maritalStatus, hosteller, year, instituteId } = req.params;
 
-  console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + courseId?.length + ",  " + status + ",  " + status?.length);
+  console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + status + ",  "
+    + acYear + ",  " + maritalStatus + ",  " + hosteller + ",  " + year + ",  " + instituteId);
 
   try {
 
@@ -742,11 +743,28 @@ const getByFilter = async (req, res) => {
       filterQuery = filterQuery.where('hostel').eq(hosteller);
     }
 
-    if (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined') {
+    if ((acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined')
+      || (year && year?.length > 0 && year != 'null' && year != 'undefined')) {
 
       console.log("acYear Added : " + acYear);
+      console.log("Year Added : " + year);
 
-      const academics = await Academic.find({ acYear: acYear })
+      let academicQuery = {};
+      if (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined') {
+        academicQuery.acYear = { $eq: acYear };
+      }
+
+      if (year && year?.length > 0 && year != 'null' && year != 'undefined') {
+
+        //academicQuery = academicQuery.or.where('year1').eq(year);
+
+        const orConditions = [];
+        orConditions.push({ year1: year });
+        orConditions.push({ year3: year });
+        academicQuery.$or = orConditions;
+      }
+
+      const academics = await Academic.find(academicQuery);
       let studentIds = [];
       academics.forEach(academic => studentIds.push(academic.studentId));
       console.log("Student Ids : " + studentIds)

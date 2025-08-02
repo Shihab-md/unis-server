@@ -21,7 +21,7 @@ router.get('/bySchoolId/:schoolId', authMiddleware, getStudentsBySchool)
 router.get('/bySchoolIdAndCourse/:schoolId/:templateId', authMiddleware, getStudentsBySchoolAndTemplate)
 router.get('/:studentId/:acaYear', authMiddleware, getAcademic)
 router.get('/studCount', authMiddleware, getStudentsCount)
-router.get('/byFilter/:schoolId/:courseId/:status/:acYear/:maritalStatus/:hosteller', authMiddleware, getByFilter)
+router.get('/byFilter/:schoolId/:courseId/:status/:acYear/:maritalStatus/:hosteller/:year/:instituteId', authMiddleware, getByFilter)
 
 router.post('/import', authMiddleware, importStudentsData)
 
