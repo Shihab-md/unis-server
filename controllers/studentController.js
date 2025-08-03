@@ -709,66 +709,88 @@ const getActiveStudents = async (req, res) => {
 
 const getByFilter = async (req, res) => {
 
-  const { schoolId, courseId, status, acYear, maritalStatus, hosteller, year, instituteId } = req.params;
+  const { schoolId, courseId, status, acYear, maritalStatus, hosteller, year, instituteId, courseStatus } = req.params;
 
   console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + status + ",  "
-    + acYear + ",  " + maritalStatus + ",  " + hosteller + ",  " + year + ",  " + instituteId);
+    + acYear + ",  " + maritalStatus + ",  " + hosteller + ",  " + year + ",  " + instituteId + ", " + courseStatus);
 
   try {
 
     let filterQuery = Student.find();
     filterQuery = filterQuery.where('schoolId').eq(schoolId);
-
-    if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
-
-      console.log("Course Id Added : " + courseId);
-      filterQuery = filterQuery.where('courses').in(courseId);
-    }
+    //filterQuery.push({ schoolId: schoolId });
 
     if (status && status?.length > 0 && status != 'null' && status != 'undefined') {
-
       console.log("Status Added : " + status);
       filterQuery = filterQuery.where('active').eq(status);
+      //filterQuery.push({ active: status });
     }
 
     if (maritalStatus && maritalStatus?.length > 0 && maritalStatus != 'null' && maritalStatus != 'undefined') {
-
       console.log("maritalStatus Added : " + maritalStatus);
       filterQuery = filterQuery.where('maritalStatus').eq(maritalStatus);
+      //filterQuery.push({ maritalStatus: maritalStatus });
     }
 
     if (hosteller && hosteller?.length > 0 && hosteller != 'null' && hosteller != 'undefined') {
-
       console.log("hosteller Added : " + maritalStatus);
       filterQuery = filterQuery.where('hostel').eq(hosteller);
+      //filterQuery.push({ hostel: hosteller });
     }
 
-    if ((acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined')
-      || (year && year?.length > 0 && year != 'null' && year != 'undefined')) {
+    if ((courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined')
+      || (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined')
+      || (year && year?.length > 0 && year != 'null' && year != 'undefined')
+      || (courseStatus && courseStatus?.length > 0 && courseStatus != 'null' && courseStatus != 'undefined')) {
 
+      console.log("courseId Added : " + courseId);
       console.log("acYear Added : " + acYear);
       console.log("Year Added : " + year);
+      console.log("courseStatus Added : " + courseStatus);
 
-      let academicQuery = {};
+      let academicQuery = [];
+
+      if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
+        const orCourseConditions = [];
+        orCourseConditions.push({ courseId1: courseId });
+        orCourseConditions.push({ courseId2: courseId });
+        orCourseConditions.push({ courseId3: courseId });
+        orCourseConditions.push({ courseId4: courseId });
+        orCourseConditions.push({ courseId5: courseId });
+        //academicQuery.$or = orCourseConditions;
+        academicQuery.push({ $or: orCourseConditions });
+      }
+
       if (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined') {
-        academicQuery.acYear = { $eq: acYear };
+        //academicQuery.acYear = { $eq: acYear };
+        academicQuery.push({ acYear: acYear });
       }
 
       if (year && year?.length > 0 && year != 'null' && year != 'undefined') {
-
-        //academicQuery = academicQuery.or.where('year1').eq(year);
-
         const orConditions = [];
         orConditions.push({ year1: year });
         orConditions.push({ year3: year });
-        academicQuery.$or = orConditions;
+        //academicQuery.$or = orConditions;
+        academicQuery.push({ $or: orConditions });
       }
 
-      const academics = await Academic.find(academicQuery);
+      if (courseStatus && courseStatus?.length > 0 && courseStatus != 'null' && courseStatus != 'undefined') {
+        const orCourseStatusConditions = [];
+        orCourseStatusConditions.push({ status1: courseStatus });
+        orCourseStatusConditions.push({ status2: courseStatus });
+        orCourseStatusConditions.push({ status3: courseStatus });
+        orCourseStatusConditions.push({ status4: courseStatus });
+        orCourseStatusConditions.push({ status5: courseStatus });
+        //academicQuery.$or = orCourseStatusConditions;
+        academicQuery.push({ $or: orCourseStatusConditions });
+      }
+
+      const academics = await Academic.find({ $and: academicQuery });
       let studentIds = [];
       academics.forEach(academic => studentIds.push(academic.studentId));
       console.log("Student Ids : " + studentIds)
       filterQuery = filterQuery.where('_id').in(studentIds);
+      //filterQuery.push({ hostel: hosteller });
     }
 
     filterQuery.sort({ rollNumber: 1 });
