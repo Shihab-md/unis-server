@@ -13,6 +13,4 @@ router.get('/:id', authMiddleware, getSupervisor)
 router.put('/:id', authMiddleware, upload.single('file'), updateSupervisor)
 router.delete('/:id', authMiddleware, deleteSupervisor)
 
- 
-
 export default router
