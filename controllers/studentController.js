@@ -1476,6 +1476,9 @@ const promoteStudent = async (req, res) => {
         .json({ success: false, error: "Check the Academic Data - Already Promote data found." });
     }
 
+    console.log("Status-1 : " + status1 + ", Status-2 : " + status2 + ", Status-3 : " + status3
+      + ", Status-4 : " + status4 + ", Status-5 : " + status5);
+
     // To complete.
     if (status1 === "Completed" || status2 === "Completed" || status3 === "Completed"
       || status4 === "Completed" || status5 === "Completed") {
@@ -1494,69 +1497,73 @@ const promoteStudent = async (req, res) => {
 
     let savedAccount;
     // To promote.
-    if ((status1 && status1 != "Completed") || (status2 && status3 != "Completed") || (status3 && status3 != "Completed")
+    if ((status1 && status1 != "Completed") || (status2 && status2 != "Completed") || (status3 && status3 != "Completed")
       || (status4 && status4 != "Completed") || (status5 && status5 != "Completed")) {
 
-      const newAcademic = new Academic({
-        studentId: student._id,
-        acYear: accYearId,
+      let academicModal = {};
 
-        // Deeniyath Education.
-        instituteId1: status1 && status1 === "Completed" ? null : instituteId1 ? instituteId1 : null,
-        courseId1: status1 && status1 === "Completed" ? null : courseId1 ? courseId1 : null,
-        refNumber1: status1 && status1 === "Completed" ? null : refNumber1,
-        year1: status1 && status1 === "Completed" ? null : instituteId1 ?
-          status1 && status1 === "Not-Promoted" ? year1 : year1 ? Number(year1) + 1 : 1 : null,
-        fees1: status1 && status1 === "Completed" ? null : fees1,
-        discount1: status1 && status1 === "Completed" ? null : discount1,
-        finalFees1: status1 && status1 === "Completed" ? null : finalFees1Val,
-        status1: status1 && status1 === "Completed" ? null : status1,
+      academicModal['studentId'] = student._id;
+      academicModal['acYear'] = accYearId;
 
-        // School Education.
-        instituteId2: status2 && status2 === "Completed" ? null : instituteId2 ? instituteId2 : null,
-        courseId2: status2 && status2 === "Completed" ? null : nextCourseId ? nextCourseId : null,
-        refNumber2: status2 && status2 === "Completed" ? null : refNumber2,
-        //  year2: status2 && status2 === "Completed" ? null : instituteId2 ?
-        //    status2 && status2 === "Not-Promoted" ? year2 : year2 ? Number(year2) + 1 : 1 : null,
-        fees2: status2 && status2 === "Completed" ? null : fees2,
-        discount2: status2 && status2 === "Completed" ? null : discount2,
-        finalFees2: status2 && status2 === "Completed" ? null : finalFees2Val,
-        status2: status2 && status2 === "Completed" ? null : status2,
+      // Deeniyath Education.
+      academicModal['instituteId1'] = instituteId1;
+      academicModal['courseId1'] = courseId1;
+      academicModal['refNumber1'] = refNumber1;
+      if (status1 && status1 != "Completed") {
+        academicModal['year1'] = status1 && status1 === "Not-Promoted" ? year1 : year1 ? Number(year1) + 1 : 1;
+        academicModal['fees1'] = fees1;
+        academicModal['discount1'] = discount1;
+        academicModal['finalFees1'] = finalFees1Val;
+        academicModal['status1'] = status1;
+      }
 
-        // College Education.
-        instituteId3: status3 && status3 === "Completed" ? null : instituteId3 ? instituteId3 : null,
-        courseId3: status3 && status3 === "Completed" ? null : courseId3 ? courseId3 : null,
-        refNumber3: status3 && status3 === "Completed" ? null : refNumber3,
-        year3: status3 && status3 === "Completed" ? null : instituteId3 ?
-          status3 && status3 === "Not-Promoted" ? year3 : year3 ? Number(year3) + 1 : 1 : null,
-        fees3: status3 && status3 === "Completed" ? null : fees3,
-        discount3: status3 && status3 === "Completed" ? null : discount3,
-        finalFees3: status3 && status3 === "Completed" ? null : finalFees3Val,
-        status3: status3 && status3 === "Completed" ? null : status3,
-
+      if (status4 && status4 != "Completed") {
         // Islamic Home Science.
-        instituteId4: status4 && status4 === "Completed" ? null : instituteId4 ? instituteId4 : null,
-        courseId4: status4 && status4 === "Completed" ? null : courseId4 ? courseId4 : null,
-        refNumber4: status4 && status4 === "Completed" ? null : refNumber4,
-        //  year4: status4 && status4 === "Completed" ? null : instituteId4 ?
-        //    status4 && status4 === "Not-Promoted" ? year4 : year4 ? Number(year4) + 1 : 1 : null,
-        fees4: status4 && status4 === "Completed" ? null : fees4,
-        discount4: status4 && status4 === "Completed" ? null : discount4,
-        finalFees4: status4 && status4 === "Completed" ? null : finalFees4Val,
-        status4: status4 && status4 === "Completed" ? null : status4,
+        academicModal['instituteId4'] = instituteId4;
+        academicModal['courseId4'] = courseId4;
+        academicModal['refNumber4'] = refNumber4;
+        academicModal['fees4'] = fees4;
+        academicModal['discount4'] = discount4;
+        academicModal['finalFees4'] = finalFees4Val;
+        academicModal['status4'] = status4;
+      }
 
+      if (status2 && status2 != "Completed") {
+        // School Education.
+        academicModal['instituteId2'] = instituteId2;
+        academicModal['courseId2'] = courseId2;
+        academicModal['refNumber2'] = refNumber2;
+        academicModal['fees2'] = fees2;
+        academicModal['discount2'] = discount2;
+        academicModal['finalFees2'] = finalFees2Val;
+        academicModal['status2'] = status2;
+      }
+
+      if (status3 && status3 != "Completed") {
+        // College Education.
+        academicModal['instituteId3'] = instituteId3;
+        academicModal['courseId3'] = courseId3;
+        academicModal['refNumber3'] = refNumber3;
+        academicModal['year3'] = status3 && status3 === "Not-Promoted" ? year3 : year3 ? Number(year3) + 1 : 1;
+        academicModal['fees3'] = fees3;
+        academicModal['discount3'] = discount3;
+        academicModal['finalFees3'] = finalFees3Val;
+        academicModal['status3'] = status3;
+      }
+
+      if (status5 && status5 != "Completed") {
         // Vocational Course.
-        instituteId5: status5 && status5 === "Completed" ? null : instituteId5 ? instituteId5 : null,
-        courseId5: status5 && status5 === "Completed" ? null : courseId5 ? courseId5 : null,
-        refNumber5: status5 && status5 === "Completed" ? null : refNumber5,
-        //  year5: status5 && status5 === "Completed" ? null : instituteId5 ?
-        //    status5 && status5 === "Not-Promoted" ? year5 : year5 ? Number(year5) + 1 : 1 : null,
-        fees5: status5 && status5 === "Completed" ? null : fees5,
-        discount5: status5 && status5 === "Completed" ? null : discount5,
-        finalFees5: status5 && status5 === "Completed" ? null : finalFees5Val,
-        status5: status5 && status5 === "Completed" ? null : status5,
-      })
+        academicModal['instituteId5'] = instituteId5;
+        academicModal['courseId5'] = courseId5;
+        academicModal['refNumber5'] = refNumber5;
+        academicModal['fees5'] = fees5;
+        academicModal['discount5'] = discount5;
+        academicModal['finalFees5'] = finalFees5Val;
+        academicModal['status5'] = status5;
+      }
 
+      console.log(academicModal);
+      const newAcademic = new Academic(academicModal)
       updateAcademic = await newAcademic.save();
 
       let totalFees = (finalFees1Val && status1 != "Completed" ? finalFees1Val : 0)
