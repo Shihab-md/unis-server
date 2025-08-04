@@ -102,7 +102,7 @@ const addSupervisor = async (req, res) => {
 
 const getSupervisors = async (req, res) => {
   try {
-    const supervisors = await Supervisor.find()
+    const supervisors = await Supervisor.find().sort({ supervisorId: 1 })
       .populate("userId", { password: 0, profileImage: 0 });
 
     const counts = await School.aggregate([
@@ -130,6 +130,74 @@ const getSupervisors = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "get supervisors server error" });
+  }
+};
+
+const getBySupFilter = async (req, res) => {
+
+  const { supSchoolId, supStatus, supType } = req.params;
+
+  console.log("getBy Supervisor Filter : " + supSchoolId + ", " + supStatus + ",  " + supType);
+
+  try {
+
+    let filterQuery = Supervisor.find();
+
+    if (supSchoolId && supSchoolId?.length > 0 && supSchoolId != 'null' && supSchoolId != 'undefined') {
+
+      console.log("supSchoolId Added : " + supSchoolId);
+
+      const school = await School.findById({ _id: supSchoolId });
+
+      filterQuery = filterQuery.where('_id').eq(school?.supervisorId);
+    }
+
+    if (supStatus && supStatus?.length > 0 && supStatus != 'null' && supStatus != 'undefined') {
+
+      console.log("supStatus Added : " + supStatus);
+      filterQuery = filterQuery.where('active').eq(supStatus);
+    }
+
+    if (supType && supType?.length > 0 && supType != 'null' && supType != 'undefined') {
+
+      console.log("supType Added : " + supType);
+      filterQuery = filterQuery.where('jobType').eq(supType);
+    }
+
+    filterQuery.sort({ supervisorId: 1 });
+    filterQuery.populate("userId", { password: 0, profileImage: 0 });
+
+    // console.log(filterQuery);
+
+    const supervisors = await filterQuery.exec();
+
+    const counts = await School.aggregate([
+      {
+        $group: {
+          _id: '$supervisorId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    if (supervisors.length > 0 && counts.length > 0) {
+      for (const count of counts) {
+        supervisors.map(supervisor => {
+          if (supervisor._id.toString() == count._id.toString()) {
+            supervisor._schoolsCount = count.count;
+            supervisor.toObject({ virtuals: true });
+          };
+        });
+      }
+    }
+
+    console.log("Supervisors : " + supervisors?.length)
+    return res.status(200).json({ success: true, supervisors });
+  } catch (error) {
+    console.log(error)
+    return res
+      .status(500)
+      .json({ success: false, error: "get Supervisors by FILTER server error" });
   }
 };
 
@@ -254,4 +322,4 @@ const deleteSupervisor = async (req, res) => {
   }
 }
 
-export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, deleteSupervisor, getSupervisorsFromCache };
+export { addSupervisor, upload, getSupervisors, getSupervisor, updateSupervisor, deleteSupervisor, getSupervisorsFromCache, getBySupFilter };

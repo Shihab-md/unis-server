@@ -661,7 +661,11 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
     console.log("OK");
 
     const academics = await Academic.find({
-      $or: [{ 'courseId1': template.courseId }, { 'courseId2': template.courseId }, { 'courseId3': template.courseId }, { 'courseId4': template.courseId }, { 'courseId5': template.courseId }]
+      $or: [{ 'courseId1': template.courseId, 'status1': 'Completed' },
+      { 'courseId2': template.courseId, 'status2': 'Completed' },
+      { 'courseId3': template.courseId, 'status3': 'Completed' },
+      { 'courseId4': template.courseId, 'status4': 'Completed' },
+      { 'courseId5': template.courseId, 'status5': 'Completed' }]
     });
 
     if (Object.keys(academics).length <= 0) {
