@@ -118,13 +118,13 @@ const getEmployees = async (req, res) => {
     let employees = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
 
-      employees = await Employee.find().sort({ employeeId: 1 })
+      employees = await Employee.find({active: 'Active'}).sort({ employeeId: 1 })
         .populate("userId", { password: 0, profileImage: 0 })
         .populate("schoolId");
 
     } else {
 
-      employees = await Employee.find({ schoolId: schoolId }).sort({ employeeId: 1 })
+      employees = await Employee.find({ schoolId: schoolId, active: 'Active' }).sort({ employeeId: 1 })
         .populate("userId", { password: 0, profileImage: 0 })
         .populate("schoolId");
     }
