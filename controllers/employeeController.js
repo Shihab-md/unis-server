@@ -215,6 +215,7 @@ const updateEmployee = async (req, res) => {
     const { id } = req.params;
     const { name,
       schoolId,
+      employeeId,
       contactNumber,
       address,
       designation,
@@ -230,6 +231,14 @@ const updateEmployee = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "employee not found" });
+    }
+
+    const employeeByEmpId = await Employee.findOne({ employeeId: employeeId });
+    console.log("Emp Id : " + id + "  :  " + employeeId + " : " + employeeByEmpId?._id)
+    if (employeeByEmpId && employeeByEmpId?._id != id) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Employee Id already taken (duplicate)" });
     }
 
     const user = await User.findById({ _id: employee.userId })
@@ -265,6 +274,7 @@ const updateEmployee = async (req, res) => {
 
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
       schoolId: school._id,
+      employeeId,
       contactNumber,
       address: toCamelCase(address),
       designation: toCamelCase(designation),
@@ -285,6 +295,7 @@ const updateEmployee = async (req, res) => {
     return res.status(200).json({ success: true, message: "employee update done" })
 
   } catch (error) {
+    console.error(error)
     return res
       .status(500)
       .json({ success: false, error: "update employees server error" });
