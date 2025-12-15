@@ -14,10 +14,10 @@ import Certificate from "../models/Certificate.js"
 const loadCache = async () => {
     try {
 
-        await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
+        await redisClient.set('totalSupervisors', await Supervisor.countDocuments({active: 'Active'}));
         await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
         await redisClient.set('totalStudents', await Student.countDocuments());
-        await redisClient.set('totalEmployees', await Employee.countDocuments());
+        await redisClient.set('totalEmployees', await Employee.countDocuments({active: 'Active'}));
         await redisClient.set('totalCertificates', await Certificate.countDocuments());
 
         await redisClient.set('totalInstitutes', await Institute.countDocuments());
