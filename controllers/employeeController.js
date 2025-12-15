@@ -233,7 +233,7 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "employee not found" });
     }
 
-    const employeeByEmpId = await Employee.find({ employeeId: employeeId });
+    const employeeByEmpId = await Employee.findOne({ employeeId: employeeId });
     console.log("Emp Id : " + id + "  :  " + employeeId + " : " + employeeByEmpId?._id)
     if (employeeByEmpId && employeeByEmpId?._id != id) {
       return res
