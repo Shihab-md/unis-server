@@ -480,13 +480,16 @@ const importStudentsData = async (req, res) => {
       }
 
       let currentAcademicId;
-      let accYearId = "680485d9361ed06368c57f7c";
+      // year 1, 2023-2024
+      let accYearId = "694faa8b849cb7c7714b6c7d";
       for (let i = 0; i < yearCount; i++) {
 
         if (i == 1) {
-          accYearId = "68039133200583d3d5c01faf";
+          // year 2, 2024-2025
+          accYearId = "680485d9361ed06368c57f7c";
         } if (i == 2) {
-          accYearId = "6803911e200583d3d5c01fa9";
+          // year 3, 2025-2026
+          accYearId = "68612e92eeebf699b9d34a21";
         }
 
         const newAcademic = new Academic({
@@ -495,7 +498,7 @@ const importStudentsData = async (req, res) => {
           instituteId1: instituteId,
           courseId1: courseId,
           refNumber1: studentData.rollNumber,
-          year: studentData.year,
+          year: i + 1,
           fees1: studentData.fees,
           finalFees1: studentData.fees,
         });
