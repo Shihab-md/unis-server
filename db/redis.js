@@ -1,20 +1,39 @@
-import { createClient } from 'redis';
+import { createClient } from "redis";
 
-const redisClient = createClient({
-    url: process.env.REDIS_URL,
-    connectTimeout: 43000 // 43 seconds
-});
+const REDIS_URL = process.env.REDIS_URL;
+if (!REDIS_URL) throw new Error("REDIS_URL is not set");
 
-redisClient.on('error', err => console.log('Redis Client Error', err));
-redisClient.on('connect', err => { if (!err) console.log('Connected to Redis Session Store!'); });
+const g = globalThis;
 
-redisClient.connect()
-    .then(() => {
-        console.log('Connected to Redis!');
-        // Perform Redis operations here
-    })
-    .catch(err => {
-        console.error('Failed to connect to Redis:', err);
-    });
+// Reuse client across hot reload / serverless invocations
+const redisClient =
+  g.__redisClient ??
+  createClient({
+    url: REDIS_URL, // supports redis:// and rediss:// :contentReference[oaicite:2]{index=2}
+    socket: {
+      connectTimeout: 43_000,
+      // If you use rediss://, node-redis will use TLS.
+      // (Optional) reconnect backoff:
+      reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
+    },
+  });
+
+redisClient.on("error", (err) => console.error("Redis Client Error:", err));
+redisClient.on("ready", () => console.log("Redis ready"));
+
+const connectPromise =
+  g.__redisConnectPromise ??
+  (async () => {
+    if (!redisClient.isOpen) await redisClient.connect(); // basic connect pattern :contentReference[oaicite:3]{index=3}
+    return redisClient;
+  })();
+
+g.__redisClient = redisClient;
+g.__redisConnectPromise = connectPromise;
+
+export async function getRedis() {
+  await connectPromise;
+  return redisClient;
+}
 
 export default redisClient;
