@@ -5,7 +5,8 @@ import Student from "../models/Student.js";
 import bcrypt from "bcrypt";
 
 const login = async (req, res) => {
-  try {
+  try { 
+    
     const { email, password } = req.body;
     const user = await User.findOne({ email: email });
     //  console.log(user._id);
