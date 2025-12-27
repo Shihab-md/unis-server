@@ -32,7 +32,7 @@ const login = async (req, res) => {
       let employee = await Employee.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
-          select: 'code nameEnglish district state'
+          select: 'code nameEnglish'
         });
 
       schoolId = employee.schoolId._id;
@@ -44,7 +44,7 @@ const login = async (req, res) => {
       let student = await Student.findOne({ userId: user._id })
         .populate({
           path: 'schoolId',
-          select: 'code nameEnglish district state'
+          select: 'code nameEnglish'
         });
 
       schoolId = student.schoolId._id;
