@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { Schema } from "mongoose";
-
+ 
 const studentSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },

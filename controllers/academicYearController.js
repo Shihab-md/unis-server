@@ -36,7 +36,7 @@ const addAcademicYear = async (req, res) => {
 
 const getAcademicYears = async (req, res) => {
   try {
-    const academicYears = await AcademicYear.find();
+    const academicYears = await AcademicYear.find().sort({ acYear: 1 });
     return res.status(200).json({ success: true, academicYears });
   } catch (error) {
     return res

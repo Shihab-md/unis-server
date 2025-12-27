@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const schoolSchema = new Schema({
-  code: { type: String, required: true, unique: true },
+  code: { type: String, required: true, unique: true, index: true },
   nameEnglish: { type: String, required: true },
   nameArabic: { type: String },
   nameNative: { type: String },

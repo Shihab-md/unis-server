@@ -394,14 +394,14 @@ const importStudentsData = async (req, res) => {
         finalResultData += "\nRow : " + row + resultData + ". \n";
         resultData = "";
         row++;
-        console.log("Skipped")
+        console.log("Error found. SO Skipped")
         continue;
       }
 
       // Create User.
       const hashPassword = await bcrypt.hash(studentData.rollNumber, 10);
       const newUser = new User({
-        name: studentData.name,
+        name: toCamelCase(studentData.name),
         email: studentData.rollNumber,
         password: hashPassword,
         role: "student",
@@ -410,7 +410,7 @@ const importStudentsData = async (req, res) => {
 
       savedUser = await newUser.save();
       if (!savedUser) {
-        finalResultData += "\nRow : " + row + ", User registration failed. \n";
+        finalResultData += "\nRow : " + row + ", Student registration failed. \n";
         resultData = "";
         row++;
         continue;
@@ -443,9 +443,9 @@ const importStudentsData = async (req, res) => {
         guardianName: studentData.guardianName ? studentData.guardianName : "",
         guardianNumber: studentData.guardianNumber ? studentData.guardianNumber : "",
         guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
-        address: "-",
-        district: "-",
-        state: "-",
+        address: studentData.address,
+        city: studentData.city,
+        districtStateId: school.districtStateId,
         hostel: "No",
         active: studentData.course ? "Active" : "Graduated",
         courses: ["-"]
