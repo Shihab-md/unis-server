@@ -16,7 +16,7 @@ const studentSchema = new Schema({
   idMark1: { type: String, required: true },
   idMark2: { type: String },
   about: { type: String },
-
+ 
   fatherName: { type: String },
   fatherNumber: { type: Number },
   fatherOccupation: { type: String },
