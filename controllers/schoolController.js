@@ -307,7 +307,7 @@ const getBySchFilter = async (req, res) => {
 };
 
 const getSchoolsFromCache = async (req, res) => {
-  try {
+  try { 
     const schools = JSON.parse(await redisClient.get('schools'));
     return res.status(200).json({ success: true, schools });
   } catch (error) {

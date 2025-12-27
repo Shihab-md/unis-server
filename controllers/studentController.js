@@ -331,6 +331,7 @@ const importStudentsData = async (req, res) => {
 
   console.log("Import student data - start");
 
+  let successCount = 0;
   let finalResultData = "";
   let savedUser;
   let savedStudent;
@@ -416,49 +417,6 @@ const importStudentsData = async (req, res) => {
         continue;
       }
 
-      let parts;
-      try {
-        parts = studentData.dob && studentData.dob != "" ? studentData.dob.split('/') : "1/1/2000".split('/');
-      } catch {
-        parts = "1/1/2000".split('/');
-      }
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1; // Subtract 1 for 0-indexed month
-      const year = parseInt(parts[2], 10);
-
-      // Create Student data.
-      const newStudent = new Student({
-        userId: savedUser._id,
-        schoolId: school._id,
-        rollNumber: studentData.rollNumber,
-        doa: new Date(),
-        dob: new Date(year, month, day),
-        gender: "Female",
-        maritalStatus: "Single",
-        idMark1: "-",
-        fatherName: studentData.fatherName ? studentData.fatherName : "",
-        fatherNumber: studentData.fatherNumber ? studentData.fatherNumber : "",
-        motherName: studentData.motherName ? studentData.motherName : "",
-        motherNumber: studentData.motherNumber ? studentData.motherNumber : "",
-        guardianName: studentData.guardianName ? studentData.guardianName : "",
-        guardianNumber: studentData.guardianNumber ? studentData.guardianNumber : "",
-        guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
-        address: studentData.address,
-        city: studentData.city,
-        districtStateId: school.districtStateId,
-        hostel: "No",
-        active: studentData.course ? "Active" : "Graduated",
-        courses: ["-"]
-      });
-
-      savedStudent = await newStudent.save();
-      if (!savedStudent) {
-        finalResultData += "\nRow : " + row + ", Student registration failed.";
-        resultData = "";
-        row++;
-        continue;
-      }
-
       const courses = JSON.parse(await redisClient.get('courses'));
       let courseId = "680cf72e79e49fb103ddb97c";
       if (studentData.course) {
@@ -468,8 +426,71 @@ const importStudentsData = async (req, res) => {
           finalResultData += "\nRow : " + row + ", Course not found. Course Name : " + studentData.course;
           resultData = "";
           row++;
+
+          if (savedUser != null) {
+            await User.findByIdAndDelete({ _id: savedUser._id });
+            console.log("User data rollback completed.");
+          }
+
           continue;
         }
+        const coursesArray = [courseId];
+
+        let parts;
+        try {
+          parts = studentData.dob && studentData.dob != "" ? studentData.dob.split('/') : "1/1/2000".split('/');
+        } catch {
+          parts = "1/1/2000".split('/');
+        }
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1; // Subtract 1 for 0-indexed month
+        const year = parseInt(parts[2], 10);
+
+        // Create Student data.
+        const newStudent = new Student({
+          userId: savedUser._id,
+          schoolId: school._id,
+          rollNumber: studentData.rollNumber,
+          doa: new Date(),
+          dob: new Date(year, month, day),
+          gender: "Female",
+          maritalStatus: "Single",
+          idMark1: "-",
+          fatherName: studentData.fatherName ? studentData.fatherName : "",
+          fatherNumber: studentData.fatherNumber ? studentData.fatherNumber : "",
+          motherName: studentData.motherName ? studentData.motherName : "",
+          motherNumber: studentData.motherNumber ? studentData.motherNumber : "",
+          guardianName: studentData.guardianName ? studentData.guardianName : "",
+          guardianNumber: studentData.guardianNumber ? studentData.guardianNumber : "",
+          guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
+          address: studentData.address,
+          city: studentData.city,
+          districtStateId: school.districtStateId,
+          hostel: "No",
+          active: studentData.course ? "Active" : "Graduated",
+          courses: coursesArray
+        });
+
+        savedStudent = await newStudent.save();
+        if (!savedStudent) {
+          finalResultData += "\nRow : " + row + ", Student registration failed.";
+          resultData = "";
+          row++;
+          continue;
+        }
+
+        console.log("Student registered...")
+      } else {
+        finalResultData += "\nRow : " + row + ", Course details not given.";
+        resultData = "";
+        row++;
+
+        if (savedUser != null) {
+          await User.findByIdAndDelete({ _id: savedUser._id });
+          console.log("User data rollback completed.");
+        }
+
+        continue;
       }
 
       const instituteId = "67fbba7bcd590bacd4badef0";
@@ -510,6 +531,12 @@ const importStudentsData = async (req, res) => {
           finalResultData += "\nRow : " + row + ", Student Academic registration failed. AC year : " + accYearId;
           resultData = "";
           row++;
+
+          if (savedUser != null) {
+            await User.findByIdAndDelete({ _id: savedUser._id });
+            console.log("User data rollback completed.");
+          }
+
           continue;
         }
 
@@ -517,6 +544,8 @@ const importStudentsData = async (req, res) => {
           currentAcademicId = savedAcademic._id;
         }
       }
+
+      console.log("Academic registered...")
 
       const newAccount = new Account({
         userId: savedStudent._id,
@@ -536,23 +565,34 @@ const importStudentsData = async (req, res) => {
         finalResultData += "\nRow : " + row + ", Account registration failed. AC year : " + accYearId;
         resultData = "";
         row++;
+
+        if (savedUser != null) {
+          await User.findByIdAndDelete({ _id: savedUser._id });
+          console.log("User data rollback completed.");
+        }
+
         continue;
       }
 
-      const coursesArray = [courseId];
-      await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
+      console.log("Account registered...")
+
+      //const coursesArray = [courseId];
+      //await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
 
       finalResultData += "\nRow : " + row + ", RollNumber : " + studentData.rollNumber + ", Imported Successfully!";
       row++;
+      successCount++;
+      console.log("Success Count : " + successCount);
     }
-
 
     //  let tempFilePath = path.join('/tmp', 'Import_data_Result.txt');
     //  fs.writeFileSync(tempFilePath, finalResultData);
 
+    await redisClient.set('totalStudents', await Student.countDocuments());
+
     console.log("Import student data - end NORMAL \n" + finalResultData);
     return res.status(200)
-      .json({ success: true, message: "Students data Imported.", finalResultData: finalResultData });
+      .json({ success: true, message: " [" + successCount + "] Students data Imported Successfully!", finalResultData: finalResultData });
 
   } catch (error) {
     console.log("Import student data - end ERROR \n" + finalResultData);

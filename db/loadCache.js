@@ -26,7 +26,6 @@ const loadCache = async () => {
         await redisClient.set('totalTemplates', await Template.countDocuments());
         await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
 
-
         await redisClient.set('supervisors', JSON.stringify(await Supervisor.find().select('_id supervisorId')
             .populate({ path: 'userId', select: 'name' })));
 
