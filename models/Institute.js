@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const instituteSchema = new Schema({
-  iCode: { type: String, required: true, unique: true },
+  iCode: { type: String, required: true, unique: true, index: true },
   name: { type: String, required: true },
-  type: { type: String, enum: ["Deeniyath Education", "School Education", "College Education", "Islamic Home Science", "Vocational Courses"], },
+  type: { type: String, index: true, enum: ["Deeniyath Education", "School Education", "College Education", "Islamic Home Science", "Vocational Courses"], },
   contactNumber: { type: Number },
   email: { type: String },
   address: { type: String, required: true },
