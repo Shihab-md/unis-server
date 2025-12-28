@@ -11,7 +11,7 @@ const redisClient =
   createClient({
     url: REDIS_URL, // supports redis:// and rediss:// :contentReference[oaicite:2]{index=2}
     socket: {
-      connectTimeout: 61_000,
+      connectTimeout: 160_000,
       // If you use rediss://, node-redis will use TLS.
       // (Optional) reconnect backoff:
       reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
