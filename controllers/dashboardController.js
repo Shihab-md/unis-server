@@ -1,54 +1,54 @@
-import redisClient from "../db/redis.js"
+import { getRedis } from "../db/redis.js";
+import Student from "../models/Student.js";
+import Employee from "../models/Employee.js";
+import School from "../models/School.js";
+import Supervisor from "../models/Supervisor.js";
+import Certificate from "../models/Certificate.js";
 
 const getSummary = async (req, res) => {
-    try {
-        const totalEmployees = await redisClient.get('totalEmployees');
-        const totalSupervisors = await redisClient.get('totalSupervisors');
-        const totalSchools = await redisClient.get('totalSchools');
-        const totalStudents = await redisClient.get('totalStudents');
-        const totalCertificates = await redisClient.get('totalCertificates');
+  try {
+    const redis = await getRedis();
 
-        {/*   
-            
-            const totalSupervisors = await Supervisor.countDocuments();
-        const totalSchools = await School.countDocuments();
-        const totalStudents = await Student.countDocuments();
-        
-        const totalSalaries = await Employee.aggregate([
-            { $group: { _id: null, totalSalary: { $sum: "$salary" } } }
-        ])
+    // cache-aside + fallback (prevents blank counts if cache not loaded)
+    const keys = [
+      "totalEmployees",
+      "totalSupervisors",
+      "totalSchools",
+      "totalStudents",
+      "totalCertificates",
+    ];
 
-        const employeeAppliedForLeave = await Leave.distinct('employeeId')
+    const vals = await redis.mGet(keys);
+    let [totalEmployees, totalSupervisors, totalSchools, totalStudents, totalCertificates] = vals;
 
-        const leaveStatus = await Leave.aggregate([
-            {
-                $group: {
-                    _id: "$status",
-                    count: { $sum: 1 }
-                }
-            }
-        ])
+    // If any missing, compute from DB and refresh cache
+    if ([totalEmployees, totalSupervisors, totalSchools, totalStudents, totalCertificates].some(v => v === null)) {
+      totalEmployees = String(await Employee.countDocuments({ active: "Active" }));
+      totalSupervisors = String(await Supervisor.countDocuments({ active: "Active" }));
+      totalSchools = String((await School.countDocuments()) - 1);
+      totalStudents = String(await Student.countDocuments());
+      totalCertificates = String(await Certificate.countDocuments());
 
-        const leaveSummary = {
-            appliedFor: employeeAppliedForLeave.length,
-            approved: leaveStatus.find(item => item._id === "Approved")?.count || 0,
-            rejected: leaveStatus.find(item => item._id === "Rejected")?.count || 0,
-            pending: leaveStatus.find(item => item._id === "Pending")?.count || 0,
-        }
-*/}
-        return res.status(200).json({
-            success: true,
-            totalSupervisors,
-            totalSchools,
-            totalEmployees,
-            totalStudents,
-            totalCertificates,
-        })
-    } catch (error) {
-        console.log(error.message)
-        return res.status(500).json({ success: false, error: "Dashboard summary error" })
+      // set with TTL so cache self-heals
+      await redis.set("totalEmployees", totalEmployees, { EX: 60 });
+      await redis.set("totalSupervisors", totalSupervisors, { EX: 60 });
+      await redis.set("totalSchools", totalSchools, { EX: 60 });
+      await redis.set("totalStudents", totalStudents, { EX: 60 });
+      await redis.set("totalCertificates", totalCertificates, { EX: 60 });
     }
-}
+
+    return res.status(200).json({
+      success: true,
+      totalEmployees,
+      totalSupervisors,
+      totalSchools,
+      totalStudents,
+      totalCertificates,
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: "Dashboard summary error" });
+  }
+};
 
 const getMasterSummary = async (req, res) => {
     try {
