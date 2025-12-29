@@ -23,8 +23,8 @@ import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
 import loadCache from './db/loadCache.js'
 
-connectToDatabase()
-loadCache()
+await connectToDatabase()
+await loadCache()
 
 const app = express()
 //app.use(cors()) 
@@ -33,7 +33,7 @@ const app = express()
 
 //const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
 app.use(cors({ origin: '*', credentials: true }));
- 
+
 app.use(express.json())
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)

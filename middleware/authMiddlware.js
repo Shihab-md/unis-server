@@ -3,9 +3,11 @@ import User from '../models/User.js';
 
 const verifyUser = async (req, res, next) => {
     try {
-        const token = req.headers.authorization.split(' ')[1];
+        //const token = req.headers.authorization.split(' ')[1];
+        const auth = req.headers.authorization || "";
+        const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
         if (!token) {
-            return res.status(404).json({ success: false, error: "Token Not Provided" })
+            return res.status(401).json({ success: false, error: "Token Not Provided" })
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET)

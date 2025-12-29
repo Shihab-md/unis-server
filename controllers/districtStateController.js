@@ -1,6 +1,6 @@
 import DistrictState from "../models/DistrictState.js";
 import Student from "../models/Student.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const addDistrictState = async (req, res) => {
@@ -24,7 +24,8 @@ const addDistrictState = async (req, res) => {
 
     await newDistrictState.save();
 
-    await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalDistrictStates', await DistrictState.countDocuments());
 
     return res.status(200).json({ success: true, message: "District and State Created Successfully." });
 
@@ -71,7 +72,8 @@ const getDistrictStates = async (req, res) => {
 
 const getDistrictStatesFromCache = async (req, res) => {
   try {
-    const districtStates = JSON.parse(await redisClient.get('districtStates'));
+    const redis = await getRedis();
+    const districtStates = JSON.parse(await redis.get('districtStates'));
     return res.status(200).json({ success: true, districtStates });
   } catch (error) {
     return res
@@ -131,7 +133,8 @@ const deleteDistrictState = async (req, res) => {
     const { id } = req.params;
     await DistrictState.findByIdAndDelete({ _id: id });
 
-    await redisClient.set('totalDistrictStates', await DistrictState.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalDistrictStates', await DistrictState.countDocuments());
 
     return res.status(200).json({ success: true, message: "deleteDistrictState" })
   } catch (error) {

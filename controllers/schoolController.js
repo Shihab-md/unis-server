@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({});
@@ -128,7 +128,8 @@ const addSchool = async (req, res) => {
     });
     await newSchool.save();
 
-    await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
+    const redis = await getRedis();
+    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
     return res.status(200).json({ success: true, message: "Niswan is created." });
   } catch (error) {
@@ -224,7 +225,8 @@ const getSchools = async (req, res) => {
     }*/}
 
     {/*
-    const districtStates = JSON.parse(await redisClient.get('districtStates'));
+      const redis = await getRedis();
+    const districtStates = JSON.parse(await redis.get('districtStates'));
 
     let count = 0;
     if (schools.length > 0 && districtStates.length > 0) {
@@ -308,7 +310,8 @@ const getBySchFilter = async (req, res) => {
 
 const getSchoolsFromCache = async (req, res) => {
   try { 
-    const schools = JSON.parse(await redisClient.get('schools'));
+    const redis = await getRedis();
+    const schools = JSON.parse(await redis.get('schools'));
     return res.status(200).json({ success: true, schools });
   } catch (error) {
     console.log(error)
@@ -473,7 +476,8 @@ const deleteSchool = async (req, res) => {
     await School.findByIdAndDelete({ _id: id })
     // await deleteSchool.deleteOne()
 
-    await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
+    const redis = await getRedis();
+    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {

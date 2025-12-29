@@ -3,41 +3,47 @@ import { createClient } from "redis";
 const REDIS_URL = process.env.REDIS_URL;
 if (!REDIS_URL) throw new Error("REDIS_URL is not set");
 
-// IMPORTANT: in Vercel env vars, do NOT wrap the URL in quotes
-// Also use rediss:// if your Redis Cloud endpoint requires TLS. :contentReference[oaicite:1]{index=1}
-
 const g = globalThis;
 
-const client =
-  g.__redisClient ??
-  createClient({
-    url: REDIS_URL, // redis:// or rediss:// :contentReference[oaicite:2]{index=2}
+function buildClient() {
+  const c = createClient({
+    url: REDIS_URL,
     socket: {
-      connectTimeout: 10_000,               // keep it reasonable
-      keepAlive: true,
-      keepAliveInitialDelay: 5_000,         // helps with idle disconnects
+      connectTimeout: 10_000,
       reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
     },
   });
 
-client.on("ready", () => console.log("[redis] ready"));
-client.on("error", (e) => console.error("[redis] error", e));
-client.on("end", () => console.warn("[redis] end"));
+  c.on("ready", () => console.log("[redis] ready"));
+  c.on("end", () => console.warn("[redis] end"));
+  c.on("error", (e) => console.error("[redis] error", e));
 
-g.__redisClient = client;
-
-export async function getRedis() {
-  // Use isReady for “safe to run commands” :contentReference[oaicite:3]{index=3}
-  if (!client.isReady) {
-    if (!client.isOpen) {
-      await client.connect();
-    } else {
-      // socket open but not ready (reconnecting etc.)
-      // wait a bit by attempting connect again (node-redis handles idempotency)
-      await client.connect();
-    }
-  }
-  return client;
+  return c;
 }
 
-export default client;
+export default async function getRedis() {
+  // if missing OR closed -> create a new client
+  if (!g.__redisClient || !g.__redisClient.isOpen) {
+    g.__redisClient = buildClient();
+    g.__redisConnectPromise = g.__redisClient
+      .connect()
+      .catch((err) => {
+        // if connect fails, clear cache so next call can retry cleanly
+        g.__redisClient = null;
+        g.__redisConnectPromise = null;
+        throw err;
+      });
+  }
+
+  // wait until connected/ready
+  await g.__redisConnectPromise;
+
+  // extra safety: if it became closed after connect, recreate once
+  if (!g.__redisClient.isOpen) {
+    g.__redisClient = buildClient();
+    g.__redisConnectPromise = g.__redisClient.connect();
+    await g.__redisConnectPromise;
+  }
+
+  return g.__redisClient;
+}

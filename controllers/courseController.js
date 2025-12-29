@@ -1,5 +1,5 @@
 import Course from "../models/Course.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const addCourse = async (req, res) => {
@@ -91,7 +91,8 @@ const addCourse = async (req, res) => {
 
     await newCourse.save();
 
-    await redisClient.set('totalCourses', await Course.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalCourses', await Course.countDocuments());
 
     return res.status(200).json({ success: true, message: "Course Created Successfully." });
   } catch (error) {
@@ -157,7 +158,8 @@ const getCourses = async (req, res) => {
 
 const getCoursesFromCache = async (req, res) => {
   try {
-    const courses = JSON.parse(await redisClient.get('courses'));
+    const redis = await getRedis();
+    const courses = JSON.parse(await redis.get('courses'));
     return res.status(200).json({ success: true, courses });
   } catch (error) {
     return res
@@ -284,7 +286,8 @@ const deleteCourse = async (req, res) => {
     const deleteCourse = await Course.findById({ _id: id })
     await deleteCourse.deleteOne();
 
-    await redisClient.set('totalCourses', await Course.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalCourses', await Course.countDocuments());
 
     return res.status(200).json({ success: true, deleteCourse })
   } catch (error) {

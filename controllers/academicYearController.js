@@ -1,5 +1,5 @@
 import AcademicYear from "../models/AcademicYear.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const addAcademicYear = async (req, res) => {
@@ -23,7 +23,8 @@ const addAcademicYear = async (req, res) => {
 
     await newAcademicYear.save();
 
-    await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalAcademicYears', await AcademicYear.countDocuments());
 
     return res.status(200).json({ success: true, message: "AcademicYear Created Successfully." });
   } catch (error) {
@@ -47,7 +48,8 @@ const getAcademicYears = async (req, res) => {
 
 const getAcademicYearsFromCache = async (req, res) => {
   try {
-    const academicYears = JSON.parse(await redisClient.get('academicYears'));
+    const redis = await getRedis();
+    const academicYears = JSON.parse(await redis.get('academicYears'));
     return res.status(200).json({ success: true, academicYears });
   } catch (error) {
     return res
@@ -108,7 +110,8 @@ const deleteAcademicYear = async (req, res) => {
     const deleteAcademicYear = await AcademicYear.findById({ _id: id })
     await deleteAcademicYear.deleteOne();
 
-    await redisClient.set('totalAcademicYears', await AcademicYear.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalAcademicYears', await AcademicYear.countDocuments());
 
     return res.status(200).json({ success: true, deleteAcademicYear })
   } catch (error) {

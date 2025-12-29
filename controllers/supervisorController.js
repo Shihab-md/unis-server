@@ -4,7 +4,7 @@ import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import bcrypt from "bcrypt";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -69,7 +69,8 @@ const addSupervisor = async (req, res) => {
 
     savedSupervisor = await newSupervisor.save();
 
-    await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalSupervisors', await Supervisor.countDocuments());
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -102,7 +103,7 @@ const addSupervisor = async (req, res) => {
 
 const getSupervisors = async (req, res) => {
   try {
-    const supervisors = await Supervisor.find({active: 'Active'}).sort({ supervisorId: 1 })
+    const supervisors = await Supervisor.find({ active: 'Active' }).sort({ supervisorId: 1 })
       .populate("userId", { password: 0, profileImage: 0 });
 
     const counts = await School.aggregate([
@@ -203,8 +204,8 @@ const getBySupFilter = async (req, res) => {
 
 const getSupervisorsFromCache = async (req, res) => {
   try {
-
-    const supervisors = JSON.parse(await redisClient.get('supervisors'));
+    const redis = await getRedis();
+    const supervisors = JSON.parse(await redis.get('supervisors'));
     // console.log(supervisors);
     return res.status(200).json({ success: true, supervisors });
   } catch (error) {
@@ -314,7 +315,8 @@ const deleteSupervisor = async (req, res) => {
       remarks: "Deleted",
     })
 
-    await redisClient.set('totalSupervisors', await Supervisor.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalSupervisors', await Supervisor.countDocuments());
 
     return res.status(200).json({ success: true, updateSupervisor })
   } catch (error) {

@@ -17,7 +17,7 @@ const login = async (req, res) => {
     //  console.log("Pass : " + password + ", user pass : " + user.password)
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(404).json({ success: false, error: "Please give correct Password." });
+      return res.status(401).json({ success: false, error: "Please give correct Password." });
     }
 
     let schoolId, schoolName;

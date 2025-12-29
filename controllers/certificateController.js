@@ -8,7 +8,7 @@ import { createCanvas, loadImage, registerFont } from "canvas";
 import * as fs from 'fs';
 import * as path from 'path';
 import { put } from "@vercel/blob";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 
 const upload = multer({});
 
@@ -268,7 +268,8 @@ const addCertificate = async (req, res) => {
       await newCertificate.save();
       console.log("Saved : " + certificateNum + ", File Name : " + fileName);
 
-      await redisClient.set('totalCertificates', await Certificate.countDocuments());
+      const redis = await getRedis();
+      await redis.set('totalCertificates', await Certificate.countDocuments());
 
       return res.status(200).json({ success: true, message: "Certificate Created Successfully.", image: blob.downloadUrl, fileName: fileName, type: 'url' });
 

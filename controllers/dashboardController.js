@@ -1,4 +1,4 @@
-import { getRedis } from "../db/redis.js";
+import getRedis from "../db/redis.js";
 import Student from "../models/Student.js";
 import Employee from "../models/Employee.js";
 import School from "../models/School.js";

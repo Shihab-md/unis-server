@@ -1,7 +1,7 @@
 import multer from "multer";
 import { put } from "@vercel/blob";
 import Template from "../models/Template.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -23,7 +23,8 @@ const addTemplate = async (req, res) => {
 
     newTemplate = await newTemplate.save();
 
-    await redisClient.set('totalTemplates', await Template.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalTemplates', await Template.countDocuments());
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -71,7 +72,8 @@ const getTemplates = async (req, res) => {
 
 const getTemplatesFromCache = async (req, res) => {
   try {
-    const templates = JSON.parse(await redisClient.get('templates'));
+    const redis = await getRedis();
+    const templates = JSON.parse(await redis.get('templates'));
     return res.status(200).json({ success: true, templates });
   } catch (error) {
     return res
@@ -157,7 +159,8 @@ const deleteTemplate = async (req, res) => {
     //await User.findByIdAndDelete({ _id: deleteTemplate.userId._id })
     await deleteTemplate.deleteOne();
 
-    await redisClient.set('totalTemplates', await Template.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalTemplates', await Template.countDocuments());
 
     return res.status(200).json({ success: true, updateTemplate })
   } catch (error) {

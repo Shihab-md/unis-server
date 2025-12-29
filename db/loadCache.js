@@ -1,4 +1,4 @@
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 
 import Employee from "../models/Employee.js"
 import Supervisor from "../models/Supervisor.js"
@@ -14,6 +14,7 @@ import Certificate from "../models/Certificate.js"
 const loadCache = async () => {
     try {
 
+        const redisClient = await getRedis();
         // Get record count for dashboard.
         await redisClient.set('totalSupervisors', await Supervisor.countDocuments({ active: 'Active' }));
         await redisClient.set('totalSchools', await School.countDocuments() - 1); // Minus HQ

@@ -1,5 +1,5 @@
 import Institute from "../models/Institute.js";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const addInstitute = async (req, res) => {
@@ -41,7 +41,8 @@ const addInstitute = async (req, res) => {
 
     await newInstitute.save();
 
-    await redisClient.set('totalInstitutes', await Institute.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalInstitutes', await Institute.countDocuments());
 
     return res.status(200).json({ success: true, message: "Institute Created Successfully." });
   } catch (error) {
@@ -65,7 +66,8 @@ const getInstitutes = async (req, res) => {
 
 const getInstitutesFromCache = async (req, res) => {
   try {
-    const institutes = JSON.parse(await redisClient.get('institutes'));
+    const redis = await getRedis();
+    const institutes = JSON.parse(await redis.get('institutes'));
     //  console.log(institutes)
     return res.status(200).json({ success: true, institutes });
   } catch (error) {
@@ -142,7 +144,8 @@ const deleteInstitute = async (req, res) => {
     const deleteInstitute = await Institute.findById({ _id: id })
     await deleteInstitute.deleteOne();
 
-    await redisClient.set('totalInstitutes', await Institute.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalInstitutes', await Institute.countDocuments());
 
     return res.status(200).json({ success: true, deleteInstitute })
   } catch (error) {

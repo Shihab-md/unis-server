@@ -10,7 +10,7 @@ import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
-import redisClient from "../db/redis.js"
+import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -104,6 +104,7 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Niswan Not exists" });
     }
 
+    {/*
     let numbering = await Numbering.findOne({ name: "Roll" });
     if (numbering == null) {
       console.log("Numbering not available");
@@ -120,6 +121,18 @@ const addStudent = async (req, res) => {
 
     console.log("RollNumber : " + rollNumber)
     await Numbering.findByIdAndUpdate({ _id: numbering._id }, { currentNumber: nextNumber });
+ */}
+
+    const numbering = await Numbering.findOneAndUpdate(
+      { name: "Roll" },
+      { $inc: { currentNumber: 1 } },
+      { new: true, upsert: true }
+    );
+
+    let schoolCode = schoolById.code;
+    const rollNumber = schoolCode.replaceAll("-", "") + String(numbering.currentNumber).padStart(7, '0');
+
+    console.log("RollNumber : " + rollNumber)
 
     const user = await User.findOne({ email: rollNumber });
     if (user) {
@@ -253,7 +266,7 @@ const addStudent = async (req, res) => {
     let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
 
     const newAccount = new Account({
-      userId: savedStudent._id,
+      userId: savedUser._id,
       acYear: academicYearById._id,
       academicId: savedAcademic._id,
 
@@ -294,7 +307,8 @@ const addStudent = async (req, res) => {
     }
     await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
 
-    await redisClient.set('totalStudents', await Student.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalStudents', await Student.countDocuments());
 
     return res.status(200).json({ success: true, message: "Student created." });
   } catch (error) {
@@ -349,6 +363,8 @@ const importStudentsData = async (req, res) => {
 
     let row = 1;
     let resultData = "";
+    const redis = await getRedis();
+    const courses = JSON.parse(await redis.get('courses'));
     for (const studentData of studentsDataList) {
       console.log("Iteration : " + row + " / " + studentsDataList.length);
 
@@ -417,12 +433,14 @@ const importStudentsData = async (req, res) => {
         continue;
       }
 
-      const courses = JSON.parse(await redisClient.get('courses'));
+      //const redis = await getRedis();
+      //const courses = JSON.parse(await redis.get('courses'));
       let courseId = "680cf72e79e49fb103ddb97c";
       if (studentData.course) {
-        courseId = courses.filter(course => course.name === studentData.course).map(course => course._id);
-        console.log("courseId - " + courseId)
-        if (!courseId) {
+        //courseId = courses.filter(course => course.name === studentData.course).map(course => course._id);
+        const course = courses.find(c => c.name === studentData.course);
+        //console.log("courseId - " + courseId)
+        if (!course) {
           finalResultData += "\nRow : " + row + ", Course not found. Course Name : " + studentData.course;
           resultData = "";
           row++;
@@ -434,6 +452,7 @@ const importStudentsData = async (req, res) => {
 
           continue;
         }
+        const courseId = course._id;
         const coursesArray = [courseId];
 
         let parts;
@@ -548,7 +567,7 @@ const importStudentsData = async (req, res) => {
       console.log("Academic registered...")
 
       const newAccount = new Account({
-        userId: savedStudent._id,
+        userId: savedUser._id,
         acYear: accYearId,
         academicId: currentAcademicId,
 
@@ -588,7 +607,7 @@ const importStudentsData = async (req, res) => {
     //  let tempFilePath = path.join('/tmp', 'Import_data_Result.txt');
     //  fs.writeFileSync(tempFilePath, finalResultData);
 
-    await redisClient.set('totalStudents', await Student.countDocuments());
+    await redis.set('totalStudents', await Student.countDocuments());
 
     console.log("Import student data - end NORMAL \n" + finalResultData);
     return res.status(200)
@@ -1048,7 +1067,8 @@ const getStudentForPromote = async (req, res) => {
         .json({ success: false, error: "Student data not found." });
     }
 
-    const academicYears = JSON.parse(await redisClient.get('academicYears'));
+    const redis = await getRedis();
+    const academicYears = JSON.parse(await redis.get('academicYears'));
 
     let accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
@@ -1505,7 +1525,8 @@ const promoteStudent = async (req, res) => {
     }
 
     const accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
-    const academicYears = JSON.parse(await redisClient.get('academicYears'));
+    const redis = await getRedis();
+    const academicYears = JSON.parse(await redis.get('academicYears'));
     const accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
 
     let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
@@ -1690,7 +1711,8 @@ const deleteStudent = async (req, res) => {
 
     await Student.findByIdAndDelete({ _id: deleteStudent._id });
 
-    await redisClient.set('totalStudents', await Student.countDocuments());
+    const redis = await getRedis();
+    await redis.set('totalStudents', await Student.countDocuments());
 
     console.log("Student data Successfully Deleted...")
     //  await deleteStudent.deleteOne()
