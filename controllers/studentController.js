@@ -542,7 +542,7 @@ const importStudentsData = async (req, res) => {
           year1: i + 1,
           fees1: studentData.fees,
           finalFees1: studentData.fees,
-          status1: "Import - Admission"
+          status1: "Admission"
         });
 
         savedAcademic = await newAcademic.save();
@@ -571,7 +571,7 @@ const importStudentsData = async (req, res) => {
         acYear: accYearId,
         academicId: currentAcademicId,
 
-        receiptNumber: "Import - Admission",
+        receiptNumber: "Admission",
         type: "fees",
         fees: studentData.fees,
         paidDate: Date.now(),
