@@ -70,7 +70,7 @@ const addSupervisor = async (req, res) => {
     savedSupervisor = await newSupervisor.save();
 
     const redis = await getRedis();
-    await redis.set('totalSupervisors', await Supervisor.countDocuments());
+    await redis.set('totalSupervisors', String(await Supervisor.countDocuments({ active: "Active" })), { EX: 60 });
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -316,7 +316,7 @@ const deleteSupervisor = async (req, res) => {
     })
 
     const redis = await getRedis();
-    await redis.set('totalSupervisors', await Supervisor.countDocuments());
+    await redis.set('totalSupervisors', String(await Supervisor.countDocuments({ active: "Active" })), { EX: 60 });
 
     return res.status(200).json({ success: true, updateSupervisor })
   } catch (error) {

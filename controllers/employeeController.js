@@ -80,7 +80,7 @@ const addEmployee = async (req, res) => {
     await newEmployee.save();
 
     const redis = await getRedis();
-    await redis.set('totalEmployees', await Employee.countDocuments());
+    await redis.set("totalEmployees", String(await Employee.countDocuments({ active: "Active" })), { EX: 60 });
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -119,7 +119,7 @@ const getEmployees = async (req, res) => {
     let employees = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
 
-      employees = await Employee.find({active: 'Active'}).sort({ employeeId: 1 })
+      employees = await Employee.find({ active: 'Active' }).sort({ employeeId: 1 })
         .populate("userId", { password: 0, profileImage: 0 })
         .populate("schoolId");
 
@@ -316,7 +316,7 @@ const deleteEmployee = async (req, res) => {
     })
 
     const redis = await getRedis();
-    await redis.set('totalEmployees', await Employee.countDocuments());
+    await redis.set('totalEmployees', String(await Employee.countDocuments({ active: "Active" })), { EX: 60 });
 
     return res.status(200).json({ success: true, updateEmployee })
   } catch (error) {
