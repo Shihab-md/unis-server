@@ -51,25 +51,50 @@ const getSummary = async (req, res) => {
 };
 
 const getMasterSummary = async (req, res) => {
-    try {
-        const totalInstitutes = await redisClient.get('totalInstitutes');
-        const totalCourses = await redisClient.get('totalCourses');
-        const totalAcademicYears = await redisClient.get('totalAcademicYears');
-        const totalTemplates = await redisClient.get('totalTemplates');
-        const totalDistrictStates = await redisClient.get('totalDistrictStates');
+  try {
 
-        return res.status(200).json({
-            success: true,
-            totalInstitutes,
-            totalCourses,
-            totalAcademicYears,
-            totalTemplates,
-            totalDistrictStates,
-        })
-    } catch (error) {
-        console.log(error.message)
-        return res.status(500).json({ success: false, error: "MASTER summary error" })
+    const redis = await getRedis();
+
+    let totalInstitutes = await redis.get("totalInstitutes");
+    let totalCourses = await redis.get("totalCourses");
+    let totalAcademicYears = await redis.get("totalAcademicYears");
+    let totalTemplates = await redis.get("totalTemplates");
+    let totalDistrictStates = await redis.get("totalDistrictStates");
+
+    // If any missing, compute from DB and refresh cache (self-healing)
+    if (
+      totalInstitutes === null ||
+      totalCourses === null ||
+      totalAcademicYears === null ||
+      totalTemplates === null ||
+      totalDistrictStates === null
+    ) {
+      totalInstitutes = String(await Institute.countDocuments());
+      totalCourses = String(await Course.countDocuments());
+      totalAcademicYears = String(await AcademicYear.countDocuments());
+      totalTemplates = String(await Template.countDocuments());
+      totalDistrictStates = String(await DistrictState.countDocuments());
+
+      // Cache for 60 seconds (adjust as you like)
+      await redis.set("totalInstitutes", totalInstitutes, { EX: 60 });
+      await redis.set("totalCourses", totalCourses, { EX: 60 });
+      await redis.set("totalAcademicYears", totalAcademicYears, { EX: 60 });
+      await redis.set("totalTemplates", totalTemplates, { EX: 60 });
+      await redis.set("totalDistrictStates", totalDistrictStates, { EX: 60 });
     }
-}
+
+    return res.status(200).json({
+      success: true,
+      totalInstitutes,
+      totalCourses,
+      totalAcademicYears,
+      totalTemplates,
+      totalDistrictStates,
+    });
+  } catch (error) {
+    console.log(error.message);
+    return res.status(500).json({ success: false, error: "MASTER summary error" });
+  }
+};
 
 export { getSummary, getMasterSummary }
