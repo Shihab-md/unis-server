@@ -110,29 +110,39 @@ const getEmployees = async (req, res) => {
     const usertoken = req.headers.authorization;
     const token = usertoken.split(' ');
     const decoded = jwt.verify(token[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
+
+    //const userId = decoded._id;
     const userRole = decoded.role;
     const schoolId = decoded.schoolId;
 
-    console.log(userId + " , " + userRole)
+    const filter =
+      userRole === "superadmin" || userRole === "hquser"
+        ? { active: "Active" }
+        : { schoolId, active: "Active" };
+
+    const employees = await Employee.find(filter)
+      .select("employeeId contactNumber designation active userId schoolId")
+      .sort({ employeeId: 1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .lean();
+
+    //console.log(userId + " , " + userRole)
     // let schools = [];
-    let employees = [];
+    {/* let employees = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
 
       employees = await Employee.find({ active: 'Active' }).sort({ employeeId: 1 })
-        //.populate("userId", { password: 0, profileImage: 0 })
         .populate({ path: "userId", select: "name email role" })
-        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();;
-        //.populate("schoolId"); 
+        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();
 
     } else {
 
       employees = await Employee.find({ schoolId: schoolId, active: 'Active' }).sort({ employeeId: 1 })
-        //.populate("userId", { password: 0, profileImage: 0 })
         .populate({ path: "userId", select: "name email role" })
-        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();;
-        //.populate("schoolId");
+        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();
     }
+*/}
 
     return res.status(200).json({ success: true, employees });
   } catch (error) {
