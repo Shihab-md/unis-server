@@ -123,7 +123,7 @@ const loadCache = async () => {
             redisClient.set("templates", JSON.stringify(templatesList), { EX: LIST_TTL }),
             redisClient.set("districtStates", JSON.stringify(districtStatesList), { EX: LIST_TTL }),
         ]);
-
+ 
         console.log("Cache loaded into Redis!");
     } catch (error) {
         console.log("[loadCache] error:", error);
