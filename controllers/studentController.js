@@ -1,5 +1,6 @@
 import multer from "multer";
 import { put } from "@vercel/blob";
+import mongoose from "mongoose";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
@@ -342,6 +343,330 @@ const addStudent = async (req, res) => {
 };
 
 const importStudentsData = async (req, res) => {
+  const NL = "\n"; // ✅ Notepad-friendly new line (Windows)
+
+  let successCount = 0;
+  let finalResultData = "";
+
+  // ---- Hard-coded IDs (keep yours, but move them to config later) ----
+  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
+  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
+
+  // Year mapping for academic years (yearIndex -> acYearId)
+  const AC_YEAR_IDS = [
+    "694faa8b849cb7c7714b6c7d", // year 1, 2023-2024
+    "680485d9361ed06368c57f7c", // year 2, 2024-2025
+    "68612e92eeebf699b9d34a21", // year 3, 2025-2026
+  ];
+
+  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
+
+  const isNonEmpty = (v) =>
+    v !== undefined && v !== null && String(v).trim().length > 0;
+
+  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
+
+  const parseDob = (dobRaw) => {
+    // expects dd/mm/yyyy; falls back to 01/01/2000
+    const fallback = new Date(2000, 0, 1);
+
+    try {
+      const dob = safeStr(dobRaw);
+      if (!dob) return fallback;
+
+      const parts = dob.split("/");
+      if (parts.length !== 3) return fallback;
+
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+
+      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return fallback;
+      if (year < 1900 || year > 2100) return fallback;
+
+      const d = new Date(year, month, day);
+      if (Number.isNaN(d.getTime())) return fallback;
+      return d;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const parseNumber = (v, def = 0) => {
+    const n = Number(String(v).trim());
+    return Number.isFinite(n) ? n : def;
+  };
+
+  try {
+    // Body may come as JSON string sometimes
+    const studentsDataList = Array.isArray(req.body)
+      ? req.body
+      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
+
+    if (!studentsDataList || studentsDataList.length <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Please check the document. Students data not received.",
+      });
+    }
+
+    // ---------- Load Redis + courses map ----------
+    const redis = await getRedis();
+
+    let courses = [];
+    try {
+      const coursesCache = await redis.get("courses");
+      courses = coursesCache ? JSON.parse(coursesCache) : [];
+    } catch {
+      courses = [];
+    }
+
+    // Fallback to DB if Redis missing/empty
+    if (!Array.isArray(courses) || courses.length === 0) {
+      courses = await Course.find().select("_id name").lean();
+    }
+
+    const courseMap = new Map(); // name -> _id
+    for (const c of courses) {
+      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
+    }
+
+    // ---------- Prefetch schools by niswanCode ----------
+    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
+    const schools = await School.find({ code: { $in: niswanCodes } })
+      .select("_id code districtStateId")
+      .lean();
+
+    const schoolMap = new Map(); // code -> school doc
+    for (const s of schools) schoolMap.set(String(s.code), s);
+
+    // ---------- Prefetch existing users by rollNumber(email) ----------
+    const rollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
+    const existingUsers = await User.find({ email: { $in: rollNumbers } })
+      .select("email")
+      .lean();
+
+    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email)));
+
+    // ---------- Main loop ----------
+    let row = 1;
+
+    for (const studentData of studentsDataList) {
+      const errors = [];
+
+      const name = safeStr(studentData.name);
+      const rollNumber = safeStr(studentData.rollNumber);
+      const niswanCode = safeStr(studentData.niswanCode);
+
+      const courseName = safeStr(studentData.course);
+      const yearVal = safeStr(studentData.year);
+      const feesVal = safeStr(studentData.fees);
+
+      // Mandatory fields
+      if (!name) errors.push("Name not given");
+      if (!rollNumber) errors.push("RollNumber not given");
+      if (!niswanCode) errors.push("NiswanCode not given");
+
+      // Existing user check (prefetched)
+      if (rollNumber && existingEmailSet.has(rollNumber)) {
+        errors.push(`User already registered. RollNumber : ${rollNumber}`);
+      }
+
+      // School check (prefetched)
+      const school = niswanCode ? schoolMap.get(niswanCode) : null;
+      if (!school) {
+        errors.push(`NiswanCode not available : ${niswanCode}`);
+      }
+
+      // Course validation
+      if (isNonEmpty(courseName)) {
+        if (!VALID_COURSE_NAMES.has(courseName)) {
+          errors.push("Course not valid");
+        }
+        if (!isNonEmpty(yearVal)) errors.push("Year not given");
+        if (!isNonEmpty(feesVal)) errors.push("Fees not given");
+      } else {
+        // Your current logic: skip if course not present
+        errors.push("Course details not given");
+      }
+
+      if (errors.length > 0) {
+        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Resolve courseId from cache/db
+      let courseId = DEFAULT_COURSE_ID;
+      const foundCourseId = courseMap.get(courseName);
+      if (!foundCourseId) {
+        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
+        row++;
+        continue;
+      }
+      courseId = foundCourseId;
+
+      // Parse yearCount and fees
+      let yearCount = parseNumber(yearVal, 0);
+      if (courseName === "Makthab") yearCount = 1;
+      if (yearCount <= 0) {
+        finalResultData += `Row : ${row}, Invalid Year value: ${yearVal}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const fees = parseNumber(feesVal, 0);
+      if (fees <= 0) {
+        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Create in a transaction (prevents partial data)
+      const session = await mongoose.startSession();
+
+      try {
+        await session.withTransaction(async () => {
+          // Create User
+          const hashPassword = await bcrypt.hash(rollNumber, 10);
+
+          const savedUser = await User.create(
+            [
+              {
+                name: toCamelCase(name),
+                email: rollNumber,
+                password: hashPassword,
+                role: "student",
+                profileImage: "",
+              },
+            ],
+            { session }
+          );
+
+          const userId = savedUser[0]._id;
+
+          // Create Student
+          const dobDate = parseDob(studentData.dob);
+
+          const savedStudent = await Student.create(
+            [
+              {
+                userId,
+                schoolId: school._id,
+                rollNumber,
+                doa: new Date(),
+                dob: dobDate,
+                gender: "Female",
+                maritalStatus: "Single",
+                idMark1: "-",
+                fatherName: safeStr(studentData.fatherName),
+                fatherNumber: safeStr(studentData.fatherNumber),
+                motherName: safeStr(studentData.motherName),
+                motherNumber: safeStr(studentData.motherNumber),
+                guardianName: safeStr(studentData.guardianName),
+                guardianNumber: safeStr(studentData.guardianNumber),
+                guardianRelation: safeStr(studentData.guardianRelation),
+                address: safeStr(studentData.address),
+                city: safeStr(studentData.city),
+                districtStateId: school.districtStateId,
+                hostel: "No",
+                active: "Active",
+                courses: [courseId],
+              },
+            ],
+            { session }
+          );
+
+          const studentId = savedStudent[0]._id;
+
+          // Create Academics (one per year)
+          let currentAcademicId = null;
+          let lastAccYearId = AC_YEAR_IDS[0];
+
+          for (let i = 0; i < yearCount; i++) {
+            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
+            lastAccYearId = accYearId;
+
+            const savedAcademic = await Academic.create(
+              [
+                {
+                  studentId,
+                  acYear: accYearId,
+                  instituteId1: INSTITUTE_ID,
+                  courseId1: courseId,
+                  refNumber1: rollNumber,
+                  year1: i + 1,
+                  fees1: fees,
+                  finalFees1: fees,
+                  status1: "Admission",
+                },
+              ],
+              { session }
+            );
+
+            if (i === 0) currentAcademicId = savedAcademic[0]._id;
+          }
+
+          // Create Account (for first academic)
+          await Account.create(
+            [
+              {
+                userId,
+                acYear: lastAccYearId, // keep your current behavior (latest used)
+                academicId: currentAcademicId,
+                receiptNumber: "Admission",
+                type: "fees",
+                fees: fees,
+                paidDate: Date.now(),
+                balance: 0,
+                remarks: "Admission",
+              },
+            ],
+            { session }
+          );
+        });
+
+        // Mark rollNumber as existing now (avoid duplicates within same file)
+        existingEmailSet.add(rollNumber);
+
+        finalResultData += `Row : ${row}, RollNumber : ${rollNumber}, Imported Successfully!${NL}`;
+        successCount++;
+      } catch (txErr) {
+        // Transaction rollback happens automatically
+        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
+      } finally {
+        await session.endSession();
+      }
+
+      row++;
+    }
+
+    // Update redis count (with TTL so it refreshes)
+    const totalStudents = await Student.countDocuments();
+    try {
+      // node-redis supports options
+      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
+    } catch {
+      await redis.set("totalStudents", String(totalStudents));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: ` [${successCount}] Students data Imported Successfully!`,
+      finalResultData,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "server error in adding student",
+      finalResultData,
+    });
+  }
+};
+
+{/*
+const importStudentsData = async (req, res) => {
 
   console.log("Import student data - start");
 
@@ -643,6 +968,7 @@ const importStudentsData = async (req, res) => {
       .json({ success: false, error: "server error in adding student", finalResultData: finalResultData });
   }
 };
+*/}
 
 const getStudents = async (req, res) => {
   try {
