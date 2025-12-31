@@ -142,28 +142,112 @@ const addSchool = async (req, res) => {
 
 const getSchools = async (req, res) => {
   try {
+    const auth = req.headers.authorization || "";
+    const parts = auth.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return res.status(401).json({ success: false, error: "Unauthorized Request" });
+    }
+
+    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
+    const userId = decoded._id;
+    const userRole = decoded.role;
+
+    // Remove noisy logs (serverless performance)
+    // console.log(userId + " , " + userRole);
+
+    // Keep payload minimal (add fields if your UI needs more)
+    const schoolSelect =
+      "code nameEnglish nameArabic nameNative address city contactNumber active supervisorId districtStateId";
+
+    const populateDistrictState = {
+      path: "districtStateId",
+      select: "district state",
+    };
+
+    const populateSupervisor = {
+      path: "supervisorId",
+      select: "userId, supervisorId",
+      populate: {
+        path: "userId",
+        select: "name",
+      },
+    };
+
+    let filter = {};
+
+    if (userRole === "superadmin" || userRole === "hquser") {
+      filter = {};
+
+    } else if (userRole === "supervisor") {
+      const supervisor = await Supervisor.findOne({ userId })
+        .select("_id")
+        .lean();
+
+      if (!supervisor?._id) {
+        return res.status(200).json({ success: true, schools: [] });
+      }
+
+      filter = { supervisorId: supervisor._id };
+
+    } else if (userRole === "admin") {
+      const employee = await Employee.findOne({ userId })
+        .select("schoolId")
+        .lean();
+
+      if (!employee?.schoolId) {
+        return res.status(200).json({ success: true, schools: [] });
+      }
+
+      filter = { _id: employee.schoolId };
+
+    } else {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    // Optional pagination (only if query params provided)
+    const hasPaging = req.query.page || req.query.limit;
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10), 1), 500);
+    const skip = (page - 1) * limit;
+
+    let query = School.find(filter)
+      .select(schoolSelect)
+      .sort({ code: 1 })
+      .populate(populateDistrictState)
+      .populate(populateSupervisor)
+      .lean();
+
+    if (hasPaging) {
+      query = query.skip(skip).limit(limit);
+    }
+
+    const schools = await query;
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get schools server error" });
+  }
+};
+
+{/* 
+  const getSchools = async (req, res) => {
+  try {
     //  const userRole = req.headers['x-u-r'];
     //  const userId = req.headers['x-u-i'];
 
     const usertoken = req.headers.authorization;
     const token = usertoken.split(' ');
     const decoded = jwt.verify(token[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
+    //const userId = decoded._id;
     const userRole = decoded.role;
 
-    console.log(userId + " , " + userRole)
+    //console.log(userId + " , " + userRole)
     let schools = [];
     if (userRole == 'superadmin' || userRole == 'hquser') {
       schools = await School.find().sort({ code: 1 })
         // .populate("supervisorId")
         .populate("districtStateId")
-        .populate({
-          path: 'supervisorId',
-          populate: {
-            path: 'userId',
-            select: 'name'
-          },
-        });
+        .populate({path: 'supervisorId', populate: {path: 'userId', select: 'name'}});
 
     } else if (userRole == 'supervisor') {
 
@@ -203,7 +287,7 @@ const getSchools = async (req, res) => {
       }
     }
 
-    {/*  const counts = await Student.aggregate([
+      const counts = await Student.aggregate([
       {
         $group: {
           _id: '$schoolId',
@@ -222,9 +306,9 @@ const getSchools = async (req, res) => {
           };
         });
       }
-    }*/}
+    }
 
-    {/*
+  
       const redis = await getRedis();
     const districtStates = JSON.parse(await redis.get('districtStates'));
 
@@ -245,7 +329,7 @@ const getSchools = async (req, res) => {
       });
     }
     console.log("Count - " + count)
-    */}
+  
 
     return res.status(200).json({ success: true, schools });
   } catch (error) {
@@ -256,6 +340,58 @@ const getSchools = async (req, res) => {
   }
 };
 
+*/}
+
+const getBySchFilter = async (req, res) => {
+  const { supervisorId, districtStateId, schStatus } = req.params;
+
+  const isValidParam = (v) =>
+    v !== undefined &&
+    v !== null &&
+    v !== "" &&
+    v !== "null" &&
+    v !== "undefined";
+
+  try {
+    const query = {};
+
+    if (isValidParam(supervisorId)) {
+      query.supervisorId = supervisorId;
+    }
+
+    if (isValidParam(districtStateId)) {
+      query.districtStateId = districtStateId;
+    }
+
+    if (isValidParam(schStatus)) {
+      query.active = schStatus;
+    }
+
+    // Select only needed fields for list (add more if UI needs)
+    const schoolSelect =
+      "code nameEnglish nameArabic nameNative address city active contactNumber supervisorId districtStateId";
+
+    const schools = await School.find(query)
+      .select(schoolSelect)
+      .sort({ code: 1 })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({
+        path: "supervisorId",
+        select: "userId supervisorId", // keep minimal
+        populate: { path: "userId", select: "name" },
+      })
+      .lean();
+
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get schools by FILTER server error" });
+  }
+};
+
+{/*
 const getBySchFilter = async (req, res) => {
 
   const { supervisorId, districtStateId, schStatus } = req.params;
@@ -307,6 +443,7 @@ const getBySchFilter = async (req, res) => {
       .json({ success: false, error: "get schools by FILTER server error" });
   }
 };
+*/}
 
 const getSchoolsFromCache = async (req, res) => {
   try { 

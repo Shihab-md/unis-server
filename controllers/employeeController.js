@@ -154,6 +154,61 @@ const getEmployees = async (req, res) => {
 };
 
 const getByEmpFilter = async (req, res) => {
+  const { empSchoolId, empRole, empStatus } = req.params;
+
+  const isValidParam = (v) =>
+    v !== undefined &&
+    v !== null &&
+    v !== "" &&
+    v !== "null" &&
+    v !== "undefined";
+
+  try {
+    // Build base query for Employee
+    const query = {};
+
+    if (isValidParam(empSchoolId)) {
+      query.schoolId = empSchoolId;
+    }
+
+    if (isValidParam(empStatus)) {
+      query.active = empStatus;
+    }
+
+    // Keep response small (add fields if UI needs more)
+    const employeeSelect = "employeeId contactNumber designation active userId schoolId";
+
+    // Query employees and populate userId with a role match (if empRole is present)
+    const employees = await Employee.find(query)
+      .select(employeeSelect)
+      .sort({ employeeId: 1 })
+      .populate({
+        path: "userId",
+        select: "name email role",
+        ...(isValidParam(empRole) ? { match: { role: empRole } } : {}),
+      })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish",
+      })
+      .lean();
+
+    // If role filter applied, remove non-matching (userId becomes null when match fails)
+    const filteredEmployees = isValidParam(empRole)
+      ? employees.filter((e) => e.userId) // keep only matched roles
+      : employees;
+
+    return res.status(200).json({ success: true, employees: filteredEmployees });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get employees by FILTER server error" });
+  }
+};
+
+{/*
+const getByEmpFilter = async (req, res) => {
 
   const { empSchoolId, empRole, empStatus } = req.params;
 
@@ -203,6 +258,7 @@ const getByEmpFilter = async (req, res) => {
       .json({ success: false, error: "get employees by FILTER server error" });
   }
 };
+*/}
 
 const getEmployee = async (req, res) => {
   const { id } = req.params;

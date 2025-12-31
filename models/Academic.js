@@ -54,5 +54,7 @@ const academicSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+academicSchema.index({ studentId: 1, acYear: 1 });
+
 const Academic = mongoose.model("Academic", academicSchema);
 export default Academic;

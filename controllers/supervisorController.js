@@ -103,6 +103,39 @@ const addSupervisor = async (req, res) => {
 
 const getSupervisors = async (req, res) => {
   try {
+    // 1) Fetch supervisors (lean = faster)
+    const supervisors = await Supervisor.find({ active: "Active" })
+      .sort({ supervisorId: 1 })
+      .select("supervisorId contactNumber active userId routeName jobType") 
+      .populate({ path: "userId", select: "name email role" }) 
+      .lean();
+
+    // 2) Count schools per supervisorId
+    const counts = await School.aggregate([
+      { $match: { supervisorId: { $ne: null } } },
+      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+    ]);
+
+    // 3) Build lookup map: supervisorId -> count
+    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
+
+    // 4) Attach count to each supervisor
+    const result = supervisors.map((s) => ({
+      ...s,
+      _schoolsCount: countMap.get(String(s._id)) || 0,
+    }));
+
+    return res.status(200).json({ success: true, supervisors: result });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get supervisors server error" });
+  }
+};
+
+{/* const getSupervisors = async (req, res) => {
+  try {
     const supervisors = await Supervisor.find({ active: 'Active' }).sort({ supervisorId: 1 })
       .populate("userId", { password: 0, profileImage: 0 });
 
@@ -133,7 +166,79 @@ const getSupervisors = async (req, res) => {
       .json({ success: false, error: "get supervisors server error" });
   }
 };
+*/}
 
+const getBySupFilter = async (req, res) => {
+  const { supSchoolId, supStatus, supType } = req.params;
+
+  const isValidParam = (v) =>
+    v !== undefined &&
+    v !== null &&
+    v !== "" &&
+    v !== "null" &&
+    v !== "undefined";
+
+  try {
+    const query = {};
+
+    // If school is selected, resolve its supervisorId
+    if (isValidParam(supSchoolId)) {
+      const school = await School.findById(supSchoolId)
+        .select("supervisorId")
+        .lean();
+
+      // No school or no supervisor mapped -> return empty
+      if (!school?.supervisorId) {
+        return res.status(200).json({ success: true, supervisors: [] });
+      }
+
+      query._id = school.supervisorId;
+    }
+
+    if (isValidParam(supStatus)) {
+      query.active = supStatus;
+    }
+
+    if (isValidParam(supType)) {
+      query.jobType = supType;
+    }
+
+    // Fetch supervisors (lean + select only needed)
+    const supervisors = await Supervisor.find(query)
+      .sort({ supervisorId: 1 })
+      .select("supervisorId contactNumber active jobType userId routeName") // add fields you need
+      .populate({ path: "userId", select: "name email role" }) // safer than {password:0}
+      .lean();
+
+    if (supervisors.length === 0) {
+      return res.status(200).json({ success: true, supervisors: [] });
+    }
+
+    // Count schools only for returned supervisors
+    const supIds = supervisors.map((s) => s._id);
+
+    const counts = await School.aggregate([
+      { $match: { supervisorId: { $in: supIds } } },
+      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+    ]);
+
+    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
+
+    const result = supervisors.map((s) => ({
+      ...s,
+      _schoolsCount: countMap.get(String(s._id)) || 0,
+    }));
+
+    return res.status(200).json({ success: true, supervisors: result });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get Supervisors by FILTER server error" });
+  }
+};
+
+{/*
 const getBySupFilter = async (req, res) => {
 
   const { supSchoolId, supStatus, supType } = req.params;
@@ -201,6 +306,7 @@ const getBySupFilter = async (req, res) => {
       .json({ success: false, error: "get Supervisors by FILTER server error" });
   }
 };
+*/}
 
 const getSupervisorsFromCache = async (req, res) => {
   try {

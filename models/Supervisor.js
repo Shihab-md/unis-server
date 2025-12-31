@@ -28,5 +28,8 @@ supervisorSchema.virtual('schoolsCount').
   get(function () { return this._schoolsCount; }).
   set(function (count) { this._schoolsCount = count; });
 
+supervisorSchema.index({ active: 1, supervisorId: 1 });
+supervisorSchema.index({ active: 1, jobType: 1, supervisorId: 1 });
+
 const Supervisor = mongoose.model("Supervisor", supervisorSchema);
 export default Supervisor;

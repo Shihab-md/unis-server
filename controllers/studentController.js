@@ -646,6 +646,26 @@ const importStudentsData = async (req, res) => {
 
 const getStudents = async (req, res) => {
   try {
+    const students = await Student.find()
+      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId")
+      .sort({ rollNumber: 1 }) 
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .lean();
+
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get students List server error" });
+  }
+};
+
+{/*
+const getStudents = async (req, res) => {
+  try {
     console.log("getStudents called : ");
 
     const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
@@ -660,6 +680,7 @@ const getStudents = async (req, res) => {
       .json({ success: false, error: "get students List server error" });
   }
 };
+*/}
 
 const getStudentsBySchool = async (req, res) => {
 
@@ -667,10 +688,16 @@ const getStudentsBySchool = async (req, res) => {
 
   console.log("getStudentsBySchool : " + schoolId);
   try {
-    const students = await Student.find({ schoolId: schoolId }).sort({ rollNumber: 1 })
-      .populate("userId", { password: 0, profileImage: 0 })
-      .populate("districtStateId")
-      .populate("courses");
+    const studentSelect =
+      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses";
+
+    const students = await Student.find({ schoolId: schoolId })
+      .select(studentSelect)
+      .sort({ rollNumber: 1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({ path: "courses", select: "name type fees years code" })
+      .lean();
 
     {/*}  let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
     if (new Date().getMonth() + 1 >= 4) {
@@ -776,6 +803,119 @@ const getActiveStudents = async (req, res) => {
 };
 
 const getByFilter = async (req, res) => {
+  const {
+    schoolId,
+    courseId,
+    status,
+    acYear,
+    maritalStatus,
+    hosteller,
+    year,
+    instituteId,     // (not used in your current logic - keep if you plan)
+    courseStatus,
+  } = req.params;
+
+  const isValidParam = (v) =>
+    v !== undefined &&
+    v !== null &&
+    v !== "" &&
+    v !== "null" &&
+    v !== "undefined";
+
+  try {
+    if (!isValidParam(schoolId)) {
+      return res.status(400).json({ success: false, error: "schoolId is required" });
+    }
+
+    // ----------------------------
+    // 1) Build Student query
+    // ----------------------------
+    const studentQuery = { schoolId };
+
+    if (isValidParam(status)) studentQuery.active = status;
+    if (isValidParam(maritalStatus)) studentQuery.maritalStatus = maritalStatus;
+    if (isValidParam(hosteller)) studentQuery.hostel = hosteller;
+
+    // ----------------------------
+    // 2) Academic filter -> get matching studentIds
+    //    (Only if any academic filters are present)
+    // ----------------------------
+    const hasAcademicFilter =
+      isValidParam(courseId) || isValidParam(acYear) || isValidParam(year) || isValidParam(courseStatus);
+
+    if (hasAcademicFilter) {
+      const academicAnd = [];
+
+      if (isValidParam(courseId)) {
+        academicAnd.push({
+          $or: [
+            { courseId1: courseId },
+            { courseId2: courseId },
+            { courseId3: courseId },
+            { courseId4: courseId },
+            { courseId5: courseId },
+          ],
+        });
+      }
+
+      if (isValidParam(acYear)) {
+        academicAnd.push({ acYear });
+      }
+
+      if (isValidParam(year)) {
+        academicAnd.push({
+          $or: [{ year1: year }, { year3: year }],
+        });
+      }
+
+      if (isValidParam(courseStatus)) {
+        academicAnd.push({
+          $or: [
+            { status1: courseStatus },
+            { status2: courseStatus },
+            { status3: courseStatus },
+            { status4: courseStatus },
+            { status5: courseStatus },
+          ],
+        });
+      }
+
+      // Get only studentIds (faster than fetching full academic docs)
+      const studentIds = await Academic.distinct("studentId", { $and: academicAnd });
+
+      if (!studentIds || studentIds.length === 0) {
+        return res.status(200).json({ success: true, students: [] });
+      }
+
+      studentQuery._id = { $in: studentIds };
+    }
+
+    // ----------------------------
+    // 3) Fetch students (lean + minimal populate)
+    // ----------------------------
+    const studentSelect =
+      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber";
+
+    const students = await Student.find(studentQuery)
+      .select(studentSelect)
+      .sort({ rollNumber: 1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({ path: "courses", select: "name type fees years code" })
+      .lean();
+
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get students by FILTER server error" });
+  }
+};
+
+{/*
+const getByFilter = async (req, res) => {
 
   const { schoolId, courseId, status, acYear, maritalStatus, hosteller, year, instituteId, courseStatus } = req.params;
 
@@ -880,6 +1020,7 @@ const getByFilter = async (req, res) => {
       .json({ success: false, error: "get students by FILTER server error" });
   }
 };
+*/}
 
 const getStudent = async (req, res) => {
   const { id } = req.params;

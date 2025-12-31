@@ -62,5 +62,7 @@ studentSchema.virtual('academics').
   get(function () { return this._academics; }).
   set(function (academics) { this._academics = academics; });
 
+studentSchema.index({ schoolId: 1, rollNumber: 1 });
+
 const Student = mongoose.model("Student", studentSchema);
 export default Student;

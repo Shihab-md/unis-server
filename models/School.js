@@ -16,7 +16,7 @@ const schoolSchema = new Schema({
   contactNumber: { type: Number },
   doe: { type: Date },
   email: { type: String },
-  supervisorId: { type: Schema.Types.ObjectId, ref: "Supervisor", required: true, index: true },
+  supervisorId: { type: Schema.Types.ObjectId, ref: "Supervisor", required: true },
 
   incharge1: { type: String, required: true },
   incharge1Number: { type: Number, required: true },
@@ -60,6 +60,9 @@ const schoolSchema = new Schema({
 schoolSchema.virtual('studentsCount').
   get(function () { return this._studentsCount; }).
   set(function (count) { this._studentsCount = count; });
+
+schoolSchema.index({ supervisorId: 1 });
+schoolSchema.index({ supervisorId: 1, districtStateId: 1, active: 1, code: 1 });
 
 const School = mongoose.model("School", schoolSchema);
 export default School;

@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const employeeSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },
   employeeId: { type: String, required: true, unique: true, index: true },
   contactNumber: { type: Number, required: true },
@@ -21,6 +21,9 @@ const employeeSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
+
+employeeSchema.index({ schoolId: 1, active: 1, employeeId: 1 });
+employeeSchema.index({ userId: 1 });
 
 const Employee = mongoose.model("Employee", employeeSchema);
 export default Employee;
