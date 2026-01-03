@@ -62,6 +62,7 @@ schoolSchema.virtual('studentsCount').
   set(function (count) { this._studentsCount = count; });
 
 schoolSchema.index({ supervisorId: 1 });
+schoolSchema.index({ active: 1 });
 schoolSchema.index({ supervisorId: 1, districtStateId: 1, active: 1, code: 1 });
 
 const School = mongoose.model("School", schoolSchema);

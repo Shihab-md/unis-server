@@ -81,7 +81,7 @@ const loadCache = async () => {
                 .populate({ path: "userId", select: "name" })
                 .lean(),
 
-            School.find()
+            School.find({ active: "Active" })
                 .sort({ code: 1 })
                 .select("_id code nameEnglish districtStateId")
                 .populate({ path: "districtStateId", select: "district state" })
