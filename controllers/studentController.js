@@ -133,7 +133,7 @@ const addStudent = async (req, res) => {
     let schoolCode = schoolById.code;
     const rollNumber = schoolCode.replaceAll("-", "") + String(numbering.currentNumber).padStart(7, '0');
 
-    console.log("RollNumber : " + rollNumber)
+    //  console.log("RollNumber : " + rollNumber)
 
     const user = await User.findOne({ email: rollNumber });
     if (user) {
@@ -182,6 +182,8 @@ const addStudent = async (req, res) => {
       districtStateId,
       landmark: toCamelCase(landmark),
       pincode,
+
+      feesPaid: 0,
 
       hostel,
       hostelRefNumber,
@@ -571,6 +573,7 @@ const importStudentsData = async (req, res) => {
                 districtStateId: school.districtStateId,
                 hostel: "No",
                 active: "Active",
+                feesPaid: 0,
                 courses: [courseId],
               },
             ],
@@ -970,11 +973,54 @@ const importStudentsData = async (req, res) => {
 };
 */}
 
+// POST body: { studentIds: ["id1","id2", ...] }
+const markFeesPaid = async (req, res) => {
+  try {
+    const { studentIds } = req.body;
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "studentIds is required (non-empty array)" });
+    }
+
+    // Optional: basic ObjectId format check
+    const invalid = studentIds.filter((id) => !/^[a-fA-F0-9]{24}$/.test(String(id)));
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid studentIds: ${invalid.join(", ")}`,
+      });
+    }
+
+    const result = await Student.updateMany(
+      { _id: { $in: studentIds } },
+      { $set: { feesPaid: 1 } }
+    );
+
+    // result has different shapes depending on mongoose version
+    const modified = result?.modifiedCount ?? result?.nModified ?? 0;
+    const matched = result?.matchedCount ?? result?.n ?? 0;
+
+    return res.status(200).json({
+      success: true,
+      message: `Fees marked as paid for ${modified} student(s).`,
+      matchedCount: matched,
+      modifiedCount: modified,
+    });
+  } catch (error) {
+    console.log("[markFeesPaid] error:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "server error updating feesPaid" });
+  }
+};
+
 const getStudents = async (req, res) => {
   try {
     const students = await Student.find()
       .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId")
-      .sort({ rollNumber: 1 }) 
+      .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
       .populate({ path: "districtStateId", select: "district state" })
@@ -1015,15 +1061,25 @@ const getStudentsBySchool = async (req, res) => {
   console.log("getStudentsBySchool : " + schoolId);
   try {
     const studentSelect =
-      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses";
+      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid";
 
-    const students = await Student.find({ schoolId: schoolId })
+    const studentsList = await Student.find({ schoolId: schoolId })
       .select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "districtStateId", select: "district state" })
       .populate({ path: "courses", select: "name type fees years code" })
       .lean();
+
+    const students = studentsList.map((s) => {
+      // show only if feesPaid === 1 (or true)
+      const isPaid = s.feesPaid === 1 || s.feesPaid === true || s.feesPaid === "1";
+      if (!isPaid) {
+        const { rollNumber, ...rest } = s;
+        return rest;
+      }
+      return s;
+    });
 
     {/*}  let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
     if (new Date().getMonth() + 1 >= 4) {
@@ -1387,6 +1443,10 @@ const getStudent = async (req, res) => {
     student._academics = academics;
     student.toObject({ virtuals: true });
 
+    if (student?.feesPaid === 0) {
+      student.rollNumber = "-"
+    }
+
     return res.status(200).json({ success: true, student });
   } catch (error) {
     return res
@@ -1411,6 +1471,12 @@ const getStudentForEdit = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "Student data not found." });
+    }
+
+    if (student?.feesPaid === 0) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Sorry. Could not Update. (Fees not Paid)" });
     }
 
     let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
@@ -1440,7 +1506,8 @@ const getStudentForEdit = async (req, res) => {
       .populate({ path: 'instituteId5', select: '_id code name' })
       .populate({ path: 'courseId5', select: '_id iCode name' });
 */
-    const academic = await Academic.find({ studentId: student._id }).sort({ updatedAt: -1 }).limit(1)
+    const academic = await Academic.find({ studentId: student._id })
+      .sort({ updatedAt: -1 }).limit(1)
       .populate({ path: 'acYear', select: '_id acYear' })
       .populate({ path: 'instituteId1', select: '_id code name' })
       .populate({ path: 'courseId1', select: '_id iCode name' })
@@ -1453,7 +1520,7 @@ const getStudentForEdit = async (req, res) => {
       .populate({ path: 'instituteId5', select: '_id code name' })
       .populate({ path: 'courseId5', select: '_id iCode name' })
 
-    console.log(academic[0])
+    //console.log(academic[0])
 
     student._academics = academic[0] ? [academic[0]] : [];
     student.toObject({ virtuals: true });
@@ -2219,5 +2286,5 @@ const getStudentsCount = async (req, res) => {
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
-  getStudentForPromote, promoteStudent, getByFilter
+  getStudentForPromote, promoteStudent, getByFilter, markFeesPaid
 };
