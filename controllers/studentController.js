@@ -1696,7 +1696,7 @@ const markFeesPaid = async (req, res) => {
 const getStudents = async (req, res) => {
   try {
     const students = await Student.find()
-      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId")
+      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId remarks")
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
@@ -1738,7 +1738,7 @@ const getStudentsBySchool = async (req, res) => {
   console.log("getStudentsBySchool : " + schoolId);
   try {
     const studentSelect =
-      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid";
+      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks";
 
     const studentsList = await Student.find({ schoolId: schoolId })
       .select(studentSelect)
@@ -1957,7 +1957,7 @@ const getByFilter = async (req, res) => {
     // 3) Fetch students (lean + minimal populate)
     // ----------------------------
     const studentSelect =
-      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber";
+      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks";
 
     const studentsMap = await Student.find(studentQuery)
       .select(studentSelect)
