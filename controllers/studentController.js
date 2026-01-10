@@ -3117,7 +3117,7 @@ const updateStudent = async (req, res) => {
 
 const promoteStudent = async (req, res) => {
 
-  console.log("promoteStudent")
+  //console.log("promoteStudent")
   try {
     const { id } = req.params;
     const {
@@ -3179,7 +3179,7 @@ const promoteStudent = async (req, res) => {
         .json({ success: false, error: "User data not found" });
     }
 
-    console.log("School Id : " + student.schoolId)
+    //console.log("School Id : " + student.schoolId)
     const school = await School.findById({ _id: student.schoolId })
     if (!school) {
       return res
@@ -3192,11 +3192,11 @@ const promoteStudent = async (req, res) => {
     const academicYears = JSON.parse(await redis.get('academicYears'));
     let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
 
-    console.log("ACYear-1 : " + accYear + ", ACYearId-1:" + accYearId)
+    //console.log("ACYear-1 : " + accYear + ", ACYearId-1:" + accYearId)
     if (accYearId == null || accYearId == "") {
       accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
       accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
-      console.log("ACYear-2 : " + accYear + ", ACYearId-2:" + accYearId)
+      //console.log("ACYear-2 : " + accYear + ", ACYearId-2:" + accYearId)
     }
 
     let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
@@ -3298,7 +3298,7 @@ const promoteStudent = async (req, res) => {
         academicModal['status5'] = status5;
       }
 
-      console.log(academicModal);
+      //console.log(academicModal);
       const newAcademic = new Academic(academicModal)
       updateAcademic = await newAcademic.save();
 
