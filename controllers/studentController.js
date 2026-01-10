@@ -353,11 +353,7 @@ const importStudentsData = async (req, res) => {
   const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
   const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
 
-  const AC_YEAR_IDS = [
-    "694faa8b849cb7c7714b6c7d", // year 1
-    "680485d9361ed06368c57f7c", // year 2
-    "68612e92eeebf699b9d34a21", // year 3
-  ];
+  const AC_YEAR_ID = "680485d9361ed06368c57f7c"; // 2024-2025
 
   const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
 
@@ -592,38 +588,38 @@ const importStudentsData = async (req, res) => {
 
           // Create Academics
           let currentAcademicId = null;
-          let lastAccYearId = AC_YEAR_IDS[0];
+          //let lastAccYearId = AC_YEAR_IDS[0];
 
-          for (let i = 0; i < finalYearCount; i++) {
-            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
-            lastAccYearId = accYearId;
+          //for (let i = 0; i < finalYearCount; i++) {
+          //const accYearId = AC_YEAR_ID;
+          //let lastAccYearId = accYearId;
+          const savedAcademic = await Academic.create(
+            [
+              {
+                studentId,
+                acYear: AC_YEAR_ID,
+                instituteId1: INSTITUTE_ID,
+                courseId1: courseId,
+                refNumber1: newRollNumber, // ✅ NEW roll number
+                year1: yearCount, //i + 1,
+                fees1: fees,
+                finalFees1: fees,
+                status1: "Admission",
+              },
+            ],
+            { session }
+          );
 
-            const savedAcademic = await Academic.create(
-              [
-                {
-                  studentId,
-                  acYear: accYearId,
-                  instituteId1: INSTITUTE_ID,
-                  courseId1: courseId,
-                  refNumber1: newRollNumber, // ✅ NEW roll number
-                  year1: i + 1,
-                  fees1: fees,
-                  finalFees1: fees,
-                  status1: "Admission",
-                },
-              ],
-              { session }
-            );
-
-            if (i === 0) currentAcademicId = savedAcademic[0]._id;
-          }
+          //if (i === 0) 
+          currentAcademicId = savedAcademic[0]._id;
+          //}
 
           // Create Account
           await Account.create(
             [
               {
                 userId,
-                acYear: lastAccYearId,
+                acYear: AC_YEAR_ID,
                 academicId: currentAcademicId,
                 receiptNumber: "Admission",
                 type: "fees",
@@ -2419,9 +2415,10 @@ const getStudentForPromote = async (req, res) => {
     console.log("getStudentForPromote : " + id);
 
     let student = await Student.findById({ _id: id })
-      .populate("userId", { password: 0 })
-      .populate("schoolId")
-      .populate("districtStateId");
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "districtStateId", select: "district state" });
+    //.populate({ path: "courses", select: "name type fees years code" });
 
     if (!student) {
       return res
@@ -2473,9 +2470,29 @@ const getStudentForPromote = async (req, res) => {
       .populate({ path: 'courseId5', select: '_id iCode name' })
 
     if (!academics || academics.length <= 0) {
+
+      accYear = (new Date().getFullYear() - 2) + "-" + (new Date().getFullYear() - 1);
+      accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+      console.log("Ac Id - 3 : " + accYearId)
+
+      academics = await Academic.find({ studentId: student._id, acYear: accYearId })
+        .populate({ path: 'acYear', select: '_id acYear' })
+        .populate({ path: 'instituteId1', select: '_id code name' })
+        .populate({ path: 'courseId1', select: '_id iCode name' })
+        .populate({ path: 'instituteId2', select: '_id code name' })
+        .populate({ path: 'courseId2', select: '_id iCode name' })
+        .populate({ path: 'instituteId3', select: '_id code name' })
+        .populate({ path: 'courseId3', select: '_id iCode name' })
+        .populate({ path: 'instituteId4', select: '_id code name' })
+        .populate({ path: 'courseId4', select: '_id iCode name' })
+        .populate({ path: 'instituteId5', select: '_id code name' })
+        .populate({ path: 'courseId5', select: '_id iCode name' })
+    }
+
+    if (!academics || academics.length <= 0) {
       return res
         .status(404)
-        .json({ success: false, error: "Previous Academic details Not found : " + student._id + ", " + accYear });
+        .json({ success: false, error: "Pre Previous Academic details Not found : " + student._id + ", " + accYear });
     }
 
     student._academics = academics;
@@ -2886,10 +2903,17 @@ const promoteStudent = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
-    const accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
+    let accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     const redis = await getRedis();
     const academicYears = JSON.parse(await redis.get('academicYears'));
-    const accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+    let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+
+    console.log("ACYear-1 : " + accYear + ", ACYearId-1:" + accYearId)
+    if (accYearId == null || accYearId == "") {
+      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+      accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+      console.log("ACYear-2 : " + accYear + ", ACYearId-2:" + accYearId)
+    }
 
     let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
     let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
