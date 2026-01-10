@@ -2508,8 +2508,289 @@ const getStudentForPromote = async (req, res) => {
 };
 
 const updateStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-  console.log("Update Student called.")
+    const {
+      name,
+      schoolId,
+      doa,
+      dob,
+      gender,
+      maritalStatus,
+      motherTongue,
+      bloodGroup,
+      idMark1,
+      idMark2,
+      about,
+      fatherName,
+      fatherNumber,
+      fatherOccupation,
+      motherName,
+      motherNumber,
+      motherOccupation,
+      guardianName,
+      guardianNumber,
+      guardianOccupation,
+      guardianRelation,
+      address,
+      city,
+      districtStateId,
+      landmark,
+      pincode,
+      active,
+      remarks,
+      hostel,
+      hostelRefNumber,
+      hostelFees,
+      hostelDiscount,
+      acYear,
+
+      instituteId1, courseId1, refNumber1, year1, fees1, discount1,
+      instituteId2, courseId2, refNumber2, year2, fees2, discount2,
+      instituteId3, courseId3, refNumber3, year3, fees3, discount3,
+      instituteId4, courseId4, refNumber4, year4, fees4, discount4,
+      instituteId5, courseId5, refNumber5, year5, fees5, discount5,
+    } = req.body;
+
+    // basic validation early (no DB writes yet)
+    if (!id) return res.status(400).json({ success: false, error: "Student id is required" });
+    if (!schoolId) return res.status(400).json({ success: false, error: "schoolId is required" });
+    if (!acYear) return res.status(400).json({ success: false, error: "acYear is required" });
+
+    const session = await mongoose.startSession();
+
+    let profileUrl = null; // blob url (optional)
+    try {
+      // ---- Optional upload BEFORE transaction writes ----
+      // (Cannot rollback blob upload, but safe enough.)
+      if (req.file) {
+        const blob = await put(`profiles/${id}.png`, req.file.buffer, {
+          access: "public",
+          contentType: "image/png",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+          allowOverwrite: true,
+        });
+        profileUrl = blob?.downloadUrl || null;
+      }
+
+      await session.withTransaction(async () => {
+        // 1) Load student + user (in transaction)
+        const student = await Student.findById(id).session(session);
+        if (!student) throw new Error("Student not found");
+
+        const user = await User.findById(student.userId).session(session);
+        if (!user) throw new Error("User not found");
+
+        const school = await School.findById(schoolId).select("_id").session(session);
+        if (!school) throw new Error("Niswan not found");
+
+        const academicYearById = await AcademicYear.findById(acYear).select("_id").session(session);
+        if (!academicYearById) throw new Error("Academic Year Not exists");
+
+        // helpers
+        const toNum = (v) => {
+          const n = Number(v ?? 0);
+          return Number.isFinite(n) ? n : 0;
+        };
+
+        const finalFees = (fees, discount) => Math.max(0, toNum(fees) - toNum(discount));
+
+        const hostelFinalFeesVal = Math.max(0, toNum(hostelFees) - toNum(hostelDiscount));
+
+        const finalFees1Val = finalFees(fees1, discount1);
+        const finalFees2Val = finalFees(fees2, discount2);
+        const finalFees3Val = finalFees(fees3, discount3);
+        const finalFees4Val = finalFees(fees4, discount4);
+        const finalFees5Val = finalFees(fees5, discount5);
+
+        const totalFees =
+          finalFees1Val +
+          finalFees2Val +
+          finalFees3Val +
+          finalFees4Val +
+          finalFees5Val +
+          hostelFinalFeesVal;
+
+        // 2) Update User (name + optional profileImage)
+        const userUpdate = {
+          name: toCamelCase(name),
+        };
+        if (profileUrl) userUpdate.profileImage = profileUrl;
+
+        const updatedUser = await User.findByIdAndUpdate(
+          user._id,
+          userUpdate,
+          { new: true, session }
+        );
+
+        if (!updatedUser) throw new Error("Failed to update user");
+
+        // 3) Update Student
+        const updatedStudent = await Student.findByIdAndUpdate(
+          id,
+          {
+            schoolId,
+            doa,
+            dob,
+            gender,
+            maritalStatus,
+            motherTongue,
+            bloodGroup: toCamelCase(bloodGroup),
+            idMark1: toCamelCase(idMark1),
+            idMark2: toCamelCase(idMark2),
+            about: toCamelCase(about),
+
+            fatherName: toCamelCase(fatherName),
+            fatherNumber,
+            fatherOccupation: toCamelCase(fatherOccupation),
+
+            motherName: toCamelCase(motherName),
+            motherNumber,
+            motherOccupation: toCamelCase(motherOccupation),
+
+            guardianName: toCamelCase(guardianName),
+            guardianNumber,
+            guardianOccupation: toCamelCase(guardianOccupation),
+            guardianRelation: toCamelCase(guardianRelation),
+
+            address: toCamelCase(address),
+            city: toCamelCase(city),
+            districtStateId,
+            landmark: toCamelCase(landmark),
+            pincode,
+
+            hostel,
+            hostelRefNumber,
+            hostelFees,
+            hostelDiscount,
+            hostelFinalFees: hostelFinalFeesVal,
+
+            active,
+            remarks: toCamelCase(remarks),
+          },
+          { new: true, session }
+        );
+
+        if (!updatedStudent) throw new Error("Failed to update student");
+
+        // 4) Upsert Academic (per studentId + acYear)
+        const academicFilter = { studentId: student._id, acYear: academicYearById._id };
+
+        const academicUpdate = {
+          instituteId1: instituteId1 || null,
+          courseId1: courseId1 || null,
+          refNumber1,
+          year1,
+          fees1,
+          discount1,
+          finalFees1: finalFees1Val,
+          status1: instituteId1 && courseId1 ? "Admission" : null,
+
+          instituteId2: instituteId2 || null,
+          courseId2: courseId2 || null,
+          refNumber2,
+          year2,
+          fees2,
+          discount2,
+          finalFees2: finalFees2Val,
+          status2: instituteId2 && courseId2 ? "Admission" : null,
+
+          instituteId3: instituteId3 || null,
+          courseId3: courseId3 || null,
+          refNumber3,
+          year3,
+          fees3,
+          discount3,
+          finalFees3: finalFees3Val,
+          status3: instituteId3 && courseId3 ? "Admission" : null,
+
+          instituteId4: instituteId4 || null,
+          courseId4: courseId4 || null,
+          refNumber4,
+          year4,
+          fees4,
+          discount4,
+          finalFees4: finalFees4Val,
+          status4: instituteId4 && courseId4 ? "Admission" : null,
+
+          instituteId5: instituteId5 || null,
+          courseId5: courseId5 || null,
+          refNumber5,
+          year5,
+          fees5,
+          discount5,
+          finalFees5: finalFees5Val,
+          status5: instituteId5 && courseId5 ? "Admission" : null,
+        };
+
+        const academicDoc = await Academic.findOneAndUpdate(
+          academicFilter,
+          { $set: academicUpdate },
+          { new: true, upsert: true, session }
+        );
+
+        if (!academicDoc?._id) throw new Error("Failed to upsert academic");
+
+        // 5) Upsert Account (keyed by userId + acYear + academicId)
+        // ✅ FIX: userId MUST be student.userId (NOT student._id or updatedUser._id)
+        const accountFilter = {
+          userId: student.userId,
+          acYear: academicYearById._id,
+          academicId: academicDoc._id,
+        };
+
+        const accountUpdate = {
+          receiptNumber: "Admission",
+          type: "fees",
+          fees: totalFees,
+          paidDate: Date.now(),
+          balance: totalFees,
+          remarks: "Admission-updated",
+        };
+
+        const accountDoc = await Account.findOneAndUpdate(
+          accountFilter,
+          { $set: accountUpdate },
+          { new: true, upsert: true, session }
+        );
+
+        if (!accountDoc?._id) throw new Error("Failed to upsert account");
+
+        // 6) Update Student.courses array based on courseId1..5 (unique, non-null)
+        const coursesArray = [courseId1, courseId2, courseId3, courseId4, courseId5]
+          .filter(Boolean)
+          .map(String);
+
+        const uniqueCourses = [...new Set(coursesArray)];
+
+        await Student.findByIdAndUpdate(
+          id,
+          { $set: { courses: uniqueCourses } },
+          { session }
+        );
+      });
+
+      await session.endSession();
+      return res.status(200).json({ success: true, message: "Student updated successfully." });
+    } catch (txError) {
+      await session.endSession();
+      console.log(txError);
+      return res.status(500).json({
+        success: false,
+        error: txError?.message || "update students server error",
+      });
+    }
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "update students server error" });
+  }
+};
+
+/*
+const updateStudent = async (req, res) => {
+
+  //console.log("Update Student called.")
   try {
     const { id } = req.params;
     const { name,
@@ -2658,7 +2939,7 @@ const updateStudent = async (req, res) => {
       remarks: toCamelCase(remarks),
     })
 
-    console.log("AC Year : " + acYear)
+    //console.log("AC Year : " + acYear)
     const academicYearById = await AcademicYear.findById({ _id: acYear });
     if (academicYearById == null) {
       return res
@@ -2832,7 +3113,7 @@ const updateStudent = async (req, res) => {
       .status(500)
       .json({ success: false, error: "update students server error" });
   }
-};
+};*/
 
 const promoteStudent = async (req, res) => {
 
