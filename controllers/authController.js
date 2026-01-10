@@ -4,32 +4,46 @@ import Employee from "../models/Employee.js";
 import Student from "../models/Student.js";
 import bcrypt from "bcrypt";
 
+const looksLikeEmail = (v) => typeof v === "string" && v.includes("@");
+
 const login = async (req, res) => {
   try {
-    const email = (req.body.email || "").trim().toLowerCase();
-    const password = req.body.password || "";
+    // accept either loginId or email (backward compatible)
+    const loginIdRaw = (req.body.loginId ?? req.body.email ?? "").toString().trim();
+    const password = (req.body.password ?? "").toString();
 
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Email and password are required." });
+    if (!loginIdRaw || !password) {
+      return res.status(400).json({ success: false, error: "Invalid credentials." });
     }
 
-    // ✅ If user doesn't exist, we still do a bcrypt compare on a fake hash
-    // to reduce timing differences (optional but good).
     const fakeHash =
-      "$2b$10$CwTycUXWue0Thq9StjUM0uJ8h1vZ1tcHTTX3e8DqRLVQjaxAg/P6m"; // bcrypt hash for 'password'
+      "$2b$10$CwTycUXWue0Thq9StjUM0uJ8h1vZ1tcHTTX3e8DqRLVQjaxAg/P6m"; // 'password'
 
-    const user = await User.findOne({ email }).select("_id name role password");
+    let user = null;
+    let employee = null;
+
+    // 1) If it's an email -> find user by email (existing behavior)
+    if (looksLikeEmail(loginIdRaw)) {
+      const email = loginIdRaw.toLowerCase();
+      user = await User.findOne({ email }).select("_id name role password"); // same style as yours :contentReference[oaicite:1]{index=1}
+    } else {
+      // 2) Else treat as employeeId -> find employee first, then user
+      employee = await Employee.findOne({ employeeId: loginIdRaw })
+        .select("userId schoolId employeeId")
+        .lean();
+
+      if (employee?.userId) {
+        user = await User.findById(employee.userId).select("_id name role password");
+      }
+    }
+
+    // constant-time-ish compare
     const hashToCheck = user?.password || fakeHash;
-
     const isMatch = await bcrypt.compare(password, hashToCheck);
 
     // ✅ Do NOT reveal whether user exists
     if (!user || !isMatch) {
-      return res
-        .status(401)
-        .json({ success: false, error: "Invalid email or password." });
+      return res.status(401).json({ success: false, error: "Invalid credentials." });
     }
 
     let schoolId = null;
@@ -45,11 +59,20 @@ const login = async (req, res) => {
     ]);
     const studentRoles = new Set(["student", "parent"]);
 
+    // If employee role: reuse the employee record if we already found it
     if (employeeRoles.has(user.role)) {
-      const employee = await Employee.findOne({ userId: user._id })
-        .select("schoolId")
-        .populate({ path: "schoolId", select: "code nameEnglish district state" })
-        .lean();
+      if (!employee) {
+        employee = await Employee.findOne({ userId: user._id })
+          .select("schoolId")
+          .populate({ path: "schoolId", select: "code nameEnglish district state" })
+          .lean();
+      } else {
+        // populate school for name
+        employee = await Employee.findOne({ userId: user._id })
+          .select("schoolId")
+          .populate({ path: "schoolId", select: "code nameEnglish district state" })
+          .lean();
+      }
 
       if (!employee?.schoolId?._id) {
         return res.status(400).json({
@@ -104,14 +127,10 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.log("[login] error:", error);
-    return res
-      .status(500)
-      .json({ success: false, error: "Server error. Please try again." });
+    return res.status(500).json({ success: false, error: "Server error. Please try again." });
   }
 };
 
-const verify = (req, res) => {
-  return res.status(200).json({ success: true, user: req.user });
-};
+const verify = (req, res) => res.status(200).json({ success: true, user: req.user });
 
 export { login, verify };
