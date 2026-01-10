@@ -345,6 +345,683 @@ const addStudent = async (req, res) => {
 };
 
 const importStudentsData = async (req, res) => {
+  const NL = "\r\n"; // ✅ Notepad-friendly new line (Windows)
+
+  let successCount = 0;
+  let finalResultData = "";
+
+  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
+  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
+
+  const AC_YEAR_IDS = [
+    "694faa8b849cb7c7714b6c7d", // year 1
+    "680485d9361ed06368c57f7c", // year 2
+    "68612e92eeebf699b9d34a21", // year 3
+  ];
+
+  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
+
+  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
+
+  const parseDob = (dobRaw) => {
+    const fallback = new Date(2000, 0, 1);
+    try {
+      const dob = safeStr(dobRaw);
+      if (!dob) return fallback;
+      const parts = dob.split("/");
+      if (parts.length !== 3) return fallback;
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      return Number.isNaN(d.getTime()) ? fallback : d;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const parseNumber = (v, def = 0) => {
+    const s = safeStr(v);
+    if (!s) return def;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : def;
+  };
+
+  // ✅ New template: determine course + year using flags
+  const extractCourseYearFromRow = (row) => {
+    const mak = parseNumber(row.Makthab, 0) === 1;
+    const mua = parseNumber(row.Muallama, 0) === 1;
+    const mub = parseNumber(row.Muballiga, 0) === 1;
+
+    const selected = [mak, mua, mub].filter(Boolean).length;
+    if (selected === 0) return { error: "Course not selected (Makthab/Muallama/Muballiga should be 1)" };
+    if (selected > 1) return { error: "Multiple courses selected. Only one course should be 1 per row." };
+
+    if (mak) {
+      const y = parseNumber(row.MakthabYear, 0);
+      if (y <= 0) return { error: "MakthabYear not given/invalid" };
+      return { courseName: "Makthab", yearCount: y };
+    }
+    if (mua) {
+      const y = parseNumber(row.MuallamaYear, 0);
+      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
+      return { courseName: "Muallama", yearCount: y };
+    }
+
+    const y = parseNumber(row.MuballigaYear, 0);
+    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
+    return { courseName: "Muballiga", yearCount: y };
+  };
+
+  try {
+    const studentsDataList = Array.isArray(req.body)
+      ? req.body
+      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
+
+    if (!studentsDataList || studentsDataList.length <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Please check the document. Students data not received.",
+      });
+    }
+
+    // ---------- Load Redis + courses map ----------
+    const redis = await getRedis();
+
+    let courses = [];
+    try {
+      const coursesCache = await redis.get("courses");
+      courses = coursesCache ? JSON.parse(coursesCache) : [];
+    } catch {
+      courses = [];
+    }
+
+    if (!Array.isArray(courses) || courses.length === 0) {
+      courses = await Course.find().select("_id name").lean();
+    }
+
+    const courseMap = new Map(); // name -> _id
+    for (const c of courses) {
+      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
+    }
+
+    // ---------- Prefetch schools by niswanCode ----------
+    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
+    const schools = await School.find({ code: { $in: niswanCodes } })
+      .select("_id code districtStateId")
+      .lean();
+
+    const schoolMap = new Map();
+    for (const s of schools) schoolMap.set(String(s.code), s);
+
+    // ---------- Prefetch duplicates by OLD rollNumber (remarks match) ----------
+    const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
+    const oldRemarks = oldRollNumbers.map((r) => `Old Roll Number : ${r}`);
+
+    const existingStudents = oldRemarks.length
+      ? await Student.find({ remarks: { $in: oldRemarks } }).select("remarks").lean()
+      : [];
+
+    const existingOldRemarksSet = new Set(existingStudents.map((s) => String(s.remarks)));
+
+    // ---------- Main loop ----------
+    let row = 1;
+
+    for (const studentData of studentsDataList) {
+      const errors = [];
+
+      const name = safeStr(studentData.name);
+      const oldRollNumber = safeStr(studentData.rollNumber); // ✅ OLD roll number from excel
+      const niswanCode = safeStr(studentData.niswanCode);
+      const feesVal = safeStr(studentData.fees);
+
+      if (!name) errors.push("Name not given");
+      if (!oldRollNumber) errors.push("Old RollNumber not given (rollNumber column)");
+      if (!niswanCode) errors.push("NiswanCode not given");
+
+      const school = niswanCode ? schoolMap.get(niswanCode) : null;
+      if (!school) errors.push(`NiswanCode not available : ${niswanCode}`);
+
+      // Duplicate check using remarks
+      const oldRemark = `Old Roll Number : ${oldRollNumber}`;
+      if (oldRollNumber && existingOldRemarksSet.has(oldRemark)) {
+        errors.push(`Already imported (old roll found): ${oldRollNumber}`);
+      }
+
+      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
+      if (courseErr) errors.push(courseErr);
+
+      if (!feesVal) errors.push("Fees not given");
+      if (courseName && !VALID_COURSE_NAMES.has(courseName)) errors.push(`Course not valid: ${courseName}`);
+
+      if (errors.length > 0) {
+        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const foundCourseId = courseMap.get(courseName);
+      if (!foundCourseId) {
+        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const courseId = foundCourseId || DEFAULT_COURSE_ID;
+
+      const fees = parseNumber(feesVal, 0);
+      if (fees <= 0) {
+        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Makthab override
+      let finalYearCount = yearCount;
+      if (courseName === "Makthab") finalYearCount = 1;
+
+      const session = await mongoose.startSession();
+
+      try {
+        await session.withTransaction(async () => {
+          // ✅ Generate NEW roll number (atomic sequence)
+          const numbering = await Numbering.findOneAndUpdate(
+            { name: "Roll" },
+            { $inc: { currentNumber: 1 } },
+            { new: true, upsert: true, session }
+          );
+
+          const schoolCode = String(school.code || "");
+          const newRollNumber =
+            schoolCode.replaceAll("-", "") +
+            String(numbering.currentNumber).padStart(7, "0");
+
+          // Create User (login uses new rollNumber)
+          const hashPassword = await bcrypt.hash(newRollNumber, 10);
+
+          const savedUser = await User.create(
+            [
+              {
+                name: toCamelCase(name),
+                email: newRollNumber,
+                password: hashPassword,
+                role: "student",
+                profileImage: "",
+              },
+            ],
+            { session }
+          );
+
+          const userId = savedUser[0]._id;
+
+          // Create Student (store new rollNumber; keep old in remarks)
+          const dobDate = parseDob(studentData.dob);
+
+          const savedStudent = await Student.create(
+            [
+              {
+                userId,
+                schoolId: school._id,
+                rollNumber: newRollNumber, // ✅ NEW roll number
+                doa: new Date(),
+                dob: dobDate,
+                gender: "Female",
+                maritalStatus: "Single",
+                idMark1: "-",
+                fatherName: safeStr(studentData.fatherName),
+                fatherNumber: safeStr(studentData.fatherNumber),
+                motherName: safeStr(studentData.motherName),
+                motherNumber: safeStr(studentData.motherNumber),
+                guardianName: safeStr(studentData.guardianName),
+                guardianNumber: safeStr(studentData.guardianNumber),
+                guardianRelation: safeStr(studentData.guardianRelation),
+                address: safeStr(studentData.address),
+                city: safeStr(studentData.city),
+                districtStateId: school.districtStateId,
+                hostel: "No",
+                active: "Active",
+                feesPaid: 0,
+                courses: [courseId],
+                remarks: `Old Roll Number : ${oldRollNumber}`, // ✅ store OLD
+              },
+            ],
+            { session }
+          );
+
+          const studentId = savedStudent[0]._id;
+
+          // Create Academics
+          let currentAcademicId = null;
+          let lastAccYearId = AC_YEAR_IDS[0];
+
+          for (let i = 0; i < finalYearCount; i++) {
+            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
+            lastAccYearId = accYearId;
+
+            const savedAcademic = await Academic.create(
+              [
+                {
+                  studentId,
+                  acYear: accYearId,
+                  instituteId1: INSTITUTE_ID,
+                  courseId1: courseId,
+                  refNumber1: newRollNumber, // ✅ NEW roll number
+                  year1: i + 1,
+                  fees1: fees,
+                  finalFees1: fees,
+                  status1: "Admission",
+                },
+              ],
+              { session }
+            );
+
+            if (i === 0) currentAcademicId = savedAcademic[0]._id;
+          }
+
+          // Create Account
+          await Account.create(
+            [
+              {
+                userId,
+                acYear: lastAccYearId,
+                academicId: currentAcademicId,
+                receiptNumber: "Admission",
+                type: "fees",
+                fees: fees,
+                paidDate: Date.now(),
+                balance: 0,
+                remarks: "Admission",
+              },
+            ],
+            { session }
+          );
+        });
+
+        // mark old roll as imported (avoid duplicates in same file too)
+        existingOldRemarksSet.add(`Old Roll Number : ${oldRollNumber}`);
+
+        finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
+        successCount++;
+      } catch (txErr) {
+        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
+      } finally {
+        await session.endSession();
+      }
+
+      row++;
+    }
+
+    const totalStudents = await Student.countDocuments();
+    try {
+      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
+    } catch {
+      await redis.set("totalStudents", String(totalStudents));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: ` [${successCount}] Students data Imported Successfully!`,
+      finalResultData,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "server error in adding student",
+      finalResultData,
+    });
+  }
+};
+
+{/*const importStudentsData = async (req, res) => {
+  const NL = "\r\n"; // ✅ Windows Notepad-friendly new line
+
+  let successCount = 0;
+  let finalResultData = "";
+
+  // ---- Hard-coded IDs (keep yours, but move them to config later) ----
+  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
+  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
+
+  // Year mapping for academic years (yearIndex -> acYearId)
+  const AC_YEAR_IDS = [
+    "694faa8b849cb7c7714b6c7d", // year 1, 2023-2024
+    "680485d9361ed06368c57f7c", // year 2, 2024-2025
+    "68612e92eeebf699b9d34a21", // year 3, 2025-2026
+  ];
+
+  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
+
+  const isNonEmpty = (v) =>
+    v !== undefined && v !== null && String(v).trim().length > 0;
+
+  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
+
+  const parseDob = (dobRaw) => {
+    // expects dd/mm/yyyy; falls back to 01/01/2000
+    const fallback = new Date(2000, 0, 1);
+
+    try {
+      const dob = safeStr(dobRaw);
+      if (!dob) return fallback;
+
+      const parts = dob.split("/");
+      if (parts.length !== 3) return fallback;
+
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+
+      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return fallback;
+      if (year < 1900 || year > 2100) return fallback;
+
+      const d = new Date(year, month, day);
+      if (Number.isNaN(d.getTime())) return fallback;
+      return d;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const parseNumber = (v, def = 0) => {
+    const s = safeStr(v);
+    if (!s) return def;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : def;
+  };
+
+  // ✅ New template: determine course + year using flags
+  const extractCourseYearFromRow = (row) => {
+    const mak = parseNumber(row.Makthab, 0) === 1;
+    const mua = parseNumber(row.Muallama, 0) === 1;
+    const mub = parseNumber(row.Muballiga, 0) === 1;
+
+    const selectedCount = [mak, mua, mub].filter(Boolean).length;
+
+    if (selectedCount === 0) {
+      return { error: "Course not selected (Makthab/Muallama/Muballiga should be 1)" };
+    }
+    if (selectedCount > 1) {
+      return { error: "Multiple courses selected. Only one course should be 1 per row." };
+    }
+
+    if (mak) {
+      const y = parseNumber(row.MakthabYear, 0);
+      if (y <= 0) return { error: "MakthabYear not given/invalid" };
+      return { courseName: "Makthab", yearCount: y };
+    }
+
+    if (mua) {
+      const y = parseNumber(row.MuallamaYear, 0);
+      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
+      return { courseName: "Muallama", yearCount: y };
+    }
+
+    // muballiga
+    const y = parseNumber(row.MuballigaYear, 0);
+    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
+    return { courseName: "Muballiga", yearCount: y };
+  };
+
+  try {
+    // Body may come as JSON string sometimes
+    const studentsDataList = Array.isArray(req.body)
+      ? req.body
+      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
+
+    if (!studentsDataList || studentsDataList.length <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Please check the document. Students data not received.",
+      });
+    }
+
+    // ---------- Load Redis + courses map ----------
+    const redis = await getRedis();
+
+    let courses = [];
+    try {
+      const coursesCache = await redis.get("courses");
+      courses = coursesCache ? JSON.parse(coursesCache) : [];
+    } catch {
+      courses = [];
+    }
+
+    // Fallback to DB if Redis missing/empty
+    if (!Array.isArray(courses) || courses.length === 0) {
+      courses = await Course.find().select("_id name").lean();
+    }
+
+    const courseMap = new Map(); // name -> _id
+    for (const c of courses) {
+      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
+    }
+
+    // ---------- Prefetch schools by niswanCode ----------
+    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
+    const schools = await School.find({ code: { $in: niswanCodes } })
+      .select("_id code districtStateId")
+      .lean();
+
+    const schoolMap = new Map(); // code -> school doc
+    for (const s of schools) schoolMap.set(String(s.code), s);
+
+    // ---------- Prefetch existing users by rollNumber(email) ----------
+    const rollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
+    const existingUsers = await User.find({ email: { $in: rollNumbers } })
+      .select("email")
+      .lean();
+
+    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email)));
+
+    // ---------- Main loop ----------
+    let row = 1;
+
+    for (const studentData of studentsDataList) {
+      const errors = [];
+
+      const name = safeStr(studentData.name);
+      const rollNumber = safeStr(studentData.rollNumber);
+      const niswanCode = safeStr(studentData.niswanCode);
+      const feesVal = safeStr(studentData.fees);
+
+      // Mandatory fields
+      if (!name) errors.push("Name not given");
+      if (!rollNumber) errors.push("RollNumber not given");
+      if (!niswanCode) errors.push("NiswanCode not given");
+
+      // Existing user check (prefetched)
+      if (rollNumber && existingEmailSet.has(rollNumber)) {
+        errors.push(`User already registered. RollNumber : ${rollNumber}`);
+      }
+
+      // School check (prefetched)
+      const school = niswanCode ? schoolMap.get(niswanCode) : null;
+      if (!school) {
+        errors.push(`NiswanCode not available : ${niswanCode}`);
+      }
+
+      // ✅ New template: derive course + year
+      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
+      if (courseErr) errors.push(courseErr);
+
+      // Fees validation
+      if (!isNonEmpty(feesVal)) errors.push("Fees not given");
+
+      if (errors.length > 0) {
+        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Course validation
+      if (!VALID_COURSE_NAMES.has(courseName)) {
+        finalResultData += `Row : ${row}, Course not valid: ${courseName}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Resolve courseId from cache/db
+      let courseId = DEFAULT_COURSE_ID;
+      const foundCourseId = courseMap.get(courseName);
+      if (!foundCourseId) {
+        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
+        row++;
+        continue;
+      }
+      courseId = foundCourseId;
+
+      // Parse fees
+      const fees = parseNumber(feesVal, 0);
+      if (fees <= 0) {
+        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
+        row++;
+        continue;
+      }
+
+      // Create in a transaction (prevents partial data)
+      const session = await mongoose.startSession();
+
+      try {
+        await session.withTransaction(async () => {
+          // Create User
+          const hashPassword = await bcrypt.hash(rollNumber, 10);
+
+          const savedUser = await User.create(
+            [
+              {
+                name: toCamelCase(name),
+                email: rollNumber,
+                password: hashPassword,
+                role: "student",
+                profileImage: "",
+              },
+            ],
+            { session }
+          );
+
+          const userId = savedUser[0]._id;
+
+          // Create Student
+          const dobDate = parseDob(studentData.dob);
+
+          const savedStudent = await Student.create(
+            [
+              {
+                userId,
+                schoolId: school._id,
+                rollNumber,
+                doa: new Date(),
+                dob: dobDate,
+                gender: "Female",
+                maritalStatus: "Single",
+                idMark1: "-",
+                fatherName: safeStr(studentData.fatherName),
+                fatherNumber: safeStr(studentData.fatherNumber),
+                motherName: safeStr(studentData.motherName),
+                motherNumber: safeStr(studentData.motherNumber),
+                guardianName: safeStr(studentData.guardianName),
+                guardianNumber: safeStr(studentData.guardianNumber),
+                guardianRelation: safeStr(studentData.guardianRelation),
+                address: safeStr(studentData.address),
+                city: safeStr(studentData.city),
+                districtStateId: school.districtStateId,
+                hostel: "No",
+                active: "Active",
+                feesPaid: 0,
+                courses: [courseId],
+              },
+            ],
+            { session }
+          );
+
+          const studentId = savedStudent[0]._id;
+
+          // Create Academics (one per year)
+          let currentAcademicId = null;
+          let lastAccYearId = AC_YEAR_IDS[0];
+
+          for (let i = 0; i < yearCount; i++) {
+            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
+            lastAccYearId = accYearId;
+
+            const savedAcademic = await Academic.create(
+              [
+                {
+                  studentId,
+                  acYear: accYearId,
+                  instituteId1: INSTITUTE_ID,
+                  courseId1: courseId,
+                  refNumber1: rollNumber,
+                  year1: i + 1,
+                  fees1: fees,
+                  finalFees1: fees,
+                  status1: "Admission",
+                },
+              ],
+              { session }
+            );
+
+            if (i === 0) currentAcademicId = savedAcademic[0]._id;
+          }
+
+          // Create Account (for first academic)
+          await Account.create(
+            [
+              {
+                userId,
+                acYear: lastAccYearId,
+                academicId: currentAcademicId,
+                receiptNumber: "Admission",
+                type: "fees",
+                fees: fees,
+                paidDate: Date.now(),
+                balance: 0,
+                remarks: "Admission",
+              },
+            ],
+            { session }
+          );
+        });
+
+        // Mark rollNumber as existing now (avoid duplicates within same file)
+        existingEmailSet.add(rollNumber);
+
+        finalResultData += `Row : ${row}, RollNumber : ${rollNumber}, Imported Successfully!${NL}`;
+        successCount++;
+      } catch (txErr) {
+        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
+      } finally {
+        await session.endSession();
+      }
+
+      row++;
+    }
+
+    // Update redis count (with TTL so it refreshes)
+    const totalStudents = await Student.countDocuments();
+    try {
+      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
+    } catch {
+      await redis.set("totalStudents", String(totalStudents));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: ` [${successCount}] Students data Imported Successfully!`,
+      finalResultData,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "server error in adding student",
+      finalResultData,
+    });
+  }
+};*/}
+
+{/*const importStudentsData = async (req, res) => {
   const NL = "\n"; // ✅ Notepad-friendly new line (Windows)
 
   let successCount = 0;
@@ -1197,6 +1874,8 @@ const getByFilter = async (req, res) => {
     courseStatus,
   } = req.params;
 
+  console.log("Get By Filter.")
+
   const isValidParam = (v) =>
     v !== undefined &&
     v !== null &&
@@ -1215,7 +1894,10 @@ const getByFilter = async (req, res) => {
     const studentQuery = { schoolId };
 
     if (isValidParam(status)) studentQuery.active = status;
-    if (isValidParam(maritalStatus)) studentQuery.maritalStatus = maritalStatus;
+    //if (isValidParam(maritalStatus)) studentQuery.maritalStatus = maritalStatus;
+    if (isValidParam(maritalStatus)) {
+      studentQuery.maritalStatus = { $regex: `^${maritalStatus.trim()}$`, $options: "i" };
+    }
     if (isValidParam(hosteller)) studentQuery.hostel = hosteller;
 
     // ----------------------------
@@ -1245,9 +1927,8 @@ const getByFilter = async (req, res) => {
       }
 
       if (isValidParam(year)) {
-        academicAnd.push({
-          $or: [{ year1: year }, { year3: year }],
-        });
+        const y = Number(year);
+        academicAnd.push({ $or: [{ year1: y }, { year3: y }] });
       }
 
       if (isValidParam(courseStatus)) {
@@ -1276,9 +1957,9 @@ const getByFilter = async (req, res) => {
     // 3) Fetch students (lean + minimal populate)
     // ----------------------------
     const studentSelect =
-      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber";
+      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber";
 
-    const students = await Student.find(studentQuery)
+    const studentsMap = await Student.find(studentQuery)
       .select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
@@ -1287,6 +1968,17 @@ const getByFilter = async (req, res) => {
       .populate({ path: "courses", select: "name type fees years code" })
       .lean();
 
+    const students = studentsMap.map((s) => {
+      // show only if feesPaid === 1 (or true)
+      //const isPaid = s.feesPaid === 1 || s.feesPaid === true || s.feesPaid === "1";
+      const isPaid = Number(s.feesPaid) === 1;
+      if (!isPaid) {
+        const { rollNumber, ...rest } = s;
+        return rest;
+      }
+      return s;
+    });
+
     return res.status(200).json({ success: true, students });
   } catch (error) {
     console.log(error);
@@ -1294,7 +1986,7 @@ const getByFilter = async (req, res) => {
       .status(500)
       .json({ success: false, error: "get students by FILTER server error" });
   }
-};
+}
 
 {/*
 const getByFilter = async (req, res) => {
