@@ -127,7 +127,7 @@ const addSchool = async (req, res) => {
       updatedAt,
     });
     await newSchool.save();
-
+ 
     const redis = await getRedis();
     await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
