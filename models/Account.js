@@ -18,5 +18,7 @@ const accountSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+accountSchema.index({ userId: 1, acYear: 1, academicId: 1 });
+
 const Account = mongoose.model("Account", accountSchema);
 export default Account;

@@ -2508,6 +2508,8 @@ const getStudentForPromote = async (req, res) => {
 };
 
 const updateStudent = async (req, res) => {
+
+  console.log("Update Student called.")
   try {
     const { id } = req.params;
     const { name,
@@ -2656,6 +2658,7 @@ const updateStudent = async (req, res) => {
       remarks: toCamelCase(remarks),
     })
 
+    console.log("AC Year : " + acYear)
     const academicYearById = await AcademicYear.findById({ _id: acYear });
     if (academicYearById == null) {
       return res
@@ -2789,7 +2792,7 @@ const updateStudent = async (req, res) => {
         status5: instituteId5 && courseId5 ? "Admission" : null,
       })
 
-      const updateAccount = await Account.findOne({ userId: updateStudent._id, acYear: acYear, academicId: updateAcademic._id });
+      const updateAccount = await Account.findOne({ userId: updateUser._id, acYear: acYear, academicId: updateAcademic._id });
       if (updateAccount == null) {
         return res
           .status(404)
