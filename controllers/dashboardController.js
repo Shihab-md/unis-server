@@ -4,6 +4,11 @@ import Employee from "../models/Employee.js";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
 import Certificate from "../models/Certificate.js";
+import Institute from "../models/Institute.js";
+import Course from "../models/Course.js";
+import AcademicYear from "../models/AcademicYear.js";
+import Template from "../models/Template.js";
+import DistrictState from "../models/DistrictState.js";
 
 const getSummary = async (req, res) => {
   try {
