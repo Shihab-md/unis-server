@@ -65,6 +65,8 @@ studentSchema.virtual('academics').
   set(function (academics) { this._academics = academics; });
 
 studentSchema.index({ schoolId: 1, rollNumber: 1 });
+studentSchema.index({ schoolId: 1, active: 1 });
+studentSchema.index({ schoolId: 1, feesPaid: 1 });
 
 const Student = mongoose.model("Student", studentSchema);
 export default Student;

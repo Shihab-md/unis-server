@@ -9,7 +9,7 @@ import Supervisor from "../models/Supervisor.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
-
+ 
 const upload = multer({ storage: multer.memoryStorage() });
 
 const NL = "\n";

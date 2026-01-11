@@ -23,6 +23,8 @@ import dashboardRouter from './routes/dashboard.js'
 import connectToDatabase from './db/db.js'
 import loadCache from './db/loadCache.js'
 
+import reportRouter from './routes/report.js'
+
 await connectToDatabase()
 await loadCache()
 
@@ -55,6 +57,8 @@ app.use('/api/leave', leaveRouter)
 app.use('/api/setting', settingRouter)
 app.use('/api/attendance', attendanceRouter)
 app.use('/api/dashboard', dashboardRouter)
+
+app.use('/api/report', reportRouter)
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
