@@ -3,10 +3,29 @@ import jwt from "jsonwebtoken";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
+import Numbering from "../models/Numbering.js";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({});
+
+export async function generateNextSchoolCode(prefixRaw) {
+  const prefix = String(prefixRaw || "").trim().toUpperCase();
+
+  // Allows UN-01, UN-AP, UN-75, UN-KL etc (2 chars after UN-)
+  if (!/^UN-[A-Z0-9]{2}$/.test(prefix)) {
+    throw new Error("Invalid prefix. Expected like UN-01 / UN-AP / UN-75 / UN-KL");
+  }
+
+  const numbering = await Numbering.findOneAndUpdate(
+    { name: "School" },
+    { $inc: { currentNumber: 1 } },
+    { new: true, upsert: true }
+  ).lean();
+
+  const next5 = String(numbering.currentNumber).padStart(5, "0");
+  return `${prefix}-${next5}`;
+}
 
 const addSchool = async (req, res) => {
   try {
@@ -74,8 +93,10 @@ const addSchool = async (req, res) => {
         .json({ success: false, error: "Supervisor data not found." });
     }
 
+    const newCode = await generateNextSchoolCode(code);
+
     const newSchool = new School({
-      code,
+      code: newCode,
       nameEnglish,
       nameArabic,
       nameNative,
@@ -127,7 +148,7 @@ const addSchool = async (req, res) => {
       updatedAt,
     });
     await newSchool.save();
- 
+
     const redis = await getRedis();
     await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
@@ -446,7 +467,7 @@ const getBySchFilter = async (req, res) => {
 */}
 
 const getSchoolsFromCache = async (req, res) => {
-  try { 
+  try {
     const redis = await getRedis();
     const schools = JSON.parse(await redis.get('schools'));
     return res.status(200).json({ success: true, schools });

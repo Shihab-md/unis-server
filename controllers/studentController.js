@@ -123,7 +123,7 @@ const addStudent = async (req, res) => {
     console.log("RollNumber : " + rollNumber)
     await Numbering.findByIdAndUpdate({ _id: numbering._id }, { currentNumber: nextNumber });
  */}
-
+ 
     const numbering = await Numbering.findOneAndUpdate(
       { name: "Roll" },
       { $inc: { currentNumber: 1 } },
