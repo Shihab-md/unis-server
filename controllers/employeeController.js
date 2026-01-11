@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import Employee from "../models/Employee.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
+import Supervisor from "../models/Supervisor.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
@@ -183,7 +184,7 @@ const generateEmployeeId = async ({ schoolCode, role }) => {
   }
 } */
 
-  const addEmployee = async (req, res) => {
+const addEmployee = async (req, res) => {
   try {
     const {
       name,
@@ -271,8 +272,8 @@ const importEmployeesData = async (req, res) => {
     const rows = Array.isArray(req.body)
       ? req.body
       : typeof req.body === "string"
-      ? JSON.parse(req.body)
-      : [];
+        ? JSON.parse(req.body)
+        : [];
 
     if (!rows || rows.length === 0) {
       return res.status(400).json({
@@ -421,7 +422,7 @@ const importEmployeesData = async (req, res) => {
       } catch (e) {
         // rollback user if created but employee failed
         if (createdUser?._id) {
-          await User.findByIdAndDelete(createdUser._id).catch(() => {});
+          await User.findByIdAndDelete(createdUser._id).catch(() => { });
         }
         finalResultData += `Row : ${rowNum}, Import failed: ${e?.message || "Unknown error"}${NL}`;
       }
@@ -435,7 +436,7 @@ const importEmployeesData = async (req, res) => {
         const totalEmployees = await Employee.countDocuments({ active: "Active" });
         await redis.set("totalEmployees", String(totalEmployees), { EX: 60 }); // ✅ 60 seconds
       }
-    } catch {}
+    } catch { }
 
     // ✅ Return TEXT so frontend can download cleanly
     res.setHeader("X-Import-Success-Count", String(successCount));
@@ -642,14 +643,135 @@ const importEmployeesData = async (req, res) => {
 
 const getEmployees = async (req, res) => {
   try {
+    console.log("Get Employees called.");
 
+    // ✅ Use token decode ONCE (or better: use req.user from authMiddleware)
+    const usertoken = req.headers.authorization || "";
+    const parts = usertoken.split(" ");
+    if (parts.length !== 2) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
+
+    const userRole = decoded.role;
+    const schoolId = decoded.schoolId;
+    const loginUserId = decoded.id || decoded._id || decoded.userId; // adjust based on your token payload
+
+    // ------------------------------------------------------------
+    // ✅ SUPERVISOR: return only Admin employees under supervisor schools
+    // ------------------------------------------------------------
+    if (userRole === "supervisor") {
+      if (!loginUserId) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+      }
+
+      // 1) Resolve supervisor id
+      // If your School.supervisorId points to Supervisor model, find Supervisor by userId:
+      const supervisorDoc = await Supervisor.findOne({ userId: loginUserId })
+        .select("_id userId")
+        .lean();
+
+      // possible ids to try
+      const possibleSupervisorIds = [];
+      if (supervisorDoc?._id) possibleSupervisorIds.push(supervisorDoc._id); // Supervisor _id
+      possibleSupervisorIds.push(loginUserId); // fallback: if School.supervisorId stores User._id
+
+      // 2) Find schools under supervisor
+      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } })
+        .select("_id code nameEnglish supervisorId")
+        .lean();
+
+      const schoolIds = schools.map((s) => s._id);
+
+      if (schoolIds.length === 0) {
+        return res.status(200).json({ success: true, employees: [] });
+      }
+
+      // 3) Fetch employees for those schools
+      const employeesAll = await Employee.find({
+        schoolId: { $in: schoolIds },
+        active: "Active",
+      })
+        .select("_id employeeId schoolId userId contactNumber designation active")
+        .populate({ path: "schoolId", select: "code nameEnglish" })
+        .populate({ path: "userId", select: "_id name email role" })
+        .sort({ employeeId: 1 })
+        .lean();
+
+      // 4) Filter only admin users
+      const employees = employeesAll.filter(
+        (e) => String(e?.userId?.role || "").toLowerCase() === "admin"
+      );
+
+      return res.status(200).json({ success: true, employees });
+    }
+
+    // ------------------------------------------------------------
+    // ✅ OTHER ROLES
+    // ------------------------------------------------------------
+    const filter =
+      userRole === "superadmin" || userRole === "hquser"
+        ? { active: "Active" }
+        : { schoolId, active: "Active" };
+
+    const employees = await Employee.find(filter)
+      .select("_id employeeId contactNumber designation active userId schoolId")
+      .sort({ employeeId: 1 })
+      .populate({ path: "userId", select: "_id name email role" })
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .lean();
+
+    return res.status(200).json({ success: true, employees });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get employees server error" });
+  }
+};
+
+{/*
+const getEmployees = async (req, res) => {
+  try {
+
+    console.log("Get Employees called.")
     const usertoken = req.headers.authorization;
     const token = usertoken.split(' ');
     const decoded = jwt.verify(token[1], process.env.JWT_SECRET);
 
-    //const userId = decoded._id;
     const userRole = decoded.role;
     const schoolId = decoded.schoolId;
+
+    if (userRole === "supervisor") {
+      const supervisorId = req.user?._id || req.userId;
+
+      if (!supervisorId) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+      }
+
+      // 1) get schoolIds under this supervisor
+      const schools = await School.find({ supervisorId })
+        .select("_id code nameEnglish")
+        .lean();
+
+      const schoolIds = schools.map((s) => s._id);
+
+      if (schoolIds.length === 0) {
+        return res.status(200).json({ success: true, admins: [], schools: [] });
+      }
+
+      // 2) get admins in those schools
+      const admins = await Employee.find({ schoolId: { $in: schoolIds }, active: "Active" })
+        .select("_id employeeId schoolId userId contactNumber designation active")
+        .populate({ path: "schoolId", select: "code nameEnglish" })
+        .populate({ path: "userId", select: "name email role" }) 
+        .sort({ employeeId: 1 })
+        .lean();
+
+      // 3) keep only role=admin (since Employee doesn’t store role)
+      const employees = admins.filter((e) => String(e?.userId?.role).toLowerCase() === "admin");
+
+      return res.status(200).json({ success: true, employees });
+    }
 
     const filter =
       userRole === "superadmin" || userRole === "hquser"
@@ -663,23 +785,6 @@ const getEmployees = async (req, res) => {
       .populate({ path: "schoolId", select: "code nameEnglish" })
       .lean();
 
-    //console.log(userId + " , " + userRole)
-    // let schools = [];
-    {/* let employees = [];
-    if (userRole == 'superadmin' || userRole == 'hquser') {
-
-      employees = await Employee.find({ active: 'Active' }).sort({ employeeId: 1 })
-        .populate({ path: "userId", select: "name email role" })
-        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();
-
-    } else {
-
-      employees = await Employee.find({ schoolId: schoolId, active: 'Active' }).sort({ employeeId: 1 })
-        .populate({ path: "userId", select: "name email role" })
-        .populate({ path: 'schoolId', select: '_id code nameEnglish' }).lean();
-    }
-*/}
-
     return res.status(200).json({ success: true, employees });
   } catch (error) {
     console.log(error)
@@ -687,7 +792,7 @@ const getEmployees = async (req, res) => {
       .status(500)
       .json({ success: false, error: "get employees server error" });
   }
-};
+};*/}
 
 const getByEmpFilter = async (req, res) => {
   const { empSchoolId, empRole, empStatus } = req.params;
@@ -796,13 +901,59 @@ const getByEmpFilter = async (req, res) => {
 };
 */}
 
+const getAdminsBySupervisor = async (req, res) => {
+  try {
+    // ✅ Your auth middleware should set req.user (or req.userId)
+    // Pick correct one based on your project
+    const supervisorId = req.user?._id || req.userId;
+
+    if (!supervisorId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    // 1) get schoolIds under this supervisor
+    const schools = await School.find({ supervisorId })
+      .select("_id code nameEnglish")
+      .lean();
+
+    const schoolIds = schools.map((s) => s._id);
+
+    if (schoolIds.length === 0) {
+      return res.status(200).json({ success: true, admins: [], schools: [] });
+    }
+
+    // 2) get admins in those schools
+    const admins = await Employee.find({
+      schoolId: { $in: schoolIds },
+      active: "Active",
+    })
+      .select("_id employeeId schoolId userId contactNumber designation active")
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "userId", select: "name email role" }) // ✅ no password
+      .sort({ employeeId: 1 })
+      .lean();
+
+    // 3) keep only role=admin (since Employee doesn’t store role)
+    const employees = admins.filter((e) => String(e?.userId?.role).toLowerCase() === "admin");
+
+    return res.status(200).json({
+      success: true,
+      employees
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get admins under supervisor server error" });
+  }
+};
+
 const getEmployee = async (req, res) => {
   const { id } = req.params;
   try {
     let employee;
     employee = await Employee.findById({ _id: id })
-      .populate("userId", { password: 0 })
-      .populate("schoolId");
+      .populate({ path: "schoolId", select: "_id, code nameEnglish" })
+      .populate({ path: "userId", select: "name email role" }) // ✅ no password
+      .lean();
 
     if (!employee) {
       return res
@@ -942,4 +1093,7 @@ const deleteEmployee = async (req, res) => {
   }
 }*/}
 
-export { addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee, getByEmpFilter, importEmployeesData };
+export {
+  addEmployee, upload, getEmployees, getEmployee, updateEmployee, deleteEmployee,
+  getByEmpFilter, importEmployeesData, getAdminsBySupervisor
+};
