@@ -29,6 +29,7 @@ const addSupervisor = async (req, res) => {
       salary,
       password,
       jobType,
+      remarks
     } = req.body;
 
     console.log("user started");
@@ -65,6 +66,7 @@ const addSupervisor = async (req, res) => {
       doj,
       salary,
       jobType,
+      remarks
     });
 
     savedSupervisor = await newSupervisor.save();
@@ -106,8 +108,8 @@ const getSupervisors = async (req, res) => {
     // 1) Fetch supervisors (lean = faster)
     const supervisors = await Supervisor.find({ active: "Active" })
       .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active userId routeName jobType") 
-      .populate({ path: "userId", select: "name email role" }) 
+      .select("supervisorId contactNumber active userId routeName jobType remarks")
+      .populate({ path: "userId", select: "name email role" })
       .lean();
 
     // 2) Count schools per supervisorId
@@ -203,10 +205,12 @@ const getBySupFilter = async (req, res) => {
       query.jobType = supType;
     }
 
+    const finalQuery = { ...(query || {}), active: "Active" };
+
     // Fetch supervisors (lean + select only needed)
-    const supervisors = await Supervisor.find(query)
+    const supervisors = await Supervisor.find(finalQuery)
       .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active jobType userId routeName") // add fields you need
+      .select("supervisorId contactNumber active jobType userId routeName remarks") // add fields you need
       .populate({ path: "userId", select: "name email role" }) // safer than {password:0}
       .lean();
 
@@ -348,7 +352,7 @@ const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, supervisorId, contactNumber, address, routeName, gender,
-      qualification, dob, maritalStatus, doj, jobType, salary } = req.body;
+      qualification, dob, maritalStatus, doj, jobType, salary, remarks, active } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -391,7 +395,7 @@ const updateSupervisor = async (req, res) => {
       gender,
       qualification: toCamelCase(qualification),
       dob, maritalStatus, jobType,
-      doj, salary
+      doj, salary, remarks, active
     })
 
     if (!updateSupervisor || !updateUser) {
