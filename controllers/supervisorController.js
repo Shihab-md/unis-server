@@ -205,7 +205,7 @@ const getBySupFilter = async (req, res) => {
       query.jobType = supType;
     }
 
-    const finalQuery = { ...(query || {}), active: "Active" };
+    const finalQuery = { ...(query || {})};
 
     // Fetch supervisors (lean + select only needed)
     const supervisors = await Supervisor.find(finalQuery)
