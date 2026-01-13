@@ -2430,7 +2430,7 @@ const getStudentForPromote = async (req, res) => {
     if (Number(student?.feesPaid) === 0) {
       return res
         .status(403)
-        .json({ success: false, error: "Sorry. Could not Update. (Fees not Paid)" });
+        .json({ success: false, error: "Sorry. Could not Promote. (Fees not Paid)" });
     }
 
     const redis = await getRedis();
