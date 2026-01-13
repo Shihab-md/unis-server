@@ -123,7 +123,7 @@ const addStudent = async (req, res) => {
     console.log("RollNumber : " + rollNumber)
     await Numbering.findByIdAndUpdate({ _id: numbering._id }, { currentNumber: nextNumber });
  */}
- 
+
     const numbering = await Numbering.findOneAndUpdate(
       { name: "Roll" },
       { $inc: { currentNumber: 1 } },
@@ -2424,6 +2424,13 @@ const getStudentForPromote = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "Student data not found." });
+    }
+
+    // ✅ Fees check (safe numeric)
+    if (Number(student?.feesPaid) === 0) {
+      return res
+        .status(403)
+        .json({ success: false, error: "Sorry. Could not Update. (Fees not Paid)" });
     }
 
     const redis = await getRedis();
