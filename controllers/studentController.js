@@ -455,10 +455,10 @@ const importStudentsData = async (req, res) => {
     const oldRemarks = oldRollNumbers.map((r) => `Old Roll Number : ${r}`);
 
     const existingStudents = oldRemarks.length
-      ? await Student.find({ remarks: { $in: oldRemarks } }).select("remarks").lean()
+      ? await Student.find({ about: { $in: oldRemarks } }).select("about").lean()
       : [];
 
-    const existingOldRemarksSet = new Set(existingStudents.map((s) => String(s.remarks)));
+    const existingOldRemarksSet = new Set(existingStudents.map((s) => String(s.about)));
 
     // ---------- Main loop ----------
     let row = 1;
@@ -578,7 +578,7 @@ const importStudentsData = async (req, res) => {
                 active: "Active",
                 feesPaid: 0,
                 courses: [courseId],
-                remarks: `Old Roll Number : ${oldRollNumber}`, // ✅ store OLD
+                about: `Old Roll Number : ${oldRollNumber}`, // ✅ store OLD
               },
             ],
             { session }
@@ -1692,7 +1692,7 @@ const markFeesPaid = async (req, res) => {
 const getStudents = async (req, res) => {
   try {
     const students = await Student.find()
-      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId remarks")
+      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId remarks about")
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
@@ -1734,7 +1734,7 @@ const getStudentsBySchool = async (req, res) => {
   console.log("getStudentsBySchool : " + schoolId);
   try {
     const studentSelect =
-      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks";
+      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks about";
 
     const studentsList = await Student.find({ schoolId: schoolId })
       .select(studentSelect)
