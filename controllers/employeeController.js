@@ -149,7 +149,7 @@ const addEmployee = async (req, res) => {
       if (existingActiveAdmin?.userId) {
         return res.status(400).json({
           success: false,
-          error: "An active Admin already exists for this school. Please deactivate the existing Admin to add a new one.",
+          error: "An active Admin already exists for this Niswan. Please deactivate the existing Admin to add a new one.",
         });
       }
     }
@@ -304,6 +304,232 @@ const addEmployee = async (req, res) => {
 */}
 
 const importEmployeesData = async (req, res) => {
+  let successCount = 0;
+  let finalResultData = "";
+
+  const NL = "\r\n"; // ✅ Notepad-friendly new lines
+
+  try {
+    console.log("importEmployeesData: Received...");
+
+    const rows = Array.isArray(req.body)
+      ? req.body
+      : typeof req.body === "string"
+        ? JSON.parse(req.body)
+        : [];
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Please check the document. Employee data not received.",
+      });
+    }
+
+    // ✅ Prefetch duplicates (email / employeeId)
+    const emails = [
+      ...new Set(
+        rows.map((r) => safeStr(r.email).toLowerCase()).filter((v) => v.length > 0)
+      ),
+    ];
+
+    const employeeIds = [
+      ...new Set(rows.map((r) => safeStr(r.employeeId)).filter((v) => v.length > 0)),
+    ];
+
+    const [existingUsers, existingEmployees] = await Promise.all([
+      emails.length ? User.find({ email: { $in: emails } }).select("email").lean() : [],
+      employeeIds.length
+        ? Employee.find({ employeeId: { $in: employeeIds } }).select("employeeId").lean()
+        : [],
+    ]);
+
+    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email).toLowerCase()));
+    const existingEmpIdSet = new Set(existingEmployees.map((e) => String(e.employeeId)));
+
+    // ✅ Prefetch schools by code
+    const possibleCodes = [
+      ...new Set(rows.map((r) => safeStr(r.schoolId)).filter((v) => v.length > 0)),
+    ].filter((v) => !isObjectIdLike(v));
+
+    const schoolsByCode = possibleCodes.length
+      ? await School.find({ code: { $in: possibleCodes } })
+        .select("_id code districtStateId")
+        .lean()
+      : [];
+
+    const schoolCodeMap = new Map(schoolsByCode.map((s) => [String(s.code), s]));
+
+    // ✅ NEW: Prefetch "Active admin already exists" schools
+    // Since only admin rows are imported, we just need to know which schools already have an active admin.
+    const allSchoolIdsInFile = new Set();
+    for (const r of rows) {
+      const raw = safeStr(r.schoolId);
+      if (!raw) continue;
+      if (isObjectIdLike(raw)) allSchoolIdsInFile.add(raw);
+      else {
+        const sch = schoolCodeMap.get(raw);
+        if (sch?._id) allSchoolIdsInFile.add(String(sch._id));
+      }
+    }
+
+    const existingActiveAdmins = allSchoolIdsInFile.size
+      ? await Employee.find({
+        schoolId: { $in: Array.from(allSchoolIdsInFile) },
+        active: "Active",
+      })
+        .populate({ path: "userId", match: { role: "admin" }, select: "_id role" })
+        .select("schoolId userId")
+        .lean()
+      : [];
+
+    const schoolsWithActiveAdmin = new Set(
+      existingActiveAdmins
+        .filter((e) => e?.userId) // populated only if role=admin
+        .map((e) => String(e.schoolId))
+    );
+
+    // ✅ Redis optional
+    const redis = await getRedis().catch(() => null);
+
+    let rowNum = 1;
+
+    for (const r of rows) {
+      const errors = [];
+
+      const schoolIdRaw = safeStr(r.schoolId);
+      const employeeId = safeStr(r.employeeId);
+
+      const name = toCamelCase(safeStr(r.name));
+      const email = safeStr(r.email).toLowerCase();
+      const password = safeStr(r.password);
+
+      const contactNumberRaw = safeStr(r.contactNumber);
+      const address = toCamelCase(safeStr(r.address));
+      const role = safeStr(r.role).toLowerCase();
+      const qualification = toCamelCase(safeStr(r.qualification));
+
+      const dob = parseDateFlexible(r.dob);
+      const gender = safeStr(r.gender) || "Female";
+      const maritalStatus = safeStr(r.maritalStatus) || "Single";
+      const doj = parseDateFlexible(r.doj);
+
+      const salary = Number(safeStr(r.salary));
+
+      // ✅ Required validations
+      if (!isNonEmpty(schoolIdRaw)) errors.push("schoolId is missing");
+      if (!isNonEmpty(employeeId)) errors.push("employeeId is missing");
+      if (!isNonEmpty(name)) errors.push("name is missing");
+      if (!isNonEmpty(email)) errors.push("email is missing");
+      if (!isNonEmpty(password)) errors.push("password is missing");
+      if (!isNonEmpty(contactNumberRaw)) errors.push("contactNumber is missing");
+      if (!isNonEmpty(address)) errors.push("address is missing");
+      if (!isNonEmpty(role)) errors.push("role is missing");
+      if (!Number.isFinite(salary)) errors.push("salary is invalid");
+
+      // ✅ Only admin import allowed
+      if (role !== "admin") errors.push("Only role=admin allowed for this import");
+
+      // ✅ duplicates (prefetched)
+      if (email && existingEmailSet.has(email)) errors.push(`User already exists (email): ${email}`);
+      if (employeeId && existingEmpIdSet.has(employeeId))
+        errors.push(`Employee already exists (employeeId): ${employeeId}`);
+
+      // ✅ resolve schoolId (ObjectId OR code)
+      let schoolId = null;
+      if (isObjectIdLike(schoolIdRaw)) {
+        schoolId = schoolIdRaw;
+      } else {
+        const school = schoolCodeMap.get(schoolIdRaw);
+        if (!school?._id) errors.push(`Invalid Niswan code: ${schoolIdRaw}`);
+        else schoolId = String(school._id);
+      }
+
+      // ✅ NEW: Restrict if Active admin already exists for this school
+      if (role === "admin" && schoolId && schoolsWithActiveAdmin.has(String(schoolId))) {
+        errors.push("Skipped: Active admin already exists for this Niswan");
+      }
+
+      // ✅ phone digits
+      const contactNumberDigits = contactNumberRaw.replace(/\D/g, "");
+      if (!contactNumberDigits) errors.push("contactNumber is invalid");
+
+      if (errors.length > 0) {
+        finalResultData += `Row : ${rowNum}, ${errors.join(", ")}.${NL}`;
+        rowNum++;
+        continue;
+      }
+
+      let createdUser = null;
+
+      try {
+        const hashPassword = await bcrypt.hash(password, 10);
+
+        createdUser = await User.create({
+          name,
+          email,
+          password: hashPassword,
+          role: "admin",
+          profileImage: "",
+        });
+
+        await Employee.create({
+          userId: createdUser._id,
+          schoolId,
+          employeeId,
+          contactNumber: Number(contactNumberDigits),
+          address,
+          designation: "Admin",
+          qualification,
+          dob,
+          gender,
+          maritalStatus,
+          doj,
+          salary,
+          active: "Active",
+          remarks: "Imported",
+        });
+
+        // ✅ prevent duplicates within same upload file
+        existingEmailSet.add(email);
+        existingEmpIdSet.add(employeeId);
+
+        // ✅ NEW: now this school has an active admin (prevent duplicates within same file too)
+        schoolsWithActiveAdmin.add(String(schoolId));
+
+        finalResultData += `Row : ${rowNum}, Imported Successfully! Login ID: ${employeeId}, Email: ${email}${NL}`;
+        successCount++;
+      } catch (e) {
+        if (createdUser?._id) {
+          await User.findByIdAndDelete(createdUser._id).catch(() => { });
+        }
+        finalResultData += `Row : ${rowNum}, Import failed: ${e?.message || "Unknown error"}${NL}`;
+      }
+
+      rowNum++;
+    }
+
+    // ✅ Refresh cache
+    try {
+      if (redis) {
+        const totalEmployees = await Employee.countDocuments({ active: "Active" });
+        await redis.set("totalEmployees", String(totalEmployees), { EX: 60 });
+      }
+    } catch { }
+
+    // ✅ Return TEXT so frontend can download cleanly
+    res.setHeader("X-Import-Success-Count", String(successCount));
+    return res.status(200).type("text/plain; charset=utf-8").send(finalResultData);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "server error in importing employees",
+      finalResultData,
+    });
+  }
+};
+
+{/*const importEmployeesData = async (req, res) => {
   let successCount = 0;
   let finalResultData = "";
 
@@ -494,196 +720,7 @@ const importEmployeesData = async (req, res) => {
     });
   }
 };
-
-/*const importEmployeesData = async (req, res) => {
-  let successCount = 0;
-  let finalResultData = "";
-
-  try {
-
-    console.log("Received...")
-    const rows = Array.isArray(req.body)
-      ? req.body
-      : typeof req.body === "string"
-        ? JSON.parse(req.body)
-        : [];
-
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please check the document. Employee data not received.",
-      });
-    }
-
-    // Prefetch user emails + employeeIds for speed
-    const emails = [...new Set(rows.map((r) => safeStr(r.email).toLowerCase()).filter(Boolean))];
-    const employeeIds = [...new Set(rows.map((r) => safeStr(r.employeeId)).filter(Boolean))];
-
-    const [existingUsers, existingEmployees] = await Promise.all([
-      User.find({ email: { $in: emails } }).select("email").lean(),
-      Employee.find({ employeeId: { $in: employeeIds } }).select("employeeId").lean(),
-    ]);
-
-    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email)));
-    const existingEmpIdSet = new Set(existingEmployees.map((e) => String(e.employeeId)));
-
-    // Prefetch schools by code (if your excel uses codes like UN-13-211)
-    const possibleCodes = [...new Set(rows.map((r) => safeStr(r.schoolId)).filter(Boolean))]
-      .filter((v) => !isObjectIdLike(v));
-
-    const schoolsByCode = possibleCodes.length
-      ? await School.find({ code: { $in: possibleCodes } }).select("_id code").lean()
-      : [];
-
-    const schoolCodeMap = new Map(schoolsByCode.map((s) => [String(s.code), s]));
-
-    // Redis optional update
-    const redis = await getRedis().catch(() => null);
-
-    let rowNum = 1;
-
-    for (const r of rows) {
-      const errors = [];
-
-      const schoolIdRaw = safeStr(r.schoolId);
-      const employeeId = safeStr(r.employeeId);
-      const name = safeStr(r.name);
-      const email = safeStr(r.email).toLowerCase();
-      const password = safeStr(r.password);
-
-      const contactNumberRaw = safeStr(r.contactNumber);
-      const address = safeStr(r.address);
-      const role = safeStr(r.role).toLowerCase();
-      const qualification = safeStr(r.qualification);
-
-      const dob = parseDateFlexible(r.dob);
-      const gender = safeStr(r.gender) || "Female";
-      const maritalStatus = safeStr(r.maritalStatus) || "Single";
-      const doj = parseDateFlexible(r.doj);
-
-      const salary = Number(safeStr(r.salary));
-
-      // Required fields
-      if (!isNonEmpty(schoolIdRaw)) errors.push("schoolId is missing");
-      if (!isNonEmpty(employeeId)) errors.push("employeeId is missing");
-      if (!isNonEmpty(name)) errors.push("name is missing");
-      if (!isNonEmpty(email)) errors.push("email is missing");
-      if (!isNonEmpty(password)) errors.push("password is missing");
-      if (!isNonEmpty(contactNumberRaw)) errors.push("contactNumber is missing");
-      if (!isNonEmpty(address)) errors.push("address is missing");
-      if (!isNonEmpty(role)) errors.push("role is missing");
-      if (!Number.isFinite(salary)) errors.push("salary is invalid");
-
-      // Only admin import
-      if (role !== "admin") errors.push("Only role=admin allowed for this import");
-
-      // existing checks (prefetched)
-      if (email && existingEmailSet.has(email)) errors.push(`User already exists for email: ${email}`);
-      if (employeeId && existingEmpIdSet.has(employeeId)) errors.push(`Employee already exists for employeeId: ${employeeId}`);
-
-      // resolve schoolId (ObjectId or code)
-      let schoolId = null;
-      if (isObjectIdLike(schoolIdRaw)) {
-        schoolId = schoolIdRaw;
-      } else {
-        const school = schoolCodeMap.get(schoolIdRaw);
-        if (!school?._id) errors.push(`Invalid schoolId/code: ${schoolIdRaw}`);
-        else schoolId = String(school._id);
-      }
-
-      // validate phone number numeric
-      const contactNumberDigits = contactNumberRaw.replace(/\D/g, "");
-      if (!contactNumberDigits) errors.push("contactNumber is invalid");
-
-      if (errors.length > 0) {
-        finalResultData += `Row : ${rowNum}, ${errors.join(", ")}.${NL}`;
-        rowNum++;
-        continue;
-      }
-
-      // Transaction: create User + Employee together
-      const session = await mongoose.startSession();
-
-      try {
-        await session.withTransaction(async () => {
-          // ✅ Encrypt password from Excel
-          const hashPassword = await bcrypt.hash(password, 10);
-
-          const createdUserArr = await User.create(
-            [
-              {
-                name,
-                email,
-                password: hashPassword,
-                role: "admin",
-                profileImage: "",
-              },
-            ],
-            { session }
-          );
-
-          const userId = createdUserArr[0]._id;
-
-          await Employee.create(
-            [
-              {
-                userId,
-                schoolId,
-                employeeId,
-                contactNumber: Number(contactNumberDigits),
-                address,
-                designation: "Admin",
-                qualification,
-                dob,
-                gender,
-                maritalStatus,
-                doj,
-                salary,
-                active: "Active",
-                remarks: "Imported",
-              },
-            ],
-            { session }
-          );
-        });
-
-        // prevent duplicate within same file
-        existingEmailSet.add(email);
-        existingEmpIdSet.add(employeeId);
-
-        finalResultData += `Row : ${rowNum}, Imported Successfully! employeeId: ${employeeId}, email: ${email}${NL}`;
-        successCount++;
-      } catch (e) {
-        finalResultData += `Row : ${rowNum}, Import failed: ${e?.message || "Unknown error"}${NL}`;
-      } finally {
-        await session.endSession();
-      }
-
-      rowNum++;
-    }
-
-    // optional: refresh totalEmployees cache
-    try {
-      if (redis) {
-        const totalEmployees = await Employee.countDocuments({ active: "Active" });
-        await redis.set("totalEmployees", String(totalEmployees), { EX: 60 });
-      }
-    } catch { }
-
-    return res.status(200).json({
-      success: true,
-      message: `[${successCount}] Admin employees imported successfully!`,
-      finalResultData,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      error: "server error in importing employees",
-      finalResultData,
-    });
-  }
-};*/
+*/}
 
 const getEmployees = async (req, res) => {
   try {
