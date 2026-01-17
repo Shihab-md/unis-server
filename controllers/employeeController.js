@@ -9,7 +9,7 @@ import Supervisor from "../models/Supervisor.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
- 
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 const NL = "\n";
@@ -61,8 +61,7 @@ const roleCodeMap = {
   teacher: "TR",
   hquser: "HQ",
   usthadh: "US",
-  warden: "WR",
-  staff: "ST",
+  warden: "WR"
 };
 
 const extractLast5DigitsFromSchoolCode = (schoolCode) => {
@@ -90,13 +89,14 @@ const generateEmployeeId = async ({ schoolCode, role }) => {
   return `${prefix}${nextSeq}`;
 };
 
-/* const addEmployee = async (req, res) => {
+const addEmployee = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const {
       name,
       email,
       schoolId,
-      employeeId,
       role,
       address,
       contactNumber,
@@ -110,80 +110,123 @@ const generateEmployeeId = async ({ schoolCode, role }) => {
       password,
     } = req.body;
 
-    const user = await User.findOne({ email: email });
-    if (user) {
-      return res
-        .status(400)
-        .json({ success: false, error: "User already registered in emp" });
+    const roleNorm = String(role || "").toLowerCase().trim();
+    const emailNorm = String(email || "").toLowerCase().trim();
+
+    if (!emailNorm || !password || !schoolId || !roleNorm || !name) {
+      return res.status(400).json({ success: false, error: "Missing required fields." });
     }
 
-    const hashPassword = await bcrypt.hash(password, 10);
+    // ✅ keep email unique check
+    const existingUser = await User.findOne({ email: emailNorm }).select("_id").lean();
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: "User already registered in emp" });
+    }
 
-    const newUser = new User({
-      name: toCamelCase(name),
-      email,
-      password: hashPassword,
-      role,
-      profileImage: "",
+    const schoolById = await School.findById(schoolId)
+      .select("_id code district state nameEnglish")
+      .lean();
+
+    if (!schoolById?._id) {
+      return res.status(404).json({ success: false, error: "Niswan Not exists" });
+    }
+
+    // ✅ Restrict: only ONE Active admin per school
+    if (roleNorm === "admin") {
+      const existingActiveAdmin = await Employee.findOne({
+        schoolId: schoolById._id,
+        active: "Active",
+      })
+        .populate({
+          path: "userId",
+          match: { role: "admin" }, // only admin users
+          select: "_id role",
+        })
+        .select("_id userId")
+        .lean();
+
+      // If a matching admin exists, userId will be populated (not null)
+      if (existingActiveAdmin?.userId) {
+        return res.status(400).json({
+          success: false,
+          error: "An active Admin already exists for this school. Please deactivate the existing Admin to add a new one.",
+        });
+      }
+    }
+
+    // ✅ auto-generate employeeId from school code + role
+    const employeeId = await generateEmployeeId({ schoolCode: schoolById.code, role: roleNorm });
+
+    // Optional: prevent duplicate employeeId (extra safety)
+    const existingEmp = await Employee.findOne({ employeeId }).select("_id").lean();
+    if (existingEmp) {
+      return res.status(400).json({ success: false, error: "EmployeeId already exists. Please try again." });
+    }
+
+    const hashPassword = await bcrypt.hash(String(password), 10);
+
+    let createdUserId = null;
+
+    await session.withTransaction(async () => {
+      const newUser = await User.create(
+        [
+          {
+            name: toCamelCase(name),
+            email: emailNorm,
+            password: hashPassword,
+            role: roleNorm,
+            profileImage: "",
+          },
+        ],
+        { session }
+      );
+
+      createdUserId = newUser[0]._id;
+
+      await Employee.create(
+        [
+          {
+            userId: createdUserId,
+            schoolId: schoolById._id,
+            employeeId,
+            contactNumber,
+            address: toCamelCase(address),
+            designation: toCamelCase(designation),
+            qualification: toCamelCase(qualification),
+            dob,
+            gender,
+            maritalStatus,
+            doj,
+            salary,
+            active: "Active", // ✅ ensure active set
+            remarks: "Created",
+          },
+        ],
+        { session }
+      );
     });
-    const savedUser = await newUser.save();
 
-    const schoolById = await School.findById({ _id: schoolId });
-    if (schoolById == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Niswan Not exists" });
-    }
+    // ✅ refresh redis count (best-effort)
+    try {
+      const redis = await getRedis();
+      const total = await Employee.countDocuments({ active: "Active" });
+      await redis.set("totalEmployees", String(total), { EX: 60 });
+    } catch { }
 
-    const employee = await Employee.findOne({ employeeId: employeeId });
-    if (employee) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Employee Id already found" });
-    }
-
-    const newEmployee = new Employee({
-      userId: savedUser._id,
-      schoolId: schoolById._id,
+    return res.status(200).json({
+      success: true,
+      message: "Employee created",
       employeeId,
-      contactNumber,
-      address: toCamelCase(address),
-      designation: toCamelCase(designation),
-      qualification: toCamelCase(qualification),
-      dob,
-      gender,
-      maritalStatus,
-      doj,
-      salary,
     });
-
-    await newEmployee.save();
-
-    const redis = await getRedis();
-    await redis.set("totalEmployees", String(await Employee.countDocuments({ active: "Active" })), { EX: 60 });
-
-    if (req.file) {
-      const fileBuffer = req.file.buffer;
-      const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
-        access: 'public',
-        contentType: 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-        allowOverwrite: true,
-      });
-
-      await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
-    }
-
-    return res.status(200).json({ success: true, message: "Employee created" });
   } catch (error) {
-    //savedUser.deleteOne();
     console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: "server error in adding employee" });
+    return res.status(500).json({ success: false, error: "server error in adding employee" });
+  } finally {
+    await session.endSession();
   }
-} */
+};
 
+{/*
 const addEmployee = async (req, res) => {
   try {
     const {
@@ -258,6 +301,7 @@ const addEmployee = async (req, res) => {
     return res.status(500).json({ success: false, error: "server error in adding employee" });
   }
 };
+*/}
 
 const importEmployeesData = async (req, res) => {
   let successCount = 0;
