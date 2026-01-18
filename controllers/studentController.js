@@ -395,7 +395,7 @@ const importStudentsData = async (req, res) => {
 
     if (mak) {
       const y = parseNumber(row.MakthabYear, 0);
-      if (y <= 0) return { error: "MakthabYear not given/invalid" };
+      if (y < 0) return { error: "MakthabYear not given/invalid" };
       return { courseName: "Makthab", yearCount: y };
     }
     if (mua) {
