@@ -33,7 +33,7 @@ const login = async (req, res) => {
       user = await User.findOne({ email }).select("_id name role password").lean();
     } else {
       // 2A) employeeId login
-      employee = await Employee.findOne({ employeeId: loginIdRaw })
+      employee = await Employee.findOne({ employeeId: loginIdRaw, active: "Active" })
         .select("userId employeeId schoolId")
         .lean();
 
@@ -41,7 +41,7 @@ const login = async (req, res) => {
         user = await User.findById(employee.userId).select("_id name role password").lean();
       } else {
         // 2B) supervisorId login (NEW)
-        supervisor = await Supervisor.findOne({ supervisorId: loginIdRaw })
+        supervisor = await Supervisor.findOne({ supervisorId: loginIdRaw, active: "Active" })
           .select("_id supervisorId userId")
           .lean();
 
@@ -326,7 +326,7 @@ const login = async (req, res) => {
   }
 };
  */}
- 
+
 const verify = (req, res) => res.status(200).json({ success: true, user: req.user });
 
 export { login, verify };
