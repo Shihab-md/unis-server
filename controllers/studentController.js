@@ -1736,7 +1736,7 @@ const getStudentsBySchool = async (req, res) => {
     const studentSelect =
       "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks about";
 
-    const studentsList = await Student.find({ schoolId: schoolId })
+    const studentsList = await Student.find({ schoolId: schoolId, active: "Active" })
       .select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
@@ -1889,7 +1889,8 @@ const getByFilter = async (req, res) => {
     // ----------------------------
     const studentQuery = { schoolId };
 
-    if (isValidParam(status)) studentQuery.active = status;
+    //if (isValidParam(status)) studentQuery.active = status;
+    studentQuery.active = isValidParam(status) && String(status).trim() ? status : "Active";
     //if (isValidParam(maritalStatus)) studentQuery.maritalStatus = maritalStatus;
     if (isValidParam(maritalStatus)) {
       studentQuery.maritalStatus = { $regex: `^${maritalStatus.trim()}$`, $options: "i" };
@@ -3364,10 +3365,10 @@ const deleteStudent = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const deleteStudent = await Student.findById({ _id: id })
-      .populate("userId", { password: 0, profileImage: 0 });
+    const deleteStudent = await Student.findById({ _id: id });
+      //.populate("userId", { password: 0, profileImage: 0 });
 
-    if (deleteStudent.userId && deleteStudent.userId._id) {
+    {/*if (deleteStudent.userId && deleteStudent.userId._id) {
       await User.findByIdAndDelete({ _id: deleteStudent.userId._id });
     }
     console.log("User data Successfully Deleted...")
@@ -3385,8 +3386,13 @@ const deleteStudent = async (req, res) => {
         console.log("Account data Successfully Deleted...")
       }
     }
+*/}
+    await Student.findByIdAndUpdate({ _id: deleteStudent._id }, {
+      active: "In-Active",
+      remarks: "Deleted",
+    })
 
-    await Student.findByIdAndDelete({ _id: deleteStudent._id });
+    //await Student.findByIdAndDelete({ _id: deleteStudent._id });
 
     const redis = await getRedis();
     await redis.set('totalStudents', await Student.countDocuments());
