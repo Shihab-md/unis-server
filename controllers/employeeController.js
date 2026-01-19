@@ -1063,7 +1063,7 @@ const updateEmployee = async (req, res) => {
       gender,
       maritalStatus,
       doj,
-      salary, role } = req.body;
+      salary, role, active } = req.body;
 
     const employee = await Employee.findById({ _id: id });
     if (!employee) {
@@ -1122,7 +1122,7 @@ const updateEmployee = async (req, res) => {
       gender,
       maritalStatus,
       doj,
-      salary,
+      salary, active
     })
 
     if (!updateEmployee || !updateUser) {
