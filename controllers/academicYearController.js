@@ -49,6 +49,41 @@ const getAcademicYears = async (req, res) => {
 const getAcademicYearsFromCache = async (req, res) => {
   try {
     const redis = await getRedis();
+
+    let academicYears = [];
+    try {
+      const cached = await redis.get("academicYears");
+      academicYears = cached ? JSON.parse(cached) : [];
+    } catch {
+      academicYears = [];
+    }
+
+    // ✅ Fallback to DB if cache empty (recommended)
+    if (!Array.isArray(academicYears) || academicYears.length === 0) {
+      academicYears = await AcademicYear.find()
+        .lean();
+
+      // ✅ refresh cache (best-effort)
+      try {
+        await redis.set("academicYears", JSON.stringify(academicYears), { EX: 60 * 10 }); // 10 min
+      } catch {
+        // ignore cache write errors
+      }
+    }
+
+    return res.status(200).json({ success: true, academicYears });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get academicYears server error" });
+  }
+};
+
+{/*
+const getAcademicYearsFromCache = async (req, res) => {
+  try {
+    const redis = await getRedis();
     const academicYears = JSON.parse(await redis.get('academicYears'));
     return res.status(200).json({ success: true, academicYears });
   } catch (error) {
@@ -57,6 +92,7 @@ const getAcademicYearsFromCache = async (req, res) => {
       .json({ success: false, error: "get academicYears server error" });
   }
 };
+*/}
 
 const getAcademicYear = async (req, res) => {
   const { id } = req.params;

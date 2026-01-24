@@ -5,6 +5,7 @@ import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
 import Numbering from "../models/Numbering.js";
 import getRedis from "../db/redis.js"
+import mongoose from "mongoose";
 import { toCamelCase } from "./commonController.js";
 
 const upload = multer({});
@@ -173,6 +174,355 @@ const getSchools = async (req, res) => {
     const userId = decoded._id;
     const userRole = decoded.role;
 
+    let filter = {};
+
+    if (userRole === "superadmin" || userRole === "hquser") {
+      filter = {};
+    } else if (userRole === "supervisor") {
+      const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
+      if (!supervisor?._id) return res.status(200).json({ success: true, schools: [] });
+      filter = { supervisorId: supervisor._id };
+    } else if (userRole === "admin") {
+      const employee = await Employee.findOne({ userId }).select("schoolId").lean();
+      if (!employee?.schoolId) return res.status(200).json({ success: true, schools: [] });
+      filter = { _id: employee.schoolId };
+    } else {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    // pagination
+    const hasPaging = req.query.page || req.query.limit;
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10), 1), 500);
+    const skip = (page - 1) * limit;
+
+    const pipeline = [
+      { $match: filter },
+
+      // ✅ Active student count + breakdown by course NAME
+      {
+        $lookup: {
+          from: "students",
+          let: { sid: "$_id" },
+          pipeline: [
+            // only Active students of this school
+            {
+              $match: {
+                $expr: { $eq: ["$schoolId", "$$sid"] },
+                active: "Active",
+              },
+            },
+
+            // take first courseId (if each student has one course)
+            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+
+            // group by courseId
+            {
+              $group: {
+                _id: "$courseId",
+                count: { $sum: 1 },
+              },
+            },
+
+            // lookup course name
+            {
+              $lookup: {
+                from: "courses",
+                localField: "_id",
+                foreignField: "_id",
+                as: "course",
+              },
+            },
+            { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+
+            // shape output
+            {
+              $project: {
+                _id: 0,
+                courseId: "$_id",
+                courseName: "$course.name",
+                count: 1,
+              },
+            },
+
+            // sort by courseName (optional)
+            { $sort: { courseName: 1 } },
+          ],
+          as: "studentCountsByCourse",
+        },
+      },
+
+      // total active students = sum counts
+      {
+        $addFields: {
+          studentCount: { $sum: "$studentCountsByCourse.count" },
+        },
+      },
+
+      // districtStateId populate
+      {
+        $lookup: {
+          from: "districtstates",
+          localField: "districtStateId",
+          foreignField: "_id",
+          as: "districtStateId",
+        },
+      },
+      { $unwind: { path: "$districtStateId", preserveNullAndEmptyArrays: true } },
+
+      // supervisorId -> supervisor doc
+      {
+        $lookup: {
+          from: "supervisors",
+          localField: "supervisorId",
+          foreignField: "_id",
+          as: "supervisorId",
+        },
+      },
+      { $unwind: { path: "$supervisorId", preserveNullAndEmptyArrays: true } },
+
+      // supervisorId.userId -> user name
+      {
+        $lookup: {
+          from: "users",
+          localField: "supervisorId.userId",
+          foreignField: "_id",
+          as: "supervisorUser",
+        },
+      },
+      { $unwind: { path: "$supervisorUser", preserveNullAndEmptyArrays: true } },
+
+      // shape supervisor like populate
+      {
+        $addFields: {
+          "supervisorId.userId": {
+            _id: "$supervisorUser._id",
+            name: "$supervisorUser.name",
+          },
+        },
+      },
+      { $project: { supervisorUser: 0 } },
+
+      // final fields
+      {
+        $project: {
+          code: 1,
+          nameEnglish: 1,
+          nameArabic: 1,
+          nameNative: 1,
+          address: 1,
+          city: 1,
+          contactNumber: 1,
+          active: 1,
+          supervisorId: 1,
+          districtStateId: { district: 1, state: 1 },
+
+          // ✅ counts
+          studentCount: 1,
+          studentCountsByCourse: 1, // [{ courseId, courseName, count }]
+        },
+      },
+
+      { $sort: { code: 1 } },
+    ];
+
+    if (hasPaging) pipeline.push({ $skip: skip }, { $limit: limit });
+
+    const schools = await School.aggregate(pipeline);
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get schools server error" });
+  }
+};
+
+const getBySchFilter = async (req, res) => {
+  const { supervisorId, districtStateId, schStatus } = req.params;
+
+  const isValidParam = (v) =>
+    v !== undefined && v !== null && String(v).trim() !== "" &&
+    v !== "null" && v !== "undefined";
+
+  const toStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
+
+  const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v));
+
+  try {
+    const baseMatch = {};
+
+    // ✅ supervisorId is stored as ObjectId → convert
+    if (isValidParam(supervisorId)) {
+      if (!isObjectId(supervisorId)) {
+        return res.status(400).json({ success: false, error: "Invalid supervisorId" });
+      }
+      baseMatch.supervisorId = new mongoose.Types.ObjectId(supervisorId);
+    }
+
+    // ✅ status normalize
+    if (isValidParam(schStatus)) {
+      baseMatch.active = toStr(schStatus);
+    }
+
+    // districtStateId can be ObjectId OR "District, State"
+    const dsRaw = toStr(districtStateId);
+    const dsIsObjId = isValidParam(dsRaw) && isObjectId(dsRaw);
+
+    if (dsIsObjId) {
+      baseMatch.districtStateId = new mongoose.Types.ObjectId(dsRaw);
+    }
+
+    // If user sends "Kerala, Kerala" we match after lookup
+    let dsDistrict = "";
+    let dsState = "";
+    if (isValidParam(dsRaw) && !dsIsObjId) {
+      // handle "Kerala, Kerala," and extra spaces
+      const parts = dsRaw
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      dsDistrict = parts[0] || "";
+      dsState = parts[1] || "";
+    }
+
+    const pipeline = [
+      { $match: baseMatch },
+
+      // ✅ districtStateId lookup FIRST (needed for text matching)
+      {
+        $lookup: {
+          from: "districtstates",
+          localField: "districtStateId",
+          foreignField: "_id",
+          as: "districtStateId",
+        },
+      },
+      { $unwind: { path: "$districtStateId", preserveNullAndEmptyArrays: true } },
+
+      // ✅ If district/state passed as TEXT, match here
+      ...(dsDistrict || dsState
+        ? [
+          {
+            $match: {
+              ...(dsDistrict ? { "districtStateId.district": dsDistrict } : {}),
+              ...(dsState ? { "districtStateId.state": dsState } : {}),
+            },
+          },
+        ]
+        : []),
+
+      // ✅ Active student count + breakdown by course NAME
+      {
+        $lookup: {
+          from: "students",
+          let: { sid: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$schoolId", "$$sid"] },
+                active: "Active",
+              },
+            },
+            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+            { $group: { _id: "$courseId", count: { $sum: 1 } } },
+            {
+              $lookup: {
+                from: "courses",
+                localField: "_id",
+                foreignField: "_id",
+                as: "course",
+              },
+            },
+            { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                courseId: "$_id",
+                courseName: "$course.name",
+                count: 1,
+              },
+            },
+            { $sort: { courseName: 1 } },
+          ],
+          as: "studentCountsByCourse",
+        },
+      },
+      { $addFields: { studentCount: { $sum: "$studentCountsByCourse.count" } } },
+
+      // ✅ supervisor populate
+      {
+        $lookup: {
+          from: "supervisors",
+          localField: "supervisorId",
+          foreignField: "_id",
+          as: "supervisorId",
+        },
+      },
+      { $unwind: { path: "$supervisorId", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "supervisorId.userId",
+          foreignField: "_id",
+          as: "supervisorUser",
+        },
+      },
+      { $unwind: { path: "$supervisorUser", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          "supervisorId.userId": {
+            _id: "$supervisorUser._id",
+            name: "$supervisorUser.name",
+          },
+        },
+      },
+      { $project: { supervisorUser: 0 } },
+
+      // final fields
+      {
+        $project: {
+          code: 1,
+          nameEnglish: 1,
+          nameArabic: 1,
+          nameNative: 1,
+          address: 1,
+          city: 1,
+          active: 1,
+          contactNumber: 1,
+          supervisorId: 1,
+          districtStateId: { district: 1, state: 1 },
+          studentCount: 1,
+          studentCountsByCourse: 1,
+        },
+      },
+
+      { $sort: { code: 1 } },
+    ];
+
+    const schools = await School.aggregate(pipeline);
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ success: false, error: "get schools by FILTER server error" });
+  }
+};
+
+{/*
+const getSchools = async (req, res) => {
+  console.log("getSchools called.")
+  try {
+    const auth = req.headers.authorization || "";
+    const parts = auth.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return res.status(401).json({ success: false, error: "Unauthorized Request" });
+    }
+
+    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
+    const userId = decoded._id;
+    const userRole = decoded.role;
+
     // Remove noisy logs (serverless performance)
     // console.log(userId + " , " + userRole);
 
@@ -249,6 +599,7 @@ const getSchools = async (req, res) => {
     return res.status(500).json({ success: false, error: "get schools server error" });
   }
 };
+*/}
 
 {/* 
   const getSchools = async (req, res) => {
@@ -363,6 +714,7 @@ const getSchools = async (req, res) => {
 
 */}
 
+{/*
 const getBySchFilter = async (req, res) => {
   const { supervisorId, districtStateId, schStatus } = req.params;
 
@@ -411,7 +763,7 @@ const getBySchFilter = async (req, res) => {
       .json({ success: false, error: "get schools by FILTER server error" });
   }
 };
-
+*/}
 {/*
 const getBySchFilter = async (req, res) => {
 
@@ -469,6 +821,41 @@ const getBySchFilter = async (req, res) => {
 const getSchoolsFromCache = async (req, res) => {
   try {
     const redis = await getRedis();
+
+    let schools = [];
+    try {
+      const cached = await redis.get("schools");
+      schools = cached ? JSON.parse(cached) : [];
+    } catch {
+      schools = [];
+    }
+
+    // ✅ Fallback to DB if cache empty (optional but recommended)
+    if (!Array.isArray(schools) || schools.length === 0) {
+      schools = await School.find()
+        .select("code nameEnglish nameArabic nameNative address city contactNumber active supervisorId districtStateId")
+        .sort({ code: 1 })
+        .lean();
+
+      // ✅ refresh cache (best-effort)
+      try {
+        await redis.set("schools", JSON.stringify(schools), { EX: 60 * 10 }); // 10 min
+      } catch {
+        // ignore cache write errors
+      }
+    }
+
+    return res.status(200).json({ success: true, schools });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get schools server error" });
+  }
+};
+
+{/*
+const getSchoolsFromCache = async (req, res) => {
+  try {
+    const redis = await getRedis();
     const schools = JSON.parse(await redis.get('schools'));
     return res.status(200).json({ success: true, schools });
   } catch (error) {
@@ -478,7 +865,7 @@ const getSchoolsFromCache = async (req, res) => {
       .json({ success: false, error: "get schools server error" });
   }
 };
-
+*/}
 const getSchool = async (req, res) => {
   try {
     const { id } = req.params;

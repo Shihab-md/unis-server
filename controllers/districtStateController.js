@@ -70,12 +70,49 @@ const getDistrictStates = async (req, res) => {
   }
 };
 
+{/*
 const getDistrictStatesFromCache = async (req, res) => {
   try {
     const redis = await getRedis();
     const districtStates = JSON.parse(await redis.get('districtStates'));
     return res.status(200).json({ success: true, districtStates });
   } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, error: "get district and States server error" });
+  }
+};
+*/}
+const getDistrictStatesFromCache = async (req, res) => {
+  try {
+    const redis = await getRedis();
+
+    let districtStates = [];
+    try {
+      const cached = await redis.get("districtStates");
+      districtStates = cached ? JSON.parse(cached) : [];
+    } catch {
+      districtStates = [];
+    }
+
+    // ✅ Fallback to DB if cache empty (recommended)
+    if (!Array.isArray(districtStates) || districtStates.length === 0) {
+      districtStates = await DistrictState.find()
+        .select("district state active")
+        .sort({ state: 1, district: 1 })
+        .lean();
+
+      // ✅ refresh cache (best-effort)
+      try {
+        await redis.set("districtStates", JSON.stringify(districtStates), { EX: 60 * 10 }); // 10 min
+      } catch {
+        // ignore cache write errors
+      }
+    }
+
+    return res.status(200).json({ success: true, districtStates });
+  } catch (error) {
+    console.log(error);
     return res
       .status(500)
       .json({ success: false, error: "get district and States server error" });

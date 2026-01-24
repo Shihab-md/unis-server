@@ -105,6 +105,123 @@ const addSupervisor = async (req, res) => {
 
 const getSupervisors = async (req, res) => {
   try {
+    // 1) Fetch supervisors
+    const supervisors = await Supervisor.find({ active: "Active" })
+      .sort({ supervisorId: 1 })
+      .select("supervisorId contactNumber active userId routeName jobType remarks")
+      .populate({ path: "userId", select: "name email role" })
+      .lean();
+
+    // 2) Count schools per supervisor
+    const schoolCounts = await School.aggregate([
+      { $match: { supervisorId: { $ne: null } } },
+      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+    ]);
+    const schoolCountMap = new Map(schoolCounts.map((c) => [String(c._id), c.count]));
+
+    // 3) Student counts per supervisor (Active only) + breakdown by course name
+    // ✅ FIX: exclude students without courseId so you don't get {count: xx} entry
+    const studentCounts = await School.aggregate([
+      { $match: { supervisorId: { $ne: null } } },
+
+      {
+        $lookup: {
+          from: "students",
+          let: { schId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$schoolId", "$$schId"] },
+                active: "Active",
+              },
+            },
+            // take first course (if one course per student)
+            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+
+            // ✅ FIX: ignore students with no course assigned
+            { $match: { courseId: { $ne: null } } },
+
+            { $project: { courseId: 1 } },
+          ],
+          as: "studentsTmp",
+        },
+      },
+
+      // Flatten
+      { $unwind: { path: "$studentsTmp", preserveNullAndEmptyArrays: false } },
+
+      // Group by supervisor + courseId
+      {
+        $group: {
+          _id: {
+            supervisorId: "$supervisorId",
+            courseId: "$studentsTmp.courseId",
+          },
+          count: { $sum: 1 },
+        },
+      },
+
+      // Lookup course name
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id.courseId",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+
+      // Group by supervisor to build array + total
+      {
+        $group: {
+          _id: "$_id.supervisorId",
+          studentCountsByCourse: {
+            $push: {
+              courseId: "$_id.courseId",
+              courseName: "$course.name",
+              count: "$count",
+            },
+          },
+          studentCount: { $sum: "$count" },
+        },
+      },
+
+      // Sort array by courseName (MongoDB 5.2+)
+      {
+        $addFields: {
+          studentCountsByCourse: {
+            $sortArray: { input: "$studentCountsByCourse", sortBy: { courseName: 1 } },
+          },
+        },
+      },
+    ]);
+
+    const studentCountMap = new Map(studentCounts.map((x) => [String(x._id), x]));
+
+    // 4) Attach counts to each supervisor
+    const result = supervisors.map((s) => {
+      const sid = String(s._id);
+      const st = studentCountMap.get(sid);
+
+      return {
+        ...s,
+        _schoolsCount: schoolCountMap.get(sid) || 0,
+        studentCount: st?.studentCount || 0,
+        studentCountsByCourse: st?.studentCountsByCourse || [],
+      };
+    });
+
+    return res.status(200).json({ success: true, supervisors: result });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get supervisors server error" });
+  }
+};
+
+{/*
+const getSupervisors = async (req, res) => {
+  try {
     // 1) Fetch supervisors (lean = faster)
     const supervisors = await Supervisor.find({ active: "Active" })
       .sort({ supervisorId: 1 })
@@ -135,6 +252,7 @@ const getSupervisors = async (req, res) => {
       .json({ success: false, error: "get supervisors server error" });
   }
 };
+*/}
 
 {/* const getSupervisors = async (req, res) => {
   try {
@@ -205,7 +323,7 @@ const getBySupFilter = async (req, res) => {
       query.jobType = supType;
     }
 
-    const finalQuery = { ...(query || {})};
+    const finalQuery = { ...(query || {}) };
 
     // Fetch supervisors (lean + select only needed)
     const supervisors = await Supervisor.find(finalQuery)
