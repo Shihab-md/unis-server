@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 const uploadDir = path.join(process.cwd(), "uploads", "proofs");
-fs.mkdirSync(uploadDir, { recursive: true });
+fs.mkdirSync(process.env.VERCEL ? "/tmp/uploads/proofs" : "uploads/proofs", { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
