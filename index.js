@@ -59,7 +59,7 @@ app.use('/api/report', reportRouter)
 // routes
 app.use("/api/fees", feesRoutes);
 app.use("/api/hq/fees", hqFeesRoutes);
-app.use("/api/upload", uploadRoutes);
+//app.use("/api/upload", uploadRoutes);
 
 app.use("/api/public", publicRoutes);
 
