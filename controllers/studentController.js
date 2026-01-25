@@ -9,14 +9,125 @@ import Course from "../models/Course.js";
 import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
+import FeeInvoice from "../models/FeeInvoice.js";
 import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
-import { toCamelCase } from "./commonController.js";
-import * as fs from 'fs';
-import * as path from 'path';
+import { toCamelCase, getNextNumber, createInvoiceFromStructure } from "./commonController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// 2) Upsert Account as "Fees Due" (payment happens later via HQ approval)
+const upsertFeesDueAccount = async ({
+  userId,
+  acYear,
+  academicId,
+  fees,
+  receiptLabel = "Admission",
+  remarks = "",
+  session,
+}) => {
+  if (!userId || !acYear || !academicId) throw new Error("Account keys missing (userId/acYear/academicId)");
+  const totalFees = Number(fees || 0);
+  if (!Number.isFinite(totalFees) || totalFees <= 0) throw new Error("Invalid fees for Account");
+
+  const receiptNumber = await getNextNumber({ name: "Receipt", prefix: "RCPT", pad: 7 });
+  //generateReceiptNumber({ session });
+
+  const filter = { userId, acYear, academicId };
+  const update = {
+    $set: {
+      receiptNumber: receiptNumber,
+      type: "fees",
+      fees: totalFees,
+      balance: totalFees,        // due (not paid)
+      paidDate: null,            // will be set by payment workflow if you use it
+      remarks: remarks || receiptLabel,
+    },
+    $setOnInsert: {
+      userId,
+      acYear,
+      academicId,
+    },
+  };
+
+  const doc = await Account.findOneAndUpdate(filter, update, { new: true, upsert: true, session });
+  return doc;
+};
+
+// 3) Create Fees Invoice (preferred). If FeeStructure not configured, fallback to simple single-head invoice.
+const createFeesInvoiceSafe = async ({
+  schoolId,
+  studentId,
+  userId,
+  acYear,
+  academicId,
+  courseId,
+  totalFees,
+  source = "ADMISSION",
+  createdBy,
+  session,
+}) => {
+  const fees = Number(totalFees || 0);
+  if (!Number.isFinite(fees) || fees <= 0) return null;
+
+  try {
+    // Preferred: uses FeeStructure + proper heads + numbering service
+    const inv = await createInvoiceFromStructure({
+      schoolId,
+      studentId,
+      userId,
+      acYear,
+      academicId,
+      courseId,
+      source,
+      createdBy,
+      session,
+    });
+    return inv;
+  } catch (e) {
+    // Fallback: create a simple invoice with 1 head (TOTAL)
+    const invoiceNo = await getNextNumber({ name: "Invoice", prefix: "INV", pad: 7 });
+
+    const items = [
+      {
+        headCode: "TOTAL",
+        headName: "Course Fees",
+        amount: fees,
+        discount: 0,
+        fine: 0,
+        netAmount: fees,
+        paidAmount: 0,
+      },
+    ];
+
+    const inv = await FeeInvoice.create(
+      [
+        {
+          invoiceNo,
+          schoolId,
+          studentId,
+          userId,
+          acYear,
+          academicId,
+          courseId,
+          source,
+          items,
+          total: fees,
+          paidTotal: 0,
+          balance: fees,
+          status: "ISSUED",
+          createdBy,
+          notes: e?.message ? `Fallback invoice: ${e.message}` : "Fallback invoice",
+        },
+      ],
+      { session }
+    );
+
+    return inv?.[0] || null;
+  }
+};
+
 
 const addStudent = async (req, res) => {
 
@@ -104,25 +215,6 @@ const addStudent = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Niswan Not exists" });
     }
-
-    {/*
-    let numbering = await Numbering.findOne({ name: "Roll" });
-    if (numbering == null) {
-      console.log("Numbering not available");
-      const newNumbering = new Numbering({
-        name: "Roll",
-        currentNumber: 0,
-      });
-      numbering = await newNumbering.save();
-    }
-
-    let nextNumber = numbering.currentNumber + 1;
-    let schoolCode = schoolById.code;
-    const rollNumber = schoolCode.replaceAll("-", "") + String(nextNumber).padStart(7, '0');
-
-    console.log("RollNumber : " + rollNumber)
-    await Numbering.findByIdAndUpdate({ _id: numbering._id }, { currentNumber: nextNumber });
- */}
 
     const numbering = await Numbering.findOneAndUpdate(
       { name: "Roll" },
@@ -268,20 +360,28 @@ const addStudent = async (req, res) => {
 
     let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
 
-    const newAccount = new Account({
+    // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
+    savedAccount = await upsertFeesDueAccount({
       userId: savedUser._id,
       acYear: academicYearById._id,
       academicId: savedAcademic._id,
-
-      receiptNumber: "Admission",
-      type: "fees",
       fees: totalFees,
-      paidDate: Date.now(),
-      balance: totalFees,
+      receiptLabel: "Admission",
       remarks: "Admission",
     });
 
-    savedAccount = await newAccount.save();
+    // ✅ Create Fees Invoice (preferred FeeStructure, fallback to single-head)
+    await createFeesInvoiceSafe({
+      schoolId: schoolById?._id || schoolId,
+      studentId: savedStudent?._id,
+      userId: savedUser?._id,
+      acYear: academicYearById?._id,
+      academicId: savedAcademic?._id,
+      courseId: savedAcademic?.courseId1 || courseId1,
+      totalFees,
+      source: "ADMISSION",
+      createdBy: req.user?._id,
+    });
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -450,16 +550,23 @@ const importStudentsData = async (req, res) => {
     const schoolMap = new Map();
     for (const s of schools) schoolMap.set(String(s.code), s);
 
-    // ---------- Prefetch duplicates by OLD rollNumber (remarks match) ----------
+    // ---------- Prefetch duplicates by OLD rollNumber (about OR remarks match) ----------
     const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
     const oldRemarks = oldRollNumbers.map((r) => `Old Roll Number : ${r}`);
 
     const existingStudents = oldRemarks.length
-      ? await Student.find({ about: { $in: oldRemarks } }).select("about").lean()
+      ? await Student.find({
+        $or: [{ about: { $in: oldRemarks } }, { remarks: { $in: oldRemarks } }],
+      })
+        .select("about remarks")
+        .lean()
       : [];
 
-    const existingOldRemarksSet = new Set(existingStudents.map((s) => String(s.about)));
-
+    const existingOldRemarksSet = new Set();
+    for (const s of existingStudents) {
+      if (s?.about) existingOldRemarksSet.add(String(s.about));
+      if (s?.remarks) existingOldRemarksSet.add(String(s.remarks));
+    }
     // ---------- Main loop ----------
     let row = 1;
 
@@ -588,11 +695,6 @@ const importStudentsData = async (req, res) => {
 
           // Create Academics
           let currentAcademicId = null;
-          //let lastAccYearId = AC_YEAR_IDS[0];
-
-          //for (let i = 0; i < finalYearCount; i++) {
-          //const accYearId = AC_YEAR_ID;
-          //let lastAccYearId = accYearId;
           const savedAcademic = await Academic.create(
             [
               {
@@ -614,23 +716,30 @@ const importStudentsData = async (req, res) => {
           currentAcademicId = savedAcademic[0]._id;
           //}
 
-          // Create Account
-          await Account.create(
-            [
-              {
-                userId,
-                acYear: AC_YEAR_ID,
-                academicId: currentAcademicId,
-                receiptNumber: "Admission",
-                type: "fees",
-                fees: fees,
-                paidDate: Date.now(),
-                balance: 0,
-                remarks: "Admission",
-              },
-            ],
-            { session }
-          );
+          // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
+          await upsertFeesDueAccount({
+            userId,
+            acYear: AC_YEAR_ID,
+            academicId: currentAcademicId,
+            fees: fees,
+            receiptLabel: "Admission",
+            remarks: "Admission",
+            session,
+          });
+
+          // ✅ Create Fees Invoice (preferred FeeStructure, fallback to single-head)
+          await createFeesInvoiceSafe({
+            schoolId: school._id,
+            studentId,
+            userId,
+            acYear: AC_YEAR_ID,
+            academicId: currentAcademicId,
+            courseId,
+            totalFees: fees,
+            source: "ADMISSION",
+            createdBy: req.user?._id,
+            session,
+          });
         });
 
         // mark old roll as imported (avoid duplicates in same file too)
@@ -669,984 +778,6 @@ const importStudentsData = async (req, res) => {
   }
 };
 
-{/*const importStudentsData = async (req, res) => {
-  const NL = "\r\n"; // ✅ Windows Notepad-friendly new line
-
-  let successCount = 0;
-  let finalResultData = "";
-
-  // ---- Hard-coded IDs (keep yours, but move them to config later) ----
-  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
-  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
-
-  // Year mapping for academic years (yearIndex -> acYearId)
-  const AC_YEAR_IDS = [
-    "694faa8b849cb7c7714b6c7d", // year 1, 2023-2024
-    "680485d9361ed06368c57f7c", // year 2, 2024-2025
-    "68612e92eeebf699b9d34a21", // year 3, 2025-2026
-  ];
-
-  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
-
-  const isNonEmpty = (v) =>
-    v !== undefined && v !== null && String(v).trim().length > 0;
-
-  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
-
-  const parseDob = (dobRaw) => {
-    // expects dd/mm/yyyy; falls back to 01/01/2000
-    const fallback = new Date(2000, 0, 1);
-
-    try {
-      const dob = safeStr(dobRaw);
-      if (!dob) return fallback;
-
-      const parts = dob.split("/");
-      if (parts.length !== 3) return fallback;
-
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-
-      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return fallback;
-      if (year < 1900 || year > 2100) return fallback;
-
-      const d = new Date(year, month, day);
-      if (Number.isNaN(d.getTime())) return fallback;
-      return d;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const parseNumber = (v, def = 0) => {
-    const s = safeStr(v);
-    if (!s) return def;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : def;
-  };
-
-  // ✅ New template: determine course + year using flags
-  const extractCourseYearFromRow = (row) => {
-    const mak = parseNumber(row.Makthab, 0) === 1;
-    const mua = parseNumber(row.Muallama, 0) === 1;
-    const mub = parseNumber(row.Muballiga, 0) === 1;
-
-    const selectedCount = [mak, mua, mub].filter(Boolean).length;
-
-    if (selectedCount === 0) {
-      return { error: "Course not selected (Makthab/Muallama/Muballiga should be 1)" };
-    }
-    if (selectedCount > 1) {
-      return { error: "Multiple courses selected. Only one course should be 1 per row." };
-    }
-
-    if (mak) {
-      const y = parseNumber(row.MakthabYear, 0);
-      if (y <= 0) return { error: "MakthabYear not given/invalid" };
-      return { courseName: "Makthab", yearCount: y };
-    }
-
-    if (mua) {
-      const y = parseNumber(row.MuallamaYear, 0);
-      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
-      return { courseName: "Muallama", yearCount: y };
-    }
-
-    // muballiga
-    const y = parseNumber(row.MuballigaYear, 0);
-    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
-    return { courseName: "Muballiga", yearCount: y };
-  };
-
-  try {
-    // Body may come as JSON string sometimes
-    const studentsDataList = Array.isArray(req.body)
-      ? req.body
-      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
-
-    if (!studentsDataList || studentsDataList.length <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please check the document. Students data not received.",
-      });
-    }
-
-    // ---------- Load Redis + courses map ----------
-    const redis = await getRedis();
-
-    let courses = [];
-    try {
-      const coursesCache = await redis.get("courses");
-      courses = coursesCache ? JSON.parse(coursesCache) : [];
-    } catch {
-      courses = [];
-    }
-
-    // Fallback to DB if Redis missing/empty
-    if (!Array.isArray(courses) || courses.length === 0) {
-      courses = await Course.find().select("_id name").lean();
-    }
-
-    const courseMap = new Map(); // name -> _id
-    for (const c of courses) {
-      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
-    }
-
-    // ---------- Prefetch schools by niswanCode ----------
-    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
-    const schools = await School.find({ code: { $in: niswanCodes } })
-      .select("_id code districtStateId")
-      .lean();
-
-    const schoolMap = new Map(); // code -> school doc
-    for (const s of schools) schoolMap.set(String(s.code), s);
-
-    // ---------- Prefetch existing users by rollNumber(email) ----------
-    const rollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
-    const existingUsers = await User.find({ email: { $in: rollNumbers } })
-      .select("email")
-      .lean();
-
-    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email)));
-
-    // ---------- Main loop ----------
-    let row = 1;
-
-    for (const studentData of studentsDataList) {
-      const errors = [];
-
-      const name = safeStr(studentData.name);
-      const rollNumber = safeStr(studentData.rollNumber);
-      const niswanCode = safeStr(studentData.niswanCode);
-      const feesVal = safeStr(studentData.fees);
-
-      // Mandatory fields
-      if (!name) errors.push("Name not given");
-      if (!rollNumber) errors.push("RollNumber not given");
-      if (!niswanCode) errors.push("NiswanCode not given");
-
-      // Existing user check (prefetched)
-      if (rollNumber && existingEmailSet.has(rollNumber)) {
-        errors.push(`User already registered. RollNumber : ${rollNumber}`);
-      }
-
-      // School check (prefetched)
-      const school = niswanCode ? schoolMap.get(niswanCode) : null;
-      if (!school) {
-        errors.push(`NiswanCode not available : ${niswanCode}`);
-      }
-
-      // ✅ New template: derive course + year
-      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
-      if (courseErr) errors.push(courseErr);
-
-      // Fees validation
-      if (!isNonEmpty(feesVal)) errors.push("Fees not given");
-
-      if (errors.length > 0) {
-        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
-        row++;
-        continue;
-      }
-
-      // Course validation
-      if (!VALID_COURSE_NAMES.has(courseName)) {
-        finalResultData += `Row : ${row}, Course not valid: ${courseName}.${NL}`;
-        row++;
-        continue;
-      }
-
-      // Resolve courseId from cache/db
-      let courseId = DEFAULT_COURSE_ID;
-      const foundCourseId = courseMap.get(courseName);
-      if (!foundCourseId) {
-        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
-        row++;
-        continue;
-      }
-      courseId = foundCourseId;
-
-      // Parse fees
-      const fees = parseNumber(feesVal, 0);
-      if (fees <= 0) {
-        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
-        row++;
-        continue;
-      }
-
-      // Create in a transaction (prevents partial data)
-      const session = await mongoose.startSession();
-
-      try {
-        await session.withTransaction(async () => {
-          // Create User
-          const hashPassword = await bcrypt.hash(rollNumber, 10);
-
-          const savedUser = await User.create(
-            [
-              {
-                name: toCamelCase(name),
-                email: rollNumber,
-                password: hashPassword,
-                role: "student",
-                profileImage: "",
-              },
-            ],
-            { session }
-          );
-
-          const userId = savedUser[0]._id;
-
-          // Create Student
-          const dobDate = parseDob(studentData.dob);
-
-          const savedStudent = await Student.create(
-            [
-              {
-                userId,
-                schoolId: school._id,
-                rollNumber,
-                doa: new Date(),
-                dob: dobDate,
-                gender: "Female",
-                maritalStatus: "Single",
-                idMark1: "-",
-                fatherName: safeStr(studentData.fatherName),
-                fatherNumber: safeStr(studentData.fatherNumber),
-                motherName: safeStr(studentData.motherName),
-                motherNumber: safeStr(studentData.motherNumber),
-                guardianName: safeStr(studentData.guardianName),
-                guardianNumber: safeStr(studentData.guardianNumber),
-                guardianRelation: safeStr(studentData.guardianRelation),
-                address: safeStr(studentData.address),
-                city: safeStr(studentData.city),
-                districtStateId: school.districtStateId,
-                hostel: "No",
-                active: "Active",
-                feesPaid: 0,
-                courses: [courseId],
-              },
-            ],
-            { session }
-          );
-
-          const studentId = savedStudent[0]._id;
-
-          // Create Academics (one per year)
-          let currentAcademicId = null;
-          let lastAccYearId = AC_YEAR_IDS[0];
-
-          for (let i = 0; i < yearCount; i++) {
-            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
-            lastAccYearId = accYearId;
-
-            const savedAcademic = await Academic.create(
-              [
-                {
-                  studentId,
-                  acYear: accYearId,
-                  instituteId1: INSTITUTE_ID,
-                  courseId1: courseId,
-                  refNumber1: rollNumber,
-                  year1: i + 1,
-                  fees1: fees,
-                  finalFees1: fees,
-                  status1: "Admission",
-                },
-              ],
-              { session }
-            );
-
-            if (i === 0) currentAcademicId = savedAcademic[0]._id;
-          }
-
-          // Create Account (for first academic)
-          await Account.create(
-            [
-              {
-                userId,
-                acYear: lastAccYearId,
-                academicId: currentAcademicId,
-                receiptNumber: "Admission",
-                type: "fees",
-                fees: fees,
-                paidDate: Date.now(),
-                balance: 0,
-                remarks: "Admission",
-              },
-            ],
-            { session }
-          );
-        });
-
-        // Mark rollNumber as existing now (avoid duplicates within same file)
-        existingEmailSet.add(rollNumber);
-
-        finalResultData += `Row : ${row}, RollNumber : ${rollNumber}, Imported Successfully!${NL}`;
-        successCount++;
-      } catch (txErr) {
-        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
-      } finally {
-        await session.endSession();
-      }
-
-      row++;
-    }
-
-    // Update redis count (with TTL so it refreshes)
-    const totalStudents = await Student.countDocuments();
-    try {
-      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
-    } catch {
-      await redis.set("totalStudents", String(totalStudents));
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: ` [${successCount}] Students data Imported Successfully!`,
-      finalResultData,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      error: "server error in adding student",
-      finalResultData,
-    });
-  }
-};*/}
-
-{/*const importStudentsData = async (req, res) => {
-  const NL = "\n"; // ✅ Notepad-friendly new line (Windows)
-
-  let successCount = 0;
-  let finalResultData = "";
-
-  // ---- Hard-coded IDs (keep yours, but move them to config later) ----
-  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
-  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
-
-  // Year mapping for academic years (yearIndex -> acYearId)
-  const AC_YEAR_IDS = [
-    "694faa8b849cb7c7714b6c7d", // year 1, 2023-2024
-    "680485d9361ed06368c57f7c", // year 2, 2024-2025
-    "68612e92eeebf699b9d34a21", // year 3, 2025-2026
-  ];
-
-  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
-
-  const isNonEmpty = (v) =>
-    v !== undefined && v !== null && String(v).trim().length > 0;
-
-  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
-
-  const parseDob = (dobRaw) => {
-    // expects dd/mm/yyyy; falls back to 01/01/2000
-    const fallback = new Date(2000, 0, 1);
-
-    try {
-      const dob = safeStr(dobRaw);
-      if (!dob) return fallback;
-
-      const parts = dob.split("/");
-      if (parts.length !== 3) return fallback;
-
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-
-      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return fallback;
-      if (year < 1900 || year > 2100) return fallback;
-
-      const d = new Date(year, month, day);
-      if (Number.isNaN(d.getTime())) return fallback;
-      return d;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const parseNumber = (v, def = 0) => {
-    const n = Number(String(v).trim());
-    return Number.isFinite(n) ? n : def;
-  };
-
-  try {
-    // Body may come as JSON string sometimes
-    const studentsDataList = Array.isArray(req.body)
-      ? req.body
-      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
-
-    if (!studentsDataList || studentsDataList.length <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please check the document. Students data not received.",
-      });
-    }
-
-    // ---------- Load Redis + courses map ----------
-    const redis = await getRedis();
-
-    let courses = [];
-    try {
-      const coursesCache = await redis.get("courses");
-      courses = coursesCache ? JSON.parse(coursesCache) : [];
-    } catch {
-      courses = [];
-    }
-
-    // Fallback to DB if Redis missing/empty
-    if (!Array.isArray(courses) || courses.length === 0) {
-      courses = await Course.find().select("_id name").lean();
-    }
-
-    const courseMap = new Map(); // name -> _id
-    for (const c of courses) {
-      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
-    }
-
-    // ---------- Prefetch schools by niswanCode ----------
-    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
-    const schools = await School.find({ code: { $in: niswanCodes } })
-      .select("_id code districtStateId")
-      .lean();
-
-    const schoolMap = new Map(); // code -> school doc
-    for (const s of schools) schoolMap.set(String(s.code), s);
-
-    // ---------- Prefetch existing users by rollNumber(email) ----------
-    const rollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
-    const existingUsers = await User.find({ email: { $in: rollNumbers } })
-      .select("email")
-      .lean();
-
-    const existingEmailSet = new Set(existingUsers.map((u) => String(u.email)));
-
-    // ---------- Main loop ----------
-    let row = 1;
-
-    for (const studentData of studentsDataList) {
-      const errors = [];
-
-      const name = safeStr(studentData.name);
-      const rollNumber = safeStr(studentData.rollNumber);
-      const niswanCode = safeStr(studentData.niswanCode);
-
-      const courseName = safeStr(studentData.course);
-      const yearVal = safeStr(studentData.year);
-      const feesVal = safeStr(studentData.fees);
-
-      // Mandatory fields
-      if (!name) errors.push("Name not given");
-      if (!rollNumber) errors.push("RollNumber not given");
-      if (!niswanCode) errors.push("NiswanCode not given");
-
-      // Existing user check (prefetched)
-      if (rollNumber && existingEmailSet.has(rollNumber)) {
-        errors.push(`User already registered. RollNumber : ${rollNumber}`);
-      }
-
-      // School check (prefetched)
-      const school = niswanCode ? schoolMap.get(niswanCode) : null;
-      if (!school) {
-        errors.push(`NiswanCode not available : ${niswanCode}`);
-      }
-
-      // Course validation
-      if (isNonEmpty(courseName)) {
-        if (!VALID_COURSE_NAMES.has(courseName)) {
-          errors.push("Course not valid");
-        }
-        if (!isNonEmpty(yearVal)) errors.push("Year not given");
-        if (!isNonEmpty(feesVal)) errors.push("Fees not given");
-      } else {
-        // Your current logic: skip if course not present
-        errors.push("Course details not given");
-      }
-
-      if (errors.length > 0) {
-        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
-        row++;
-        continue;
-      }
-
-      // Resolve courseId from cache/db
-      let courseId = DEFAULT_COURSE_ID;
-      const foundCourseId = courseMap.get(courseName);
-      if (!foundCourseId) {
-        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
-        row++;
-        continue;
-      }
-      courseId = foundCourseId;
-
-      // Parse yearCount and fees
-      let yearCount = parseNumber(yearVal, 0);
-      if (courseName === "Makthab") yearCount = 1;
-      if (yearCount <= 0) {
-        finalResultData += `Row : ${row}, Invalid Year value: ${yearVal}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const fees = parseNumber(feesVal, 0);
-      if (fees <= 0) {
-        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
-        row++;
-        continue;
-      }
-
-      // Create in a transaction (prevents partial data)
-      const session = await mongoose.startSession();
-
-      try {
-        await session.withTransaction(async () => {
-          // Create User
-          const hashPassword = await bcrypt.hash(rollNumber, 10);
-
-          const savedUser = await User.create(
-            [
-              {
-                name: toCamelCase(name),
-                email: rollNumber,
-                password: hashPassword,
-                role: "student",
-                profileImage: "",
-              },
-            ],
-            { session }
-          );
-
-          const userId = savedUser[0]._id;
-
-          // Create Student
-          const dobDate = parseDob(studentData.dob);
-
-          const savedStudent = await Student.create(
-            [
-              {
-                userId,
-                schoolId: school._id,
-                rollNumber,
-                doa: new Date(),
-                dob: dobDate,
-                gender: "Female",
-                maritalStatus: "Single",
-                idMark1: "-",
-                fatherName: safeStr(studentData.fatherName),
-                fatherNumber: safeStr(studentData.fatherNumber),
-                motherName: safeStr(studentData.motherName),
-                motherNumber: safeStr(studentData.motherNumber),
-                guardianName: safeStr(studentData.guardianName),
-                guardianNumber: safeStr(studentData.guardianNumber),
-                guardianRelation: safeStr(studentData.guardianRelation),
-                address: safeStr(studentData.address),
-                city: safeStr(studentData.city),
-                districtStateId: school.districtStateId,
-                hostel: "No",
-                active: "Active",
-                feesPaid: 0,
-                courses: [courseId],
-              },
-            ],
-            { session }
-          );
-
-          const studentId = savedStudent[0]._id;
-
-          // Create Academics (one per year)
-          let currentAcademicId = null;
-          let lastAccYearId = AC_YEAR_IDS[0];
-
-          for (let i = 0; i < yearCount; i++) {
-            const accYearId = AC_YEAR_IDS[i] || AC_YEAR_IDS[AC_YEAR_IDS.length - 1];
-            lastAccYearId = accYearId;
-
-            const savedAcademic = await Academic.create(
-              [
-                {
-                  studentId,
-                  acYear: accYearId,
-                  instituteId1: INSTITUTE_ID,
-                  courseId1: courseId,
-                  refNumber1: rollNumber,
-                  year1: i + 1,
-                  fees1: fees,
-                  finalFees1: fees,
-                  status1: "Admission",
-                },
-              ],
-              { session }
-            );
-
-            if (i === 0) currentAcademicId = savedAcademic[0]._id;
-          }
-
-          // Create Account (for first academic)
-          await Account.create(
-            [
-              {
-                userId,
-                acYear: lastAccYearId, // keep your current behavior (latest used)
-                academicId: currentAcademicId,
-                receiptNumber: "Admission",
-                type: "fees",
-                fees: fees,
-                paidDate: Date.now(),
-                balance: 0,
-                remarks: "Admission",
-              },
-            ],
-            { session }
-          );
-        });
-
-        // Mark rollNumber as existing now (avoid duplicates within same file)
-        existingEmailSet.add(rollNumber);
-
-        finalResultData += `Row : ${row}, RollNumber : ${rollNumber}, Imported Successfully!${NL}`;
-        successCount++;
-      } catch (txErr) {
-        // Transaction rollback happens automatically
-        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
-      } finally {
-        await session.endSession();
-      }
-
-      row++;
-    }
-
-    // Update redis count (with TTL so it refreshes)
-    const totalStudents = await Student.countDocuments();
-    try {
-      // node-redis supports options
-      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
-    } catch {
-      await redis.set("totalStudents", String(totalStudents));
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: ` [${successCount}] Students data Imported Successfully!`,
-      finalResultData,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      error: "server error in adding student",
-      finalResultData,
-    });
-  }
-};
-
-{/*
-const importStudentsData = async (req, res) => {
-
-  console.log("Import student data - start");
-
-  let successCount = 0;
-  let finalResultData = "";
-  let savedUser;
-  let savedStudent;
-  let savedAcademic;
-  let savedAccount;
-  try {
-    const studentsDataList = req.body;
-
-    console.log("Student data import row count : " + studentsDataList.length)
-    if (!studentsDataList || studentsDataList.length <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Please check the document. Students data not received." });
-    }
-
-    let row = 1;
-    let resultData = "";
-    const redis = await getRedis();
-    const courses = JSON.parse(await redis.get('courses'));
-    for (const studentData of studentsDataList) {
-      console.log("Iteration : " + row + " / " + studentsDataList.length);
-
-      // Check Mandatory fields.
-      if (!studentData.name || studentData.name === "") {
-        resultData += ", Name not given";
-      }
-      if (!studentData.rollNumber || studentData.rollNumber === "") {
-        resultData += ", RollNumber not given";
-      }
-      if (!studentData.niswanCode || studentData.niswanCode === "") {
-        resultData += ", NiswanCode not given";
-      }
-      //  if (!studentData.dob || studentData.dob === "") {
-      //    resultData += ", DOB not given";
-      //  }
-      //if (!studentData.district || studentData.district === "") {
-      //  resultData += ", District not given";
-      //}
-      if (studentData.course) {
-        if (!(studentData.course === "Muballiga" || studentData.course === "Muallama" || studentData.course === "Makthab")) {
-          resultData += ", Course not given";
-        }
-        if (!studentData.year || studentData.year === "") {
-          resultData += ", Year not given";
-        }
-        if (!studentData.fees || studentData.fees === "") {
-          resultData += ", Fees not given";
-        }
-      }
-
-      const user = await User.findOne({ email: studentData.rollNumber });
-      if (user) {
-        resultData = resultData + ", User already registered. RollNumber : " + studentData.rollNumber;
-      }
-
-      const school = await School.findOne({ code: studentData.niswanCode });
-      if (school == null) {
-        resultData = resultData + ", NiswanCode not available : " + studentData.niswanCode;
-      }
-
-      // If any error found, continue to next record.
-      if (resultData != "") {
-        finalResultData += "\nRow : " + row + resultData + ". \n";
-        resultData = "";
-        row++;
-        console.log("Error found. SO Skipped")
-        continue;
-      }
-
-      // Create User.
-      const hashPassword = await bcrypt.hash(studentData.rollNumber, 10);
-      const newUser = new User({
-        name: toCamelCase(studentData.name),
-        email: studentData.rollNumber,
-        password: hashPassword,
-        role: "student",
-        profileImage: "",
-      });
-
-      savedUser = await newUser.save();
-      if (!savedUser) {
-        finalResultData += "\nRow : " + row + ", Student registration failed. \n";
-        resultData = "";
-        row++;
-        continue;
-      }
-
-      //const redis = await getRedis();
-      //const courses = JSON.parse(await redis.get('courses'));
-      let courseId = "680cf72e79e49fb103ddb97c";
-      if (studentData.course) {
-        //courseId = courses.filter(course => course.name === studentData.course).map(course => course._id);
-        const course = courses.find(c => c.name === studentData.course);
-        //console.log("courseId - " + courseId)
-        if (!course) {
-          finalResultData += "\nRow : " + row + ", Course not found. Course Name : " + studentData.course;
-          resultData = "";
-          row++;
-
-          if (savedUser != null) {
-            await User.findByIdAndDelete({ _id: savedUser._id });
-            console.log("User data rollback completed.");
-          }
-
-          continue;
-        }
-        const courseId = course._id;
-        const coursesArray = [courseId];
-
-        let parts;
-        try {
-          parts = studentData.dob && studentData.dob != "" ? studentData.dob.split('/') : "1/1/2000".split('/');
-        } catch {
-          parts = "1/1/2000".split('/');
-        }
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1; // Subtract 1 for 0-indexed month
-        const year = parseInt(parts[2], 10);
-
-        // Create Student data.
-        const newStudent = new Student({
-          userId: savedUser._id,
-          schoolId: school._id,
-          rollNumber: studentData.rollNumber,
-          doa: new Date(),
-          dob: new Date(year, month, day),
-          gender: "Female",
-          maritalStatus: "Single",
-          idMark1: "-",
-          fatherName: studentData.fatherName ? studentData.fatherName : "",
-          fatherNumber: studentData.fatherNumber ? studentData.fatherNumber : "",
-          motherName: studentData.motherName ? studentData.motherName : "",
-          motherNumber: studentData.motherNumber ? studentData.motherNumber : "",
-          guardianName: studentData.guardianName ? studentData.guardianName : "",
-          guardianNumber: studentData.guardianNumber ? studentData.guardianNumber : "",
-          guardianRelation: studentData.guardianRelation ? studentData.guardianRelation : "",
-          address: studentData.address,
-          city: studentData.city,
-          districtStateId: school.districtStateId,
-          hostel: "No",
-          active: studentData.course ? "Active" : "Graduated",
-          courses: coursesArray
-        });
-
-        savedStudent = await newStudent.save();
-        if (!savedStudent) {
-          finalResultData += "\nRow : " + row + ", Student registration failed.";
-          resultData = "";
-          row++;
-          continue;
-        }
-
-        console.log("Student registered...")
-      } else {
-        finalResultData += "\nRow : " + row + ", Course details not given.";
-        resultData = "";
-        row++;
-
-        if (savedUser != null) {
-          await User.findByIdAndDelete({ _id: savedUser._id });
-          console.log("User data rollback completed.");
-        }
-
-        continue;
-      }
-
-      const instituteId = "67fbba7bcd590bacd4badef0";
-
-      let yearCount = studentData.year;
-      if (studentData.course === "Makthab") {
-        yearCount = 1;
-      }
-
-      let currentAcademicId;
-      // year 1, 2023-2024
-      let accYearId = "694faa8b849cb7c7714b6c7d";
-      for (let i = 0; i < yearCount; i++) {
-
-        if (i == 1) {
-          // year 2, 2024-2025
-          accYearId = "680485d9361ed06368c57f7c";
-        } if (i == 2) {
-          // year 3, 2025-2026
-          accYearId = "68612e92eeebf699b9d34a21";
-        }
-
-        const newAcademic = new Academic({
-          studentId: savedStudent._id,
-          acYear: accYearId,
-
-          instituteId1: instituteId,
-          courseId1: courseId,
-          refNumber1: studentData.rollNumber,
-          year1: i + 1,
-          fees1: studentData.fees,
-          finalFees1: studentData.fees,
-          status1: "Admission"
-        });
-
-        savedAcademic = await newAcademic.save();
-        if (!savedAcademic) {
-          finalResultData += "\nRow : " + row + ", Student Academic registration failed. AC year : " + accYearId;
-          resultData = "";
-          row++;
-
-          if (savedUser != null) {
-            await User.findByIdAndDelete({ _id: savedUser._id });
-            console.log("User data rollback completed.");
-          }
-
-          continue;
-        }
-
-        if (i == 0) {
-          currentAcademicId = savedAcademic._id;
-        }
-      }
-
-      console.log("Academic registered...")
-
-      const newAccount = new Account({
-        userId: savedUser._id,
-        acYear: accYearId,
-        academicId: currentAcademicId,
-
-        receiptNumber: "Admission",
-        type: "fees",
-        fees: studentData.fees,
-        paidDate: Date.now(),
-        balance: 0,
-        remarks: "Admission",
-      });
-
-      savedAccount = await newAccount.save();
-      if (!savedAccount) {
-        finalResultData += "\nRow : " + row + ", Account registration failed. AC year : " + accYearId;
-        resultData = "";
-        row++;
-
-        if (savedUser != null) {
-          await User.findByIdAndDelete({ _id: savedUser._id });
-          console.log("User data rollback completed.");
-        }
-
-        continue;
-      }
-
-      console.log("Account registered...")
-
-      //const coursesArray = [courseId];
-      //await Student.findByIdAndUpdate({ _id: savedStudent._id }, { courses: coursesArray });
-
-      finalResultData += "\nRow : " + row + ", RollNumber : " + studentData.rollNumber + ", Imported Successfully!";
-      row++;
-      successCount++;
-      console.log("Success Count : " + successCount);
-    }
-
-    //  let tempFilePath = path.join('/tmp', 'Import_data_Result.txt');
-    //  fs.writeFileSync(tempFilePath, finalResultData);
-
-    await redis.set('totalStudents', await Student.countDocuments());
-
-    console.log("Import student data - end NORMAL \n" + finalResultData);
-    return res.status(200)
-      .json({ success: true, message: " [" + successCount + "] Students data Imported Successfully!", finalResultData: finalResultData });
-
-  } catch (error) {
-    console.log("Import student data - end ERROR \n" + finalResultData);
-    console.log(error);
-
-    if (savedUser != null) {
-      await User.findByIdAndDelete({ _id: savedUser._id });
-      console.log("User data rollback completed.");
-    }
-
-    if (savedStudent != null) {
-      const academicList = await Academic.find({ studentId: savedStudent._id })
-      academicList.forEach(async academic =>
-        await Academic.findByIdAndDelete({ _id: academic._id })
-      );
-      console.log("Academic data rollback completed.");
-
-      const account = await Account.find({ userId: savedUser._id });
-      if (!account) {
-        await Account.findByIdAndDelete({ _id: account._id });
-        console.log("Account data rollback completed.");
-      }
-      await Student.findByIdAndDelete({ _id: savedStudent._id });
-      console.log("Student data rollback completed.");
-    }
-
-    return res
-      .status(500)
-      .json({ success: false, error: "server error in adding student", finalResultData: finalResultData });
-  }
-};
-*/}
-
-// POST body: { studentIds: ["id1","id2", ...] }
 const markFeesPaid = async (req, res) => {
   try {
     const { studentIds } = req.body;
@@ -1708,25 +839,6 @@ const getStudents = async (req, res) => {
   }
 };
 
-{/*
-const getStudents = async (req, res) => {
-  try {
-    console.log("getStudents called : ");
-
-    const students = await Student.find().sort({ 'schoolId.code': 1, rollNumber: 1 })
-      .populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId")
-      .populate("districtStateId");
-    //  console.log(students);
-    return res.status(200).json({ success: true, students });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get students List server error" });
-  }
-};
-*/}
-
 const getStudentsBySchool = async (req, res) => {
 
   const { schoolId } = req.params;
@@ -1753,31 +865,6 @@ const getStudentsBySchool = async (req, res) => {
       }
       return s;
     });
-
-    {/*}  let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
-    if (new Date().getMonth() + 1 >= 4) {
-      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
-    }
-
-    let acadYear = await AcademicYear.findOne({ acYear: accYear });
-    if (!acadYear) {
-      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
-      acadYear = await AcademicYear.findOne({ acYear: accYear });
-      if (!acadYear) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Academic Year Not found : " + accYear });
-      }
-    }
-
-    for (const student of students) {
-      const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
-        .populate("courseId1");
-      if (academic) {
-        student._course = academic.courseId1.name;
-        student.toObject({ virtuals: true });
-      }
-    } */}
 
     return res.status(200).json({ success: true, students });
 
@@ -1888,10 +975,7 @@ const getByFilter = async (req, res) => {
     // 1) Build Student query
     // ----------------------------
     const studentQuery = { schoolId };
-
-    //if (isValidParam(status)) studentQuery.active = status;
     studentQuery.active = isValidParam(status) && String(status).trim() ? status : "Active";
-    //if (isValidParam(maritalStatus)) studentQuery.maritalStatus = maritalStatus;
     if (isValidParam(maritalStatus)) {
       studentQuery.maritalStatus = { $regex: `^${maritalStatus.trim()}$`, $options: "i" };
     }
@@ -1966,8 +1050,6 @@ const getByFilter = async (req, res) => {
       .lean();
 
     const students = studentsMap.map((s) => {
-      // show only if feesPaid === 1 (or true)
-      //const isPaid = s.feesPaid === 1 || s.feesPaid === true || s.feesPaid === "1";
       const isPaid = Number(s.feesPaid) === 1;
       if (!isPaid) {
         const { rollNumber, ...rest } = s;
@@ -1984,114 +1066,6 @@ const getByFilter = async (req, res) => {
       .json({ success: false, error: "get students by FILTER server error" });
   }
 }
-
-{/*
-const getByFilter = async (req, res) => {
-
-  const { schoolId, courseId, status, acYear, maritalStatus, hosteller, year, instituteId, courseStatus } = req.params;
-
-  console.log("getByFilter : " + schoolId + ", " + courseId + ",  " + status + ",  "
-    + acYear + ",  " + maritalStatus + ",  " + hosteller + ",  " + year + ",  " + instituteId + ", " + courseStatus);
-
-  try {
-
-    let filterQuery = Student.find();
-    filterQuery = filterQuery.where('schoolId').eq(schoolId);
-    //filterQuery.push({ schoolId: schoolId });
-
-    if (status && status?.length > 0 && status != 'null' && status != 'undefined') {
-      console.log("Status Added : " + status);
-      filterQuery = filterQuery.where('active').eq(status);
-      //filterQuery.push({ active: status });
-    }
-
-    if (maritalStatus && maritalStatus?.length > 0 && maritalStatus != 'null' && maritalStatus != 'undefined') {
-      console.log("maritalStatus Added : " + maritalStatus);
-      filterQuery = filterQuery.where('maritalStatus').eq(maritalStatus);
-      //filterQuery.push({ maritalStatus: maritalStatus });
-    }
-
-    if (hosteller && hosteller?.length > 0 && hosteller != 'null' && hosteller != 'undefined') {
-      console.log("hosteller Added : " + maritalStatus);
-      filterQuery = filterQuery.where('hostel').eq(hosteller);
-      //filterQuery.push({ hostel: hosteller });
-    }
-
-    if ((courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined')
-      || (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined')
-      || (year && year?.length > 0 && year != 'null' && year != 'undefined')
-      || (courseStatus && courseStatus?.length > 0 && courseStatus != 'null' && courseStatus != 'undefined')) {
-
-      console.log("courseId Added : " + courseId);
-      console.log("acYear Added : " + acYear);
-      console.log("Year Added : " + year);
-      console.log("courseStatus Added : " + courseStatus);
-
-      let academicQuery = [];
-
-      if (courseId && courseId?.length > 0 && courseId != 'null' && courseId != 'undefined') {
-        const orCourseConditions = [];
-        orCourseConditions.push({ courseId1: courseId });
-        orCourseConditions.push({ courseId2: courseId });
-        orCourseConditions.push({ courseId3: courseId });
-        orCourseConditions.push({ courseId4: courseId });
-        orCourseConditions.push({ courseId5: courseId });
-        //academicQuery.$or = orCourseConditions;
-        academicQuery.push({ $or: orCourseConditions });
-      }
-
-      if (acYear && acYear?.length > 0 && acYear != 'null' && acYear != 'undefined') {
-        //academicQuery.acYear = { $eq: acYear };
-        academicQuery.push({ acYear: acYear });
-      }
-
-      if (year && year?.length > 0 && year != 'null' && year != 'undefined') {
-        const orConditions = [];
-        orConditions.push({ year1: year });
-        orConditions.push({ year3: year });
-        //academicQuery.$or = orConditions;
-        academicQuery.push({ $or: orConditions });
-      }
-
-      if (courseStatus && courseStatus?.length > 0 && courseStatus != 'null' && courseStatus != 'undefined') {
-        const orCourseStatusConditions = [];
-        orCourseStatusConditions.push({ status1: courseStatus });
-        orCourseStatusConditions.push({ status2: courseStatus });
-        orCourseStatusConditions.push({ status3: courseStatus });
-        orCourseStatusConditions.push({ status4: courseStatus });
-        orCourseStatusConditions.push({ status5: courseStatus });
-        //academicQuery.$or = orCourseStatusConditions;
-        academicQuery.push({ $or: orCourseStatusConditions });
-      }
-
-      const academics = await Academic.find({ $and: academicQuery });
-      let studentIds = [];
-      academics.forEach(academic => studentIds.push(academic.studentId));
-      console.log("Student Ids : " + studentIds)
-      filterQuery = filterQuery.where('_id').in(studentIds);
-      //filterQuery.push({ hostel: hosteller });
-    }
-
-    filterQuery.sort({ rollNumber: 1 });
-    filterQuery.populate("userId", { password: 0, profileImage: 0 })
-      .populate("schoolId")
-      .populate("districtStateId")
-      .populate("courses");
-
-    // console.log(filterQuery);
-
-    const students = await filterQuery.exec();
-
-    console.log("Students : " + students?.length)
-    return res.status(200).json({ success: true, students });
-  } catch (error) {
-    console.log(error)
-    return res
-      .status(500)
-      .json({ success: false, error: "get students by FILTER server error" });
-  }
-};
-*/}
 
 const getStudent = async (req, res) => {
   const { id } = req.params;
@@ -2138,62 +1112,6 @@ const getStudent = async (req, res) => {
     return res.status(500).json({ success: false, error: "get student by ID server error" });
   }
 };
-
-/*
-const getStudent = async (req, res) => {
-  const { id } = req.params;
-
-  console.log("getStudent : " + id);
-
-  try {
-    let student = await Student.findById({ _id: id })
-      .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" })
-      .populate({ path: "courses", select: "name type fees years code" })
-      .populate({ path: "districtStateId", select: "district state" })
-      .lean();
-
-    if (!student) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Student data not found." });
-    }
-
-    const academics = await Academic.find({ studentId: student._id })
-      .populate({ path: 'acYear', select: '_id acYear' })
-      .populate({ path: 'instituteId1', select: '_id code name' })
-      .populate({ path: 'courseId1', select: '_id iCode name' })
-      .populate({ path: 'instituteId2', select: '_id code name' })
-      .populate({ path: 'courseId2', select: '_id iCode name' })
-      .populate({ path: 'instituteId3', select: '_id code name' })
-      .populate({ path: 'courseId3', select: '_id iCode name' })
-      .populate({ path: 'instituteId4', select: '_id code name' })
-      .populate({ path: 'courseId4', select: '_id iCode name' })
-      .populate({ path: 'instituteId5', select: '_id code name' })
-      .populate({ path: 'courseId5', select: '_id iCode name' })
-
-    //  if (!academics) {
-    //    return res
-    //      .status(404)
-    //      .json({ success: false, error: "Academic details Not found : " + student._id + ", " + accYear });
-    //  }
-
-    student._academics = academics;
-    student.toObject({ virtuals: true });
-
-    if (student?.feesPaid === 0) {
-      student.rollNumber = "-"
-    }
-
-    return res.status(200).json({ success: true, student });
-  } catch (error) {
-    console.log(error)
-    return res
-      .status(500)
-      .json({ success: false, error: "get student by ID server error" });
-  }
-}
-*/
 
 const getStudentForEdit = async (req, res) => {
   const { id } = req.params;
@@ -2278,87 +1196,6 @@ const getStudentForEdit = async (req, res) => {
   }
 };
 
-/*
-const getStudentForEdit = async (req, res) => {
-  const { id } = req.params;
-
-  console.log("getStudentForEdit : " + id);
-
-  try {
-    let student = await Student.findById({ _id: id })
-      .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" })
-      .populate({ path: "districtStateId", select: "district state" })
-      .populate({ path: "courses", select: "name type fees years code" })
-      .lean();
-
-    if (!student) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Student data not found." });
-    }
-
-    if (student?.feesPaid === 0) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Sorry. Could not Update. (Fees not Paid)" });
-    }
-
-    let accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
-    if (new Date().getMonth() + 1 >= 4) {
-      accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
-    }
-
-    let acadYear = await AcademicYear.findOne({ acYear: accYear });
-    if (!acadYear) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic Year Not found : " + accYear });
-    }
-
-    console.log("Student : " + student._id + ", AC Year : " + acadYear._id);
-
-    /*const academic = await Academic.findOne({ studentId: student._id, acYear: acadYear._id })
-      .populate({ path: 'acYear', select: '_id acYear' })
-      .populate({ path: 'instituteId1', select: '_id code name' })
-      .populate({ path: 'courseId1', select: '_id iCode name' })
-      .populate({ path: 'instituteId2', select: '_id code name' })
-      .populate({ path: 'courseId2', select: '_id iCode name' })
-      .populate({ path: 'instituteId3', select: '_id code name' })
-      .populate({ path: 'courseId3', select: '_id iCode name' })
-      .populate({ path: 'instituteId4', select: '_id code name' })
-      .populate({ path: 'courseId4', select: '_id iCode name' })
-      .populate({ path: 'instituteId5', select: '_id code name' })
-      .populate({ path: 'courseId5', select: '_id iCode name' });
-*/
-/*   const academic = await Academic.find({ studentId: student._id })
-     .sort({ updatedAt: -1 }).limit(1)
-     .populate({ path: 'acYear', select: '_id acYear' })
-     .populate({ path: 'instituteId1', select: '_id code name' })
-     .populate({ path: 'courseId1', select: '_id iCode name' })
-     .populate({ path: 'instituteId2', select: '_id code name' })
-     .populate({ path: 'courseId2', select: '_id iCode name' })
-     .populate({ path: 'instituteId3', select: '_id code name' })
-     .populate({ path: 'courseId3', select: '_id iCode name' })
-     .populate({ path: 'instituteId4', select: '_id code name' })
-     .populate({ path: 'courseId4', select: '_id iCode name' })
-     .populate({ path: 'instituteId5', select: '_id code name' })
-     .populate({ path: 'courseId5', select: '_id iCode name' });
-
-   //console.log(academic[0])
-
-   student._academics = academic[0] ? [academic[0]] : [];
-   student.toObject({ virtuals: true });
-
-   return res.status(200).json({ success: true, student });
- } catch (error) {
-   console.log(error)
-   return res
-     .status(500)
-     .json({ success: false, error: "get student by ID server error" });
- }
-};
-*/
 const getAcademic = async (req, res) => {
 
   const { studentId, acaYear } = req.params;
@@ -2419,7 +1256,6 @@ const getStudentForPromote = async (req, res) => {
       .populate({ path: "schoolId", select: "code nameEnglish" })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "districtStateId", select: "district state" });
-    //.populate({ path: "courses", select: "name type fees years code" });
 
     if (!student) {
       return res
@@ -2748,11 +1584,12 @@ const updateStudent = async (req, res) => {
           academicId: academicDoc._id,
         };
 
+        // ✅ Fees Due (do NOT mark paid here)
         const accountUpdate = {
           receiptNumber: "Admission",
           type: "fees",
           fees: totalFees,
-          paidDate: Date.now(),
+          paidDate: null,
           balance: totalFees,
           remarks: "Admission-updated",
         };
@@ -2765,6 +1602,33 @@ const updateStudent = async (req, res) => {
 
         if (!accountDoc?._id) throw new Error("Failed to upsert account");
 
+        // ✅ Create a new invoice only if fees/course changed (prevents duplicates on profile-only updates)
+        try {
+          const prevFees = Number(accountDoc?.fees || 0);
+          const feesChanged = Math.round(prevFees * 100) !== Math.round(Number(totalFees) * 100);
+
+          const prevCourseId = String(academicDoc?.courseId1 || "");
+          const newCourseId = String(courseId1 || prevCourseId);
+          const courseChanged = prevCourseId && newCourseId && prevCourseId !== newCourseId;
+
+          if (feesChanged || courseChanged) {
+            await createFeesInvoiceSafe({
+              schoolId: schoolId,
+              studentId: student._id,
+              userId: student.userId,
+              acYear: academicYearById._id,
+              academicId: academicDoc._id,
+              courseId: newCourseId || prevCourseId,
+              totalFees,
+              source: "COURSE_CHANGE",
+              createdBy: req.user?._id,
+              session,
+            });
+          }
+        } catch (e) {
+          // Don't fail the whole update if invoice creation fails
+          console.log("Invoice create skipped/failed:", e?.message || e);
+        }
         // 6) Update Student.courses array based on courseId1..5 (unique, non-null)
         const coursesArray = [courseId1, courseId2, courseId3, courseId4, courseId5]
           .filter(Boolean)
@@ -2794,334 +1658,6 @@ const updateStudent = async (req, res) => {
     return res.status(500).json({ success: false, error: "update students server error" });
   }
 };
-
-/*
-const updateStudent = async (req, res) => {
-
-  //console.log("Update Student called.")
-  try {
-    const { id } = req.params;
-    const { name,
-      schoolId,
-      doa,
-      dob,
-      gender,
-      maritalStatus,
-      motherTongue,
-      bloodGroup,
-      idMark1,
-      idMark2,
-      about,
-      fatherName,
-      fatherNumber,
-      fatherOccupation,
-      motherName,
-      motherNumber,
-      motherOccupation,
-      guardianName,
-      guardianNumber,
-      guardianOccupation,
-      guardianRelation,
-
-      address,
-      city,
-      districtStateId,
-      landmark,
-      pincode,
-
-      active,
-      remarks,
-
-      hostel,
-      hostelRefNumber,
-      hostelFees,
-      hostelDiscount,
-
-      acYear,
-
-      instituteId1,
-      courseId1,
-      refNumber1,
-      year1,
-      fees1,
-      discount1,
-
-      instituteId2,
-      courseId2,
-      refNumber2,
-      year2,
-      fees2,
-      discount2,
-
-      instituteId3,
-      courseId3,
-      refNumber3,
-      year3,
-      fees3,
-      discount3,
-
-      instituteId4,
-      courseId4,
-      refNumber4,
-      year4,
-      fees4,
-      discount4,
-
-      instituteId5,
-      courseId5,
-      refNumber5,
-      year5,
-      fees5,
-      discount5,
-    } = req.body;
-
-    const student = await Student.findById({ _id: id });
-    if (!student) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Student not found" });
-    }
-
-    const user = await User.findById({ _id: student.userId })
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, error: "User not found" });
-    }
-
-    const school = await School.findById({ _id: schoolId })
-    if (!school) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Niswan not found" });
-    }
-
-    let updateUser;
-    if (req.file) {
-      const fileBuffer = req.file.buffer;
-      const blob = await put("profiles/" + student._id + ".png", fileBuffer, {
-        access: 'public',
-        contentType: 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-        allowOverwrite: true,
-      });
-
-      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name: toCamelCase(name), profileImage: blob.downloadUrl, })
-    } else {
-      updateUser = await User.findByIdAndUpdate({ _id: student.userId }, { name: toCamelCase(name), })
-    }
-
-    let hostelFinalFeesVal = Number(hostelFees ? hostelFees : "0") - Number(hostelDiscount ? hostelDiscount : "0");
-    const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
-      schoolId,
-      doa,
-      dob,
-      gender,
-      maritalStatus,
-      motherTongue,
-      bloodGroup: toCamelCase(bloodGroup),
-      idMark1: toCamelCase(idMark1),
-      idMark2: toCamelCase(idMark2),
-      about: toCamelCase(about),
-      fatherName: toCamelCase(fatherName),
-      fatherNumber,
-      fatherOccupation: toCamelCase(fatherOccupation),
-      motherName: toCamelCase(motherName),
-      motherNumber,
-      motherOccupation: toCamelCase(motherOccupation),
-      guardianName: toCamelCase(guardianName),
-      guardianNumber,
-      guardianOccupation: toCamelCase(guardianOccupation),
-      guardianRelation: toCamelCase(guardianRelation),
-      address: toCamelCase(address),
-      city: toCamelCase(city),
-      districtStateId,
-      landmark: toCamelCase(landmark),
-      pincode,
-      hostel,
-      hostelRefNumber,
-      hostelFees,
-      hostelDiscount,
-      hostelFinalFees: hostelFinalFeesVal,
-      active,
-      remarks: toCamelCase(remarks),
-    })
-
-    //console.log("AC Year : " + acYear)
-    const academicYearById = await AcademicYear.findById({ _id: acYear });
-    if (academicYearById == null) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Academic Year Not exists" });
-    }
-
-    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
-    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
-    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
-    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
-    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
-
-    const updateAcademic = await Academic.findOne({ studentId: student._id, acYear: academicYearById._id });
-    if (updateAcademic == null) {
-
-      const newAcademic = new Academic({
-        studentId: student._id,
-        acYear: academicYearById._id,
-
-        instituteId1,
-        courseId1,
-        refNumber1,
-        year1,
-        fees1,
-        discount1,
-        finalFees1: finalFees1Val,
-        status1: "Admission",
-
-        instituteId2,
-        courseId2,
-        refNumber2,
-        year2,
-        fees2,
-        discount2,
-        finalFees2: finalFees2Val,
-        status2: instituteId2 && courseId2 ? "Admission" : null,
-
-        instituteId3,
-        courseId3,
-        refNumber3,
-        year3,
-        fees3,
-        discount3,
-        finalFees3: finalFees3Val,
-        status3: instituteId3 && courseId3 ? "Admission" : null,
-
-        instituteId4,
-        courseId4,
-        refNumber4,
-        year4,
-        fees4,
-        discount4,
-        finalFees4: finalFees4Val,
-        status4: instituteId4 && courseId4 ? "Admission" : null,
-
-        instituteId5: instituteId5 ? instituteId5 : null,
-        courseId5: courseId5 ? courseId5 : null,
-        refNumber5,
-        year5,
-        fees5,
-        discount5,
-        finalFees5: finalFees5Val,
-        status5: instituteId5 && courseId5 ? "Admission" : null,
-      });
-
-      let savedAcademic = await newAcademic.save();
-
-      let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
-
-      const newAccount = new Account({
-        userId: student._id,
-        acYear: academicYearById._id,
-        academicId: savedAcademic._id,
-
-        receiptNumber: "Admission",
-        type: "fees",
-        fees: totalFees,
-        paidDate: Date.now(),
-        balance: totalFees,
-        remarks: "Admission",
-      });
-
-      let savedAccount = await newAccount.save();
-
-    } else {
-
-      const updateAcademicById = await Academic.findByIdAndUpdate({ _id: updateAcademic._id }, {
-        instituteId1: instituteId1 ? instituteId1 : null,
-        courseId1: courseId1 ? courseId1 : null,
-        refNumber1,
-        year1,
-        fees1,
-        discount1,
-        finalFees1: finalFees1Val,
-
-        instituteId2: instituteId2 ? instituteId2 : null,
-        courseId2: courseId2 ? courseId2 : null,
-        refNumber2,
-        year2,
-        fees2,
-        discount2,
-        finalFees2: finalFees2Val,
-        status2: instituteId2 && courseId2 ? "Admission" : null,
-
-        instituteId3: instituteId3 ? instituteId3 : null,
-        courseId3: courseId3 ? courseId3 : null,
-        refNumber3,
-        year3,
-        fees3,
-        discount3,
-        finalFees3: finalFees3Val,
-        status3: instituteId3 && courseId3 ? "Admission" : null,
-
-        instituteId4: instituteId4 ? instituteId4 : null,
-        courseId4: courseId4 ? courseId4 : null,
-        refNumber4,
-        year4,
-        fees4,
-        discount4,
-        finalFees4: finalFees4Val,
-        status4: instituteId4 && courseId4 ? "Admission" : null,
-
-        instituteId5: instituteId5 ? instituteId5 : null,
-        courseId5: courseId5 ? courseId5 : null,
-        refNumber5,
-        year5,
-        fees5,
-        discount5,
-        finalFees5: finalFees5Val,
-        status5: instituteId5 && courseId5 ? "Admission" : null,
-      })
-
-      const updateAccount = await Account.findOne({ userId: updateUser._id, acYear: acYear, academicId: updateAcademic._id });
-      if (updateAccount == null) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Account Data Not exists" });
-      }
-
-      let totalFees = finalFees1Val + finalFees2Val + finalFees3Val + finalFees4Val + finalFees5Val + hostelFinalFeesVal;
-
-      const updateAccountById = await Account.findByIdAndUpdate({ _id: updateAccount._id }, {
-        fees: totalFees,
-        paidDate: Date.now(),
-        remarks: "Admission-updated",
-      })
-    }
-
-    const coursesArray = [courseId1];
-    if (courseId2) {
-      coursesArray.push(courseId2);
-    }
-    if (courseId3) {
-      coursesArray.push(courseId3);
-    }
-    if (courseId4) {
-      coursesArray.push(courseId4);
-    }
-    if (courseId5) {
-      coursesArray.push(courseId5);
-    }
-    await Student.findByIdAndUpdate({ _id: updateStudent._id }, { courses: coursesArray });
-
-    return res.status(200).json({ success: true, message: "Student updated successfully." })
-
-  } catch (error) {
-
-    console.log(error)
-    return res
-      .status(500)
-      .json({ success: false, error: "update students server error" });
-  }
-};*/
 
 const promoteStudent = async (req, res) => {
 
@@ -3316,20 +1852,30 @@ const promoteStudent = async (req, res) => {
         + (finalFees4Val && status4 != "Completed" ? finalFees4Val : 0)
         + (finalFees5Val && status5 != "Completed" ? finalFees5Val : 0);
 
-      const newAccount = new Account({
-        userId: student._id,
-        acYear: accYearId,
-        academicId: updateAcademic._id,
-
-        receiptNumber: "Promote",
-        type: "fees",
+      // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
+      savedAccount = await upsertFeesDueAccount({
+        userId: student.userId,
+        acYear: academicYearById._id,
+        academicId: savedAcademic._id,
         fees: totalFees,
-        paidDate: Date.now(),
-        balance: totalFees,
+        receiptLabel: "Promote",
         remarks: "Promote",
+        session,
       });
 
-      savedAccount = await newAccount.save();
+      // ✅ Create Fees Invoice for promotion (due)
+      await createFeesInvoiceSafe({
+        schoolId: student.schoolId,
+        studentId: student._id,
+        userId: student.userId,
+        acYear: academicYearById._id,
+        academicId: savedAcademic._id,
+        courseId: courseId1,
+        totalFees,
+        source: "COURSE_CHANGE",
+        createdBy: req.user?._id,
+        session,
+      });
     }
 
     const coursesArray = [];
@@ -3366,44 +1912,17 @@ const deleteStudent = async (req, res) => {
     const { id } = req.params;
 
     const deleteStudent = await Student.findById({ _id: id });
-      //.populate("userId", { password: 0, profileImage: 0 });
 
-    {/*if (deleteStudent.userId && deleteStudent.userId._id) {
-      await User.findByIdAndDelete({ _id: deleteStudent.userId._id });
-    }
-    console.log("User data Successfully Deleted...")
-
-    const academicList = await Academic.find({ studentId: deleteStudent._id })
-    academicList.forEach(async academic =>
-      await Academic.findByIdAndDelete({ _id: academic._id })
-    );
-    console.log("Academic data Successfully Deleted...")
-
-    if (deleteStudent.userId && deleteStudent.userId._id) {
-      const account = await Account.find({ userId: deleteStudent.userId._id });
-      if (!account) {
-        await Account.findByIdAndDelete({ _id: account._id });
-        console.log("Account data Successfully Deleted...")
-      }
-    }
-*/}
     await Student.findByIdAndUpdate({ _id: deleteStudent._id }, {
       active: "In-Active",
       remarks: "Deleted",
     })
 
-    //await Student.findByIdAndDelete({ _id: deleteStudent._id });
-
     const redis = await getRedis();
     await redis.set('totalStudents', await Student.countDocuments());
 
     console.log("Student data Successfully Deleted...")
-    //  await deleteStudent.deleteOne()
 
-    //  const updateStudent = await Student.findByIdAndUpdate({ _id: id }, {
-    //    active: "In-Active",
-    //    remarks: "Deleted",
-    //  })
     return res.status(200).json({ success: true, message: "Successfully deleted" })
   } catch (error) {
     console.log(error)

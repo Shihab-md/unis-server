@@ -1,3 +1,7 @@
+import Numbering from "../models/Numbering.js";
+import FeeStructure from "../models/FeeStructure.js";
+import FeeInvoice from "../models/FeeInvoice.js";
+
 export function toCamelCase(inputString) {
   if (!inputString) return null;
 
@@ -45,3 +49,85 @@ export function toCamelCase(inputString) {
 
   return out.join(" ");
 }
+
+export const getNextNumber = async ({ name, prefix, pad } = {}) => {
+  // Uses Numbering collection (same atomic pattern as Roll)
+  const numbering = await Numbering.findOneAndUpdate(
+    { name: name },
+    { $inc: { currentNumber: 1 } },
+    { new: true, upsert: true }
+  );
+
+  const n = Number(numbering?.currentNumber || 0);
+  return `${prefix}${String(n).padStart(pad, "0")}`;
+};
+
+export const createInvoiceFromStructure = async ({
+  schoolId,
+  studentId,
+  userId,
+  acYear,
+  academicId,
+  courseId,
+  source = "ADMISSION",
+  dueDate,
+  createdBy,
+  session,
+}) => {
+  const structure =
+    (await FeeStructure.findOne({ schoolId, acYear, courseId, active: "Active" }).session(session).lean()) ||
+    (await FeeStructure.findOne({ schoolId: null, acYear, courseId, active: "Active" }).session(session).lean());
+
+  if (!structure) {
+    const err = new Error("FeeStructure not configured for this course/year");
+    err.status = 400;
+    throw err;
+  }
+
+  const items = structure.heads.map((h) => {
+    const netAmount = Number(h.amount || 0);
+    return {
+      headCode: h.headCode,
+      headName: h.headName,
+      amount: netAmount,
+      discount: 0,
+      fine: 0,
+      netAmount,
+      paidAmount: 0,
+    };
+  });
+
+  const total = items.reduce((s, x) => s + Number(x.netAmount || 0), 0);
+
+  const invoiceNo = await getNextNumber({
+    name: "Invoice",
+    prefix: "INV",
+    pad: 9,
+    session,
+  });
+
+  const invoice = await FeeInvoice.create(
+    [
+      {
+        invoiceNo,
+        schoolId,
+        studentId,
+        userId,
+        acYear,
+        academicId,
+        courseId,
+        source,
+        dueDate: dueDate ? new Date(dueDate) : undefined,
+        items,
+        total,
+        paidTotal: 0,
+        balance: total,
+        status: "ISSUED",
+        createdBy,
+      },
+    ],
+    { session }
+  );
+
+  return invoice[0];
+};

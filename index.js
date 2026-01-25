@@ -20,9 +20,15 @@ import loadCache from './db/loadCache.js'
 
 import reportRouter from './routes/report.js'
 
+import feesRoutes from "./routes/feesRoutes.js";
+import hqFeesRoutes from "./routes/hqFeesRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
+
+import publicRoutes from "./routes/publicRoutes.js";
+
 await connectToDatabase()
 await loadCache()
-
+ 
 const app = express()
 //app.use(cors()) 
 
@@ -49,6 +55,13 @@ app.use('/api/setting', settingRouter)
 app.use('/api/dashboard', dashboardRouter)
 
 app.use('/api/report', reportRouter)
+
+// routes
+app.use("/api/fees", feesRoutes);
+app.use("/api/hq/fees", hqFeesRoutes);
+app.use("/api/upload", uploadRoutes);
+
+app.use("/api/public", publicRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
