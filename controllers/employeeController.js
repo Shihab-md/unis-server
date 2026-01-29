@@ -1032,7 +1032,7 @@ const getEmployee = async (req, res) => {
   try {
     let employee;
     employee = await Employee.findById({ _id: id })
-      .populate({ path: "schoolId", select: "_id, code nameEnglish" })
+      .populate({ path: "schoolId", select: "_id code nameEnglish" })
       .populate({ path: "userId", select: "name email role" }) // ✅ no password
       .lean();
 
