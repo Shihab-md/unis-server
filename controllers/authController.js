@@ -29,8 +29,36 @@ const login = async (req, res) => {
 
     // 1) Email login
     if (looksLikeEmail(loginIdRaw)) {
+      //const email = loginIdRaw.toLowerCase();
+      //user = await User.findOne({ email }).select("_id name role password").lean();
       const email = loginIdRaw.toLowerCase();
+
+      // ✅ get user by email first
       user = await User.findOne({ email }).select("_id name role password").lean();
+
+      if (!user) {
+        user = null;
+      } else {
+        // ✅ restrict by role active status
+        if (user.role === "admin" || user.role === "hquser" || user.role === "usthadh" || user.role === "warden" || user.role === "teacher") {
+          const emp = await Employee.findOne({ userId: user._id, active: "Active" })
+            .select("_id")
+            .lean();
+
+          if (!emp) user = null;
+        }
+
+        if (user.role === "supervisor") {
+          const sup = await Supervisor.findOne({ userId: user._id, active: "Active" })
+            .select("_id")
+            .lean();
+
+          if (!sup) user = null;
+        }
+
+        // ✅ optional: if you have active flag in User schema, also enforce it
+        // if (user.active && user.active !== "Active") user = null;
+      }
     } else {
       // 2A) employeeId login
       employee = await Employee.findOne({ employeeId: loginIdRaw, active: "Active" })
