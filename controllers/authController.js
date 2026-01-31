@@ -39,6 +39,8 @@ const login = async (req, res) => {
       if (!user) {
         user = null;
       } else {
+        if (user.role === "superadmin") {
+        }
         // ✅ restrict by role active status
         if (user.role === "admin" || user.role === "hquser" || user.role === "usthadh" || user.role === "warden" || user.role === "teacher") {
           const emp = await Employee.findOne({ userId: user._id, active: "Active" })
@@ -55,7 +57,6 @@ const login = async (req, res) => {
 
           if (!sup) user = null;
         }
-
         // ✅ optional: if you have active flag in User schema, also enforce it
         // if (user.active && user.active !== "Active") user = null;
       }

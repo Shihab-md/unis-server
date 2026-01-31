@@ -17,7 +17,7 @@ const loadCache = async () => {
 
         // TTLs (seconds) - tune as you like
         const DASHBOARD_TTL = 60;         // 1 minute
-        const LIST_TTL = 60 * 10;         // 5 minutes (combo lists change rarely)
+        const LIST_TTL = 60 * 5;         // 5 minutes (combo lists change rarely)
 
         // ----------------------------
         // 1) Dashboard counts in parallel
@@ -77,13 +77,13 @@ const loadCache = async () => {
         ] = await Promise.all([
             Supervisor.find()
                 .sort({ supervisorId: 1 })
-                .select("_id supervisorId userId")
+                .select("_id supervisorId userId active")
                 .populate({ path: "userId", select: "name" })
                 .lean(),
 
             School.find()
                 .sort({ code: 1 })
-                .select("_id code nameEnglish districtStateId")
+                .select("_id code nameEnglish districtStateId active")
                 .populate({ path: "districtStateId", select: "district state" })
                 .lean(),
 
