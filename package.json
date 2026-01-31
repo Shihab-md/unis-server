@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon --env-file=.env index.js"
+    "start": "nodemon --env-file=.env index.js",
+    "start:debug": "nodemon --inspect --env-file=.env index.js",
+    "start:debug:brk": "nodemon --inspect-brk --env-file=.env index.js"
   },
   "keywords": [],
   "author": "",

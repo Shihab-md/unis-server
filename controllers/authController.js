@@ -29,8 +29,6 @@ const login = async (req, res) => {
 
     // 1) Email login
     if (looksLikeEmail(loginIdRaw)) {
-      //const email = loginIdRaw.toLowerCase();
-      //user = await User.findOne({ email }).select("_id name role password").lean();
       const email = loginIdRaw.toLowerCase();
 
       // ✅ get user by email first
@@ -57,8 +55,6 @@ const login = async (req, res) => {
 
           if (!sup) user = null;
         }
-        // ✅ optional: if you have active flag in User schema, also enforce it
-        // if (user.active && user.active !== "Active") user = null;
       }
     } else {
       // 2A) employeeId login

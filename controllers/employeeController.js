@@ -1035,7 +1035,7 @@ const getEmployee = async (req, res) => {
       .populate({ path: "schoolId", select: "_id code nameEnglish" })
       .populate({ path: "userId", select: "name email role" }) // ✅ no password
       .lean();
-
+ 
     if (!employee) {
       return res
         .status(400)

@@ -1,0 +1,8 @@
+{
+  "name": "Attach to Node (9229)",
+  "type": "node",
+  "request": "attach",
+  "port": 9229,
+  "restart": true,
+  "skipFiles": ["<node_internals>/**"]
+}

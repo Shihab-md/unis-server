@@ -219,75 +219,6 @@ const getSupervisors = async (req, res) => {
   }
 };
 
-{/*
-const getSupervisors = async (req, res) => {
-  try {
-    // 1) Fetch supervisors (lean = faster)
-    const supervisors = await Supervisor.find({ active: "Active" })
-      .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active userId routeName jobType remarks")
-      .populate({ path: "userId", select: "name email role" })
-      .lean();
-
-    // 2) Count schools per supervisorId
-    const counts = await School.aggregate([
-      { $match: { supervisorId: { $ne: null } } },
-      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
-    ]);
-
-    // 3) Build lookup map: supervisorId -> count
-    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
-
-    // 4) Attach count to each supervisor
-    const result = supervisors.map((s) => ({
-      ...s,
-      _schoolsCount: countMap.get(String(s._id)) || 0,
-    }));
-
-    return res.status(200).json({ success: true, supervisors: result });
-  } catch (error) {
-    console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: "get supervisors server error" });
-  }
-};
-*/}
-
-{/* const getSupervisors = async (req, res) => {
-  try {
-    const supervisors = await Supervisor.find({ active: 'Active' }).sort({ supervisorId: 1 })
-      .populate("userId", { password: 0, profileImage: 0 });
-
-    const counts = await School.aggregate([
-      {
-        $group: {
-          _id: '$supervisorId',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    if (supervisors.length > 0 && counts.length > 0) {
-      for (const count of counts) {
-        supervisors.map(supervisor => {
-          if (supervisor._id.toString() == count._id.toString()) {
-            supervisor._schoolsCount = count.count;
-            supervisor.toObject({ virtuals: true });
-          };
-        });
-      }
-    }
-
-    return res.status(200).json({ success: true, supervisors });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get supervisors server error" });
-  }
-};
-*/}
-
 const getBySupFilter = async (req, res) => {
   const { supSchoolId, supStatus, supType } = req.params;
 
@@ -360,76 +291,6 @@ const getBySupFilter = async (req, res) => {
   }
 };
 
-{/*
-const getBySupFilter = async (req, res) => {
-
-  const { supSchoolId, supStatus, supType } = req.params;
-
-  console.log("getBy Supervisor Filter : " + supSchoolId + ", " + supStatus + ",  " + supType);
-
-  try {
-
-    let filterQuery = Supervisor.find();
-
-    if (supSchoolId && supSchoolId?.length > 0 && supSchoolId != 'null' && supSchoolId != 'undefined') {
-
-      console.log("supSchoolId Added : " + supSchoolId);
-
-      const school = await School.findById({ _id: supSchoolId });
-
-      filterQuery = filterQuery.where('_id').eq(school?.supervisorId);
-    }
-
-    if (supStatus && supStatus?.length > 0 && supStatus != 'null' && supStatus != 'undefined') {
-
-      console.log("supStatus Added : " + supStatus);
-      filterQuery = filterQuery.where('active').eq(supStatus);
-    }
-
-    if (supType && supType?.length > 0 && supType != 'null' && supType != 'undefined') {
-
-      console.log("supType Added : " + supType);
-      filterQuery = filterQuery.where('jobType').eq(supType);
-    }
-
-    filterQuery.sort({ supervisorId: 1 });
-    filterQuery.populate("userId", { password: 0, profileImage: 0 });
-
-    // console.log(filterQuery);
-
-    const supervisors = await filterQuery.exec();
-
-    const counts = await School.aggregate([
-      {
-        $group: {
-          _id: '$supervisorId',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    if (supervisors.length > 0 && counts.length > 0) {
-      for (const count of counts) {
-        supervisors.map(supervisor => {
-          if (supervisor._id.toString() == count._id.toString()) {
-            supervisor._schoolsCount = count.count;
-            supervisor.toObject({ virtuals: true });
-          };
-        });
-      }
-    }
-
-    console.log("Supervisors : " + supervisors?.length)
-    return res.status(200).json({ success: true, supervisors });
-  } catch (error) {
-    console.log(error)
-    return res
-      .status(500)
-      .json({ success: false, error: "get Supervisors by FILTER server error" });
-  }
-};
-*/}
-
 const getSupervisorsFromCache = async (req, res) => {
   try {
     const redis = await getRedis();
@@ -457,7 +318,7 @@ const getSupervisor = async (req, res) => {
     }
 
     return res.status(200).json({ success: true, supervisor });
-
+ 
   } catch (error) {
     console.log(error);
     return res
