@@ -166,17 +166,18 @@ const getSchools = async (req, res) => {
   try {
     const auth = req.headers.authorization || "";
     const parts = auth.split(" ");
-    if (parts.length !== 2 || parts[0] !== "Bearer") {
-      return res.status(401).json({ success: false, error: "Unauthorized Request" });
-    }
 
     const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
     const userId = decoded._id;
     const userRole = decoded.role;
 
+    if (userRole !== "guest" && (parts.length !== 2 || parts[0] !== "Bearer")) {
+      return res.status(401).json({ success: false, error: "Unauthorized Request" });
+    }
+
     let filter = {};
 
-    if (userRole === "superadmin" || userRole === "hquser") {
+    if (userRole === "superadmin" || userRole === "hquser" || userRole === "guest") {
       filter = {};
     } else if (userRole === "supervisor") {
       const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
