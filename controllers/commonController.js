@@ -12,6 +12,10 @@ export function toCamelCase(inputString) {
     // Keep acronyms like UNIS, API, HR (2+ letters, all caps)
     if (/^[A-Z]{2,}$/.test(token)) return token;
 
+    // ✅ Treat codes like "Un020006772" as code => "UN020006772"
+    // (2+ letters followed by 1+ digits; no spaces)
+    if (/^[A-Za-z]{2,}\d+$/.test(token)) return token.toUpperCase();
+
     // Otherwise normal Title Case
     const lower = token.toLowerCase();
     return lower.charAt(0).toUpperCase() + lower.slice(1);
@@ -22,7 +26,6 @@ export function toCamelCase(inputString) {
 
   // 2) Fix initials blocks while preserving original letters:
   // "R. M." -> "R.M.", "r.m." -> "R.M.", "A.r.nasar" -> "A.R.Nasar"
-  // We'll do this on a lowercase copy for safety, then re-apply casing rules later.
   s = s.toLowerCase();
 
   // Uppercase sequences like "r.m." "a.r." etc.
@@ -36,14 +39,15 @@ export function toCamelCase(inputString) {
   const processedTokens = s.split(" ");
 
   const out = processedTokens.map((tok, i) => {
-    // Keep acronyms exactly as user typed if that original token was all-caps
     const origTok = originalTokens[i] ?? "";
+
+    // Keep acronyms exactly as user typed if that original token was all-caps
     if (/^[A-Z]{2,}$/.test(origTok)) return origTok;
 
     // Also keep initials like "R.M." as-is
     if (/^(?:[A-Z]\.)+$/.test(tok)) return tok;
 
-    // Title case normal tokens
+    // Title/case (includes code rule now)
     return titleCaseToken(tok);
   });
 

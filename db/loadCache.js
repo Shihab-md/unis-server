@@ -17,7 +17,7 @@ const loadCache = async () => {
 
         // TTLs (seconds) - tune as you like
         const DASHBOARD_TTL = 60;         // 1 minute
-        const LIST_TTL = 60 * 5;         // 5 minutes (combo lists change rarely)
+        const LIST_TTL = 60 * 30;         // 30 minutes (combo lists change rarely)
 
         // ----------------------------
         // 1) Dashboard counts in parallel

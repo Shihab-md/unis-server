@@ -128,7 +128,6 @@ const createFeesInvoiceSafe = async ({
   }
 };
 
-
 const addStudent = async (req, res) => {
 
   let savedUser;
@@ -1038,7 +1037,7 @@ const getByFilter = async (req, res) => {
     // 3) Fetch students (lean + minimal populate)
     // ----------------------------
     const studentSelect =
-      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks";
+      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about";
 
     const studentsMap = await Student.find(studentQuery)
       .select(studentSelect)

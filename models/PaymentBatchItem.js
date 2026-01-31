@@ -11,7 +11,7 @@ const allocationSchema = new Schema(
 
 const paymentBatchItemSchema = new Schema(
   {
-    batchId: { type: Schema.Types.ObjectId, ref: "PaymentBatch", required: true, index: true },
+    batchId: { type: Schema.Types.ObjectId, ref: "PaymentBatch", required: true },
 
     schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },
     acYear: { type: Schema.Types.ObjectId, ref: "AcademicYear", required: true, index: true },
