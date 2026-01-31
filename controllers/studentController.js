@@ -1854,7 +1854,7 @@ const promoteStudent = async (req, res) => {
       // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
       savedAccount = await upsertFeesDueAccount({
         userId: student.userId,
-        acYear: academicYearById._id,
+        acYear: accYearId._id,
         academicId: savedAcademic._id,
         fees: totalFees,
         receiptLabel: "Promote",
@@ -1867,7 +1867,7 @@ const promoteStudent = async (req, res) => {
         schoolId: student.schoolId,
         studentId: student._id,
         userId: student.userId,
-        acYear: academicYearById._id,
+        acYear: accYearId._id,
         academicId: savedAcademic._id,
         courseId: courseId1,
         totalFees,
