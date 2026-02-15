@@ -15,35 +15,87 @@ const requireRole = (role, allowed) => {
 };
 
 // School side: list due invoices
+{/*
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called")
     requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
 
-    const { schoolId, acYear, status } = req.query;
+    const { schoolId, acYear, status } = req.params;
 
     const q = {};
     if (schoolId) q.schoolId = schoolId;
     if (acYear) q.acYear = acYear;
-
+ 
     q.status = status ? status : { $in: ["ISSUED", "PARTIAL"] };
     console.log(q)
     const invoices = await FeeInvoice.find(q)
-      .select("invoiceNo schoolId studentId acYear courseId total paidTotal balance status createdAt")
+      .select("invoiceNo schoolId studentId acYear courseId total paidTotal balance status createdAt source")
       .sort({ createdAt: -1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "courseId", select: "name years" })
       .lean();
-    console.log(invoices)
+
     return res.status(200).json({ success: true, invoices });
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
   }
 };
+*/}
+
+export const listDueInvoicesForSchool = async (req, res) => {
+  try {
+    console.log("listDueInvoicesForSchool called");
+    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
+
+    const { schoolId, acYear, status } = req.params;
+
+    const q = {};
+    if (schoolId) q.schoolId = schoolId;
+    //if (acYear) q.acYear = acYear;
+
+    const dueStatuses = ["ISSUED", "PARTIAL"];
+    q.status = status ? status : { $in: dueStatuses };
+
+    q.balance = { $gt: 0 };
+
+    const isDueListing = !status || dueStatuses.includes(status);
+    if (isDueListing) {
+      const lockedInvoiceIds = await PaymentBatchItem.distinct("invoiceId", {
+        schoolId,
+        acYear,
+        status: "PENDING_APPROVAL",
+      });
+
+      if (lockedInvoiceIds?.length) {
+        q._id = { $nin: lockedInvoiceIds };
+      }
+    }
+
+    console.log("Invoice query:", q);
+
+    const invoices = await FeeInvoice.find(q)
+      .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
+      .sort({ createdAt: -1 })
+      .populate({ path: "userId", select: "name email" })
+      .populate({ path: "courseId", select: "name years type" })
+      .lean();
+
+    return res.status(200).json({ success: true, invoices });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
+  }
+};
 
 // School side: create ONE batch for MANY invoices
 export const createPaymentBatch = async (req, res) => {
   const session = await mongoose.startSession();
-
+  console.log("createPaymentBatch - called")
   try {
     requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
 
@@ -107,25 +159,38 @@ export const createPaymentBatch = async (req, res) => {
       const inv = invMap.get(String(it.invoiceId));
       if (!inv) return res.status(400).json({ success: false, error: `Invoice not found: ${it.invoiceId}` });
 
+      console.log("1")
+
       if (String(inv.schoolId) !== String(schoolId))
         return res.status(400).json({ success: false, error: "All invoices must belong to the same school" });
 
-      if (String(inv.acYear) !== String(acYear))
-        return res.status(400).json({ success: false, error: "Invoice academic year mismatch" });
+      console.log("2")
+
+      //if (String(inv.acYear) !== String(acYear))
+      //  return res.status(400).json({ success: false, error: "Invoice academic year mismatch" });
+
+      console.log("3")
 
       if (inv.status === "CANCELLED")
         return res.status(400).json({ success: false, error: `Invoice cancelled: ${inv._id}` });
 
+      console.log("4")
+
       if (Number(inv.balance) <= 0)
         return res.status(400).json({ success: false, error: `Invoice already paid: ${inv._id}` });
 
+      console.log("5")
+
       if (Number(it.amount) > Number(inv.balance))
         return res.status(400).json({ success: false, error: `Amount exceeds invoice balance: ${inv._id}` });
+
+      console.log("6")
 
       if (String(inv.studentId) !== String(it.studentId))
         return res.status(400).json({ success: false, error: `Student mismatch for invoice: ${inv._id}` });
     }
 
+    console.log("hi came here")
     let batchDoc;
 
     await session.withTransaction(async () => {

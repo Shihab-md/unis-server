@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import FeeInvoice from "../models/FeeInvoice.js";
 import PaymentBatch from "../models/PaymentBatch.js";
 import PaymentBatchItem from "../models/PaymentBatchItem.js";
+import Student from "../models/Student.js";
 import { getNextNumber } from "./commonController.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
@@ -26,6 +27,11 @@ export const listPendingBatches = async (req, res) => {
     const batches = await PaymentBatch.find(q)
       .select("batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo proofUrl paidDate status createdBy createdAt")
       .sort({ createdAt: -1 })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
       .lean();
 
     return res.status(200).json({ success: true, batches });
@@ -39,12 +45,24 @@ export const getBatchDetails = async (req, res) => {
   try {
     requireRole(req.user?.role, ["superadmin", "hquser"]);
 
+    console.log("Called - getBatchDetails")
+
     const { batchId } = req.params;
     const batch = await PaymentBatch.findById(batchId).lean();
     if (!batch) return res.status(404).json({ success: false, error: "Batch not found" });
 
     const items = await PaymentBatchItem.find({ batchId })
-      .select("invoiceId studentId amount allocations status error")
+      .select("batchId invoiceId studentId amount status allocations createdAt")
+      .populate([
+        {
+          path: "studentId", select: "rollNumber userId",
+          populate: { path: "userId", select: "name" },
+        },
+        {
+          path: "invoiceId", select: "invoiceNo courseId total status source balance",
+          populate: { path: "courseId", select: "name type" },
+        },
+      ])
       .lean();
 
     return res.status(200).json({ success: true, batch, items });
@@ -93,7 +111,7 @@ export const approveBatch = async (req, res) => {
           if (invoice.status === "CANCELLED") throw new Error("Invoice cancelled");
 
           if (String(invoice.schoolId) !== String(batch.schoolId)) throw new Error("School mismatch");
-          if (String(invoice.acYear) !== String(batch.acYear)) throw new Error("Academic year mismatch");
+          //if (String(invoice.acYear) !== String(batch.acYear)) throw new Error("Academic year mismatch");
           if (Number(invoice.balance) <= 0) throw new Error("Invoice already paid");
 
           const payAmount = Math.min(Number(it.amount), Number(invoice.balance));
@@ -127,6 +145,16 @@ export const approveBatch = async (req, res) => {
           invoice.status = invoice.balance === 0 ? "PAID" : "PARTIAL";
 
           await invoice.save({ session });
+
+          if (invoice?.status === "PAID") {
+            const r = await Student.updateOne(
+              { _id: invoice.studentId, feesPaid: 0 },
+              { $set: { feesPaid: 1 } },
+              { session }
+            );
+
+            // r.modifiedCount === 1 means updated
+          }
 
           it.status = "APPLIED";
           it.error = "";

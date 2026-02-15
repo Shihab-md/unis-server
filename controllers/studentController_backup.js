@@ -1,5 +1,4 @@
 import multer from "multer";
-import jwt from "jsonwebtoken";
 import { put } from "@vercel/blob";
 import mongoose from "mongoose";
 import Student from "../models/Student.js";
@@ -11,8 +10,6 @@ import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import FeeInvoice from "../models/FeeInvoice.js";
-import PaymentBatch from "../models/PaymentBatch.js";
-import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
@@ -129,71 +126,6 @@ const createFeesInvoiceSafe = async ({
 
     return inv?.[0] || null;
   }
-};
-
-/* ----------------------- Fees helpers for multi-course slots ----------------------- */
-// ✅ MODIFIED: support 1..5 course slots in update/promote flows
-const buildAcademicSlotsFromPayload = (payload = {}) => {
-  const slots = [];
-  for (let i = 1; i <= 5; i++) {
-    const instituteId = payload[`instituteId${i}`];
-    const courseId = payload[`courseId${i}`];
-    const fees = Number(payload[`fees${i}`] || 0);
-    const discount = Number(payload[`discount${i}`] || 0);
-    const finalFees = Math.max(fees - discount, 0);
-    const status = payload[`status${i}`]; // can be undefined
-    slots.push({ i, instituteId, courseId, fees, discount, finalFees, status });
-  }
-  return slots;
-};
-
-const buildAcademicSlotsFromDoc = (doc = {}) => {
-  const slots = [];
-  for (let i = 1; i <= 5; i++) {
-    const instituteId = doc[`instituteId${i}`];
-    const courseId = doc[`courseId${i}`];
-    const fees = Number(doc[`fees${i}`] || 0);
-    const discount = Number(doc[`discount${i}`] || 0);
-    const finalFees = Number(doc[`finalFees${i}`] ?? Math.max(fees - discount, 0));
-    const status = doc[`status${i}`];
-    slots.push({ i, instituteId, courseId, fees, discount, finalFees, status });
-  }
-  return slots;
-};
-
-// Detect newly added / changed slots (course or fees changed) and return those slots
-const getChangedSlots = (prevDoc, nextPayload) => {
-  const prev = buildAcademicSlotsFromDoc(prevDoc || {});
-  const next = buildAcademicSlotsFromPayload(nextPayload || {});
-  const changed = [];
-
-  for (let i = 0; i < 5; i++) {
-    const p = prev[i];
-    const n = next[i];
-
-    // Only consider slots that exist in NEW payload
-    if (!n.instituteId || !n.courseId) continue;
-
-    // If final fees is 0, nothing to invoice
-    if (Number(n.finalFees || 0) <= 0) continue;
-
-    const prevCourse = p?.courseId ? String(p.courseId) : "";
-    const nextCourse = n?.courseId ? String(n.courseId) : "";
-
-    const courseChanged = prevCourse !== nextCourse;
-    const feesChanged = Number(p?.finalFees || 0) !== Number(n.finalFees || 0);
-
-    // If previous slot was empty OR changed
-    if (!prevCourse || courseChanged || feesChanged) {
-      changed.push(n);
-    }
-  }
-  return changed;
-};
-
-const sumFinalFeesFromPayload = (payload = {}) => {
-  const slots = buildAcademicSlotsFromPayload(payload);
-  return slots.reduce((s, x) => s + (Number(x.finalFees) > 0 ? Number(x.finalFees) : 0), 0);
 };
 
 const addStudent = async (req, res) => {
@@ -447,7 +379,7 @@ const addStudent = async (req, res) => {
       courseId: savedAcademic?.courseId1 || courseId1,
       totalFees,
       source: "ADMISSION",
-      createdBy: savedUser?._id,
+      createdBy: req.user?._id,
     });
 
     if (req.file) {
@@ -804,7 +736,7 @@ const importStudentsData = async (req, res) => {
             courseId,
             totalFees: fees,
             source: "ADMISSION",
-            createdBy: userId,
+            createdBy: req.user?._id,
             session,
           });
         });
@@ -1588,8 +1520,6 @@ const updateStudent = async (req, res) => {
         // 4) Upsert Academic (per studentId + acYear)
         const academicFilter = { studentId: student._id, acYear: academicYearById._id };
 
-
-        const prevAcademic = await Academic.findOne(academicFilter).session(session).lean(); // ✅ MODIFIED: compare old vs new slots
         const academicUpdate = {
           instituteId1: instituteId1 || null,
           courseId1: courseId1 || null,
@@ -1653,19 +1583,13 @@ const updateStudent = async (req, res) => {
           academicId: academicDoc._id,
         };
 
-        // ✅ MODIFIED: capture previous fees BEFORE update (otherwise feesChanged will always be false)
-        const prevAccountDoc = await Account.findOne(accountFilter).select("fees").session(session).lean();
-
+        // ✅ Fees Due (do NOT mark paid here)
         const accountUpdate = {
-          userId: student.userId,
-          schoolId: schoolId,
-          acYear: academicYearById._id,
-          academicId: academicDoc._id,
-          receiptNumber: prevAccountDoc?.receiptNumber || "Admission",
+          receiptNumber: "Admission",
           type: "fees",
           fees: totalFees,
-          paidDate: Date.now(),
-          balance: 0,
+          paidDate: null,
+          balance: totalFees,
           remarks: "Admission-updated",
         };
 
@@ -1677,50 +1601,33 @@ const updateStudent = async (req, res) => {
 
         if (!accountDoc?._id) throw new Error("Failed to upsert account");
 
-        // ✅ MODIFIED: Create invoices for *each changed slot* (course1..course5)
-        // - Prevent duplicates on profile-only updates
-        // - Fix: old code compared AFTER-update account fees (always same)
+        // ✅ Create a new invoice only if fees/course changed (prevents duplicates on profile-only updates)
         try {
-          const prevFees = Number(prevAccountDoc?.fees || 0);
+          const prevFees = Number(accountDoc?.fees || 0);
           const feesChanged = Math.round(prevFees * 100) !== Math.round(Number(totalFees) * 100);
 
-          const changedSlots = getChangedSlots(prevAcademic, {
-            instituteId1, courseId1, fees1, discount1,
-            instituteId2, courseId2, fees2, discount2,
-            instituteId3, courseId3, fees3, discount3,
-            instituteId4, courseId4, fees4, discount4,
-            instituteId5, courseId5, fees5, discount5,
-          });
+          const prevCourseId = String(academicDoc?.courseId1 || "");
+          const newCourseId = String(courseId1 || prevCourseId);
+          const courseChanged = prevCourseId && newCourseId && prevCourseId !== newCourseId;
 
-          if (feesChanged || changedSlots.length > 0) {
-            for (const slot of changedSlots) {
-              await createFeesInvoiceSafe({
-                schoolId: schoolId,
-                studentId: student._id,
-                userId: student.userId,
-                acYear: academicYearById._id,
-                academicId: academicDoc._id,
-                courseId: slot.courseId,
-                totalFees: slot.finalFees,
-                source: "COURSE_CHANGE",
-                createdBy: user._id,
-                session,
-                notes: `Auto invoice (Update) - Slot ${slot.i}`,
-              });
-            }
-
-            // ✅ If new dues created, allow paying again (reset feesPaid)
-            //await Student.findByIdAndUpdate(
-            //  id,
-            //  { $set: { feesPaid: 0 } },
-            //  { session }
-            //);
+          if (feesChanged || courseChanged) {
+            await createFeesInvoiceSafe({
+              schoolId: schoolId,
+              studentId: student._id,
+              userId: student.userId,
+              acYear: academicYearById._id,
+              academicId: academicDoc._id,
+              courseId: newCourseId || prevCourseId,
+              totalFees,
+              source: "COURSE_CHANGE",
+              createdBy: req.user?._id,
+              session,
+            });
           }
         } catch (e) {
           // Don't fail the whole update if invoice creation fails
           console.log("Invoice create skipped/failed:", e?.message || e);
         }
-
         // 6) Update Student.courses array based on courseId1..5 (unique, non-null)
         const coursesArray = [courseId1, courseId2, courseId3, courseId4, courseId5]
           .filter(Boolean)
@@ -1752,196 +1659,250 @@ const updateStudent = async (req, res) => {
 };
 
 const promoteStudent = async (req, res) => {
-  const { id } = req.params;
 
-  const {
-    instituteId1, instituteId2, instituteId3, instituteId4, instituteId5,
-    courseId1, courseId2, courseId3, courseId4, courseId5,
-    fees1, fees2, fees3, fees4, fees5,
-    discount1, discount2, discount3, discount4, discount5,
-    status1, status2, status3, status4, status5,
-    year1, year2, year3, year4, year5,
-    refNumber1, refNumber2, refNumber3, refNumber4, refNumber5,
-  } = req.body || {};
-
+  //console.log("promoteStudent")
   try {
-    // ---------------- Auth ----------------
-    const auth = req.headers.authorization || "";
-    const parts = auth.split(" ");
-    if (parts.length !== 2 || parts[0] !== "Bearer") {
-      return res.status(401).json({ success: false, error: "Unauthorized Request" });
+    const { id } = req.params;
+    const {
+      acYear,
+
+      instituteId1,
+      courseId1,
+      refNumber1,
+      year1,
+      fees1,
+      discount1,
+      status1,
+
+      instituteId2,
+      courseId2,
+      nextCourseId,
+      refNumber2,
+      year2,
+      fees2,
+      discount2,
+      status2,
+
+      instituteId3,
+      courseId3,
+      refNumber3,
+      year3,
+      fees3,
+      discount3,
+      status3,
+
+      instituteId4,
+      courseId4,
+      refNumber4,
+      year4,
+      fees4,
+      discount4,
+      status4,
+
+      instituteId5,
+      courseId5,
+      refNumber5,
+      year5,
+      fees5,
+      discount5,
+      status5,
+    } = req.body;
+
+    const student = await Student.findById({ _id: id });
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Student not found" });
     }
 
-    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
-    const userRole = decoded.role;
-
-    if (!["superadmin", "hquser", "supervisor", "admin"].includes(userRole)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
+    const user = await User.findById({ _id: student.userId })
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, error: "User data not found" });
     }
 
-    const student = await Student.findById(id).select("_id userId schoolId").lean();
-    if (!student?._id) {
-      return res.status(404).json({ success: false, error: "Student not found" });
+    //console.log("School Id : " + student.schoolId)
+    const school = await School.findById({ _id: student.schoolId })
+    if (!school) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Niswan not found" });
     }
 
-    // ---------------- Academic year (ACTIVE) ----------------
+    let accYear = new Date().getFullYear() + "-" + (new Date().getFullYear() + 1);
     const redis = await getRedis();
-    let academicYears = [];
-    try {
-      const cached = await redis.get("academicYears");
-      academicYears = cached ? JSON.parse(cached) : [];
-    } catch {
-      academicYears = [];
+    const academicYears = JSON.parse(await redis.get('academicYears'));
+    let accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+
+    //console.log("ACYear-1 : " + accYear + ", ACYearId-1:" + accYearId)
+    if (accYearId == null || accYearId == "") {
+      accYear = (new Date().getFullYear() - 1) + "-" + new Date().getFullYear();
+      accYearId = academicYears.filter(acYear => acYear.acYear === accYear).map(acYear => acYear._id);
+      //console.log("ACYear-2 : " + accYear + ", ACYearId-2:" + accYearId)
     }
 
-    // ✅ FIX: your DB select should match your actual AcademicYear schema fields
-    // Most of your code uses { acYear: "2024-2025", status: "Active" }
-    if (!Array.isArray(academicYears) || academicYears.length === 0) {
-      academicYears = await AcademicYear.find().select("_id acYear status").lean();
+    let finalFees1Val = Number(fees1 ? fees1 : "0") - Number(discount1 ? discount1 : "0");
+    let finalFees2Val = Number(fees2 ? fees2 : "0") - Number(discount2 ? discount2 : "0");
+    let finalFees3Val = Number(fees3 ? fees3 : "0") - Number(discount3 ? discount3 : "0");
+    let finalFees4Val = Number(fees4 ? fees4 : "0") - Number(discount4 ? discount4 : "0");
+    let finalFees5Val = Number(fees5 ? fees5 : "0") - Number(discount5 ? discount5 : "0");
+
+    let updateAcademic = await Academic.findOne({ studentId: student._id, acYear: accYearId });
+    if (updateAcademic != null) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Check the Academic Data - Already Promote data found." });
     }
 
-    const activeYear = academicYears.find((a) => String(a.status) === "Active") || academicYears[0];
-    if (!activeYear?._id) {
-      return res.status(400).json({ success: false, error: "Academic year not configured" });
+    console.log("Status-1 : " + status1 + ", Status-2 : " + status2 + ", Status-3 : " + status3
+      + ", Status-4 : " + status4 + ", Status-5 : " + status5);
+
+    // To complete.
+    if (status1 === "Completed" || status2 === "Completed" || status3 === "Completed"
+      || status4 === "Completed" || status5 === "Completed") {
+
+      const academic = await Academic.findOne({ studentId: student._id, acYear: acYear });
+      if (academic != null) {
+        await Academic.findByIdAndUpdate({ _id: academic._id }, {
+          status1: status1 && status1 === "Completed" ? status1 : academic.status1,
+          status2: status2 && status2 === "Completed" ? status2 : academic.status2,
+          status3: status3 && status3 === "Completed" ? status3 : academic.status3,
+          status4: status4 && status4 === "Completed" ? status4 : academic.status4,
+          status5: status5 && status5 === "Completed" ? status5 : academic.status5,
+        });
+      }
     }
 
-    // ✅ FIX: keep it ObjectId (do NOT String() it)
-    const promoteAcYearId = '68612e92eeebf699b9d34a21';//2025-2026;
+    let savedAccount;
+    // To promote.
+    if ((status1 && status1 != "Completed") || (status2 && status2 != "Completed") || (status3 && status3 != "Completed")
+      || (status4 && status4 != "Completed") || (status5 && status5 != "Completed")) {
 
-    // Prevent double promotion
-    const already = await Academic.findOne({ studentId: student._id, acYear: promoteAcYearId })
-      .select("_id")
-      .lean();
+      let academicModal = {};
 
-    if (already?._id) {
-      return res.status(400).json({ success: false, error: "Already promoted for this Academic Year" });
-    }
+      academicModal['studentId'] = student._id;
+      academicModal['acYear'] = accYearId;
 
-    // ---------------- Build nextPayload ----------------
-    const nextPayload = {
-      instituteId1, courseId1, fees1, discount1, status1, year1: Number(year1 || 0),
-      instituteId2, courseId2, fees2, discount2, status2, year2: Number(year2 || 0),
-      instituteId3, courseId3, fees3, discount3, status3, year3: Number(year3 || 0),
-      instituteId4, courseId4, fees4, discount4, status4, year4: Number(year4 || 0),
-      instituteId5, courseId5, fees5, discount5, status5, year5: Number(year5 || 0),
-    };
+      // Deeniyath Education.
+      academicModal['instituteId1'] = instituteId1;
+      academicModal['courseId1'] = courseId1;
+      academicModal['refNumber1'] = refNumber1;
+      if (status1 && status1 != "Completed") {
+        academicModal['year1'] = status1 && status1 === "Not-Promoted" ? year1 : year1 ? Number(year1) + 1 : 1;
+        academicModal['fees1'] = fees1;
+        academicModal['discount1'] = discount1;
+        academicModal['finalFees1'] = finalFees1Val;
+        academicModal['status1'] = status1;
+      }
 
-    // ✅ slots includes safe parsed numbers (fees/discount/finalFees)
-    const slots = buildAcademicSlotsFromPayload(nextPayload);
+      if (status4 && status4 != "Completed") {
+        // Islamic Home Science.
+        academicModal['instituteId4'] = instituteId4;
+        academicModal['courseId4'] = courseId4;
+        academicModal['refNumber4'] = refNumber4;
+        academicModal['fees4'] = fees4;
+        academicModal['discount4'] = discount4;
+        academicModal['finalFees4'] = finalFees4Val;
+        academicModal['status4'] = status4;
+      }
 
-    // Build academic doc
-    const academicDocToCreate = { studentId: student._id, acYear: promoteAcYearId };
+      if (status2 && status2 != "Completed") {
+        // School Education.
+        academicModal['instituteId2'] = instituteId2;
+        academicModal['courseId2'] = courseId2;
+        academicModal['refNumber2'] = refNumber2;
+        academicModal['fees2'] = fees2;
+        academicModal['discount2'] = discount2;
+        academicModal['finalFees2'] = finalFees2Val;
+        academicModal['status2'] = status2;
+      }
 
-    let totalFees = 0;
+      if (status3 && status3 != "Completed") {
+        // College Education.
+        academicModal['instituteId3'] = instituteId3;
+        academicModal['courseId3'] = courseId3;
+        academicModal['refNumber3'] = refNumber3;
+        academicModal['year3'] = status3 && status3 === "Not-Promoted" ? year3 : year3 ? Number(year3) + 1 : 1;
+        academicModal['fees3'] = fees3;
+        academicModal['discount3'] = discount3;
+        academicModal['finalFees3'] = finalFees3Val;
+        academicModal['status3'] = status3;
+      }
 
-    for (const s of slots) {
-      const st = String(nextPayload[`status${s.i}`] || "");
-      const y = Number(nextPayload[`year${s.i}`] || 0);
+      if (status5 && status5 != "Completed") {
+        // Vocational Course.
+        academicModal['instituteId5'] = instituteId5;
+        academicModal['courseId5'] = courseId5;
+        academicModal['refNumber5'] = refNumber5;
+        academicModal['fees5'] = fees5;
+        academicModal['discount5'] = discount5;
+        academicModal['finalFees5'] = finalFees5Val;
+        academicModal['status5'] = status5;
+      }
 
-      if (!s.instituteId || !s.courseId) continue;
-      if (st === "Completed") continue;
+      //console.log(academicModal);
+      const newAcademic = new Academic(academicModal)
+      updateAcademic = await newAcademic.save();
 
-      const nextYear = st === "Not-Promoted" ? y : Math.max(y + 1, 1);
+      let totalFees = (finalFees1Val && status1 != "Completed" ? finalFees1Val : 0)
+        + (finalFees2Val && status2 != "Completed" ? finalFees2Val : 0)
+        + (finalFees3Val && status3 != "Completed" ? finalFees3Val : 0)
+        + (finalFees4Val && status4 != "Completed" ? finalFees4Val : 0)
+        + (finalFees5Val && status5 != "Completed" ? finalFees5Val : 0);
 
-      academicDocToCreate[`instituteId${s.i}`] = s.instituteId;
-      academicDocToCreate[`courseId${s.i}`] = s.courseId;
-
-      // ✅ FIX: keep numeric values already parsed in slots
-      academicDocToCreate[`fees${s.i}`] = Number(s.fees || 0);
-      academicDocToCreate[`discount${s.i}`] = Number(s.discount || 0);
-      academicDocToCreate[`finalFees${s.i}`] = Number(s.finalFees || 0);
-
-      // ✅ keep refNumber from UI if provided
-      const refVal = req.body?.[`refNumber${s.i}`];
-      if (refVal !== undefined) academicDocToCreate[`refNumber${s.i}`] = refVal;
-
-      academicDocToCreate[`status${s.i}`] = "Admission";
-      academicDocToCreate[`year${s.i}`] = nextYear;
-
-      totalFees += Number(s.finalFees || 0);
-    }
-
-    // If nothing to promote, return early
-    const hasAnySlot = Object.keys(academicDocToCreate).some((k) => k.startsWith("courseId"));
-    if (!hasAnySlot) {
-      return res.status(400).json({ success: false, error: "No valid course slots to promote" });
-    }
-
-    const session = await mongoose.startSession();
-
-    try {
-      const createdInvoiceIds = [];
-
-      await session.withTransaction(async () => {
-        // 1) Create Academic
-        const created = await Academic.create([academicDocToCreate], { session });
-        const createdAcademic = created?.[0];
-
-        if (!createdAcademic?._id) throw new Error("Failed to create academic (promotion)");
-
-        // 3) Upsert Account as FEES DUE (not paid)
-        if (Number(totalFees) > 0) {
-          await upsertFeesDueAccount({
-            userId: student.userId,
-            acYear: promoteAcYearId,
-            academicId: createdAcademic._id,
-            fees: totalFees,
-            receiptLabel: "Promote",     // ✅ FIX: correct param name
-            remarks: "Promoted",
-            session,
-          });
-        }
-
-        // 4) Create invoices for each promoted slot
-        for (const s of slots) {
-          const st = String(nextPayload[`status${s.i}`] || "");
-
-          if (!s.instituteId || !s.courseId) continue;
-          if (st === "Completed") continue;
-
-          const slotFees = Number(s.finalFees || 0);
-          if (!Number.isFinite(slotFees) || slotFees <= 0) continue;
-
-          const inv = await createFeesInvoiceSafe({
-            schoolId: student.schoolId,
-            studentId: student._id,
-            userId: student.userId,
-            acYear: promoteAcYearId,
-            academicId: createdAcademic._id,
-            courseId: s.courseId,
-            totalFees: slotFees,
-            source: "COURSE_CHANGE",      // or "ADMISSION" if you want
-            createdBy: userId,            // ✅ FIX: always defined
-            session,
-          });
-
-          if (inv?._id) createdInvoiceIds.push(String(inv._id));
-        }
-
-        // ✅ Optional strictness: If you want promotion to FAIL if no invoice is created
-        // if (createdInvoiceIds.length === 0 && Number(totalFees) > 0) {
-        //   throw new Error("Promotion created Academic/Account but no invoices were generated");
-        // }
+      // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
+      savedAccount = await upsertFeesDueAccount({
+        userId: student.userId,
+        acYear: accYearId._id,
+        academicId: savedAcademic._id,
+        fees: totalFees,
+        receiptLabel: "Promote",
+        remarks: "Promote",
+        session,
       });
 
-      return res.status(200).json({
-        success: true,
-        message: "Student promoted successfully",
-        createdInvoices: createdInvoiceIds,
+      // ✅ Create Fees Invoice for promotion (due)
+      await createFeesInvoiceSafe({
+        schoolId: student.schoolId,
+        studentId: student._id,
+        userId: student.userId,
+        acYear: accYearId._id,
+        academicId: savedAcademic._id,
+        courseId: courseId1,
+        totalFees,
+        source: "COURSE_CHANGE",
+        createdBy: req.user?._id,
+        session,
       });
-    } catch (txErr) {
-      console.log("[promoteStudent] TX error:", txErr);
-      return res.status(500).json({
-        success: false,
-        error: txErr?.message || "Promotion failed",
-      });
-    } finally {
-      await session.endSession();
     }
+
+    const coursesArray = [];
+    if (courseId1 && status1 && status1 != "Completed") {
+      coursesArray.push(courseId1);
+    }
+    if (nextCourseId && status2 && status2 != "Completed") {
+      coursesArray.push(nextCourseId);
+    }
+    if (courseId3 && status3 && status3 != "Completed") {
+      coursesArray.push(courseId3);
+    }
+    if (courseId4 && status4 && status4 != "Completed") {
+      coursesArray.push(courseId4);
+    }
+    if (courseId5 && status5 && status5 != "Completed") {
+      coursesArray.push(courseId5);
+    }
+    await Student.findByIdAndUpdate({ _id: student._id }, { courses: coursesArray });
+
+    return res.status(200).json({ success: true, message: "Student promoted Successfully." })
+
   } catch (error) {
-    console.log("[promoteStudent] error:", error);
-    return res.status(500).json({ success: false, error: "promote student server error" });
+    console.log(error)
+
+    return res
+      .status(500)
+      .json({ success: false, error: "Promote students server error" });
   }
 };
 
@@ -1968,130 +1929,6 @@ const deleteStudent = async (req, res) => {
   }
 }
 
-const isObjectId = (v) => /^[a-fA-F0-9]{24}$/.test(String(v || ""));
-
-const removeStudents = async (req, res) => {
-  try {
-    // ✅ role check (adjust to your policy)
-    const role = req.user?.role;
-    if (!["superadmin", "hquser"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    const { studentIds } = req.body;
-
-    if (!Array.isArray(studentIds) || studentIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "studentIds is required (non-empty array)",
-      });
-    }
-
-    const invalidIds = studentIds.filter((id) => !isObjectId(id));
-    if (invalidIds.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid studentIds: ${invalidIds.join(", ")}`,
-      });
-    }
-
-    const uniqueStudentIds = [...new Set(studentIds.map(String))];
-
-    const session = await mongoose.startSession();
-
-    let summary = null;
-
-    await session.withTransaction(async () => {
-      // 1) Load Students to get their userIds
-      const students = await Student.find({ _id: { $in: uniqueStudentIds } })
-        .select("_id userId")
-        .session(session)
-        .lean();
-
-      if (!students || students.length === 0) {
-        throw new Error("No students found for provided studentIds");
-      }
-
-      const foundStudentIds = students.map((s) => String(s._id));
-      const userIds = [...new Set(students.map((s) => String(s.userId)).filter(Boolean))];
-
-      // 2) Fetch invoiceIds for those students
-      const invoiceDocs = await FeeInvoice.find({ studentId: { $in: foundStudentIds } })
-        .select("_id")
-        .session(session)
-        .lean();
-      const invoiceIds = invoiceDocs.map((d) => d._id);
-
-      // 3) Find batchItems linked to studentIds and/or invoiceIds
-      const batchItemQuery = {
-        $or: [
-          { studentId: { $in: foundStudentIds } },
-          ...(invoiceIds.length ? [{ invoiceId: { $in: invoiceIds } }] : []),
-        ],
-      };
-
-      const batchItems = await PaymentBatchItem.find(batchItemQuery)
-        .select("_id batchId")
-        .session(session)
-        .lean();
-
-      const batchItemIds = batchItems.map((x) => x._id);
-      const touchedBatchIds = [...new Set(batchItems.map((x) => String(x.batchId)).filter(Boolean))];
-
-      // 4) Delete children first
-      const delBatchItems = batchItemIds.length
-        ? await PaymentBatchItem.deleteMany({ _id: { $in: batchItemIds } }).session(session)
-        : { deletedCount: 0 };
-
-      const delInvoices = await FeeInvoice.deleteMany({ studentId: { $in: foundStudentIds } }).session(session);
-
-      const delAccounts = await Account.deleteMany({ userId: { $in: userIds } }).session(session);
-
-      const delAcademics = await Academic.deleteMany({ studentId: { $in: foundStudentIds } }).session(session);
-
-      const delStudents = await Student.deleteMany({ _id: { $in: foundStudentIds } }).session(session);
-
-      const delUsers = await User.deleteMany({ _id: { $in: userIds } }).session(session);
-
-      // 5) Delete ONLY empty batches after removing items
-      let deletedBatches = 0;
-
-      for (const bid of touchedBatchIds) {
-        if (!isObjectId(bid)) continue;
-
-        const remaining = await PaymentBatchItem.countDocuments({ batchId: bid }).session(session);
-        if (remaining === 0) {
-          const delBatch = await PaymentBatch.deleteOne({ _id: bid }).session(session);
-          deletedBatches += delBatch?.deletedCount || 0;
-        }
-      }
-
-      summary = {
-        requestedStudentIds: uniqueStudentIds.length,
-        foundStudents: foundStudentIds.length,
-        deleted: {
-          paymentBatchItems: delBatchItems?.deletedCount || 0,
-          feeInvoices: delInvoices?.deletedCount || 0,
-          accounts: delAccounts?.deletedCount || 0,
-          academics: delAcademics?.deletedCount || 0,
-          students: delStudents?.deletedCount || 0,
-          users: delUsers?.deletedCount || 0,
-          paymentBatches: deletedBatches,
-        },
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Bulk student removal completed.",
-      summary,
-    });
-  } catch (e) {
-    console.log("[removeStudentsCascadeBulk] error:", e);
-    return res.status(500).json({ success: false, error: e.message || "server error" });
-  }
-};  
-
 const getStudentsCount = async (req, res) => {
 
   try {
@@ -2116,5 +1953,5 @@ const getStudentsCount = async (req, res) => {
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
-  getStudentForPromote, promoteStudent, getByFilter, markFeesPaid, removeStudents
+  getStudentForPromote, promoteStudent, getByFilter, markFeesPaid
 };

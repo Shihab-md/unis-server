@@ -3,7 +3,7 @@ import authMiddleware from '../middleware/authMiddlware.js'
 import {
     addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
     getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
-    getStudentForPromote, promoteStudent, getByFilter, markFeesPaid
+    getStudentForPromote, promoteStudent, getByFilter, markFeesPaid, removeStudents
 } from '../controllers/studentController.js'
 
 const router = express.Router()
@@ -25,5 +25,6 @@ router.get('/byFilter/:schoolId/:courseId/:status/:acYear/:maritalStatus/:hostel
 
 router.post('/import', authMiddleware, importStudentsData)
 router.post('/markFeesPaid', authMiddleware, markFeesPaid)
+router.post('/removeStudents', authMiddleware, removeStudents)
 
 export default router

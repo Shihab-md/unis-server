@@ -7,7 +7,7 @@ const academicSchema = new Schema({
 
   instituteId1: { type: Schema.Types.ObjectId, ref: "Institute", required: true },
   courseId1: { type: Schema.Types.ObjectId, ref: "Course", required: true },
-  refNumber1: { type: String, required: true },
+  refNumber1: { type: String },
   year1: { type: Number },
   fees1: { type: Number },
   discount1: { type: Number },

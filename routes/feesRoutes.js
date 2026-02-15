@@ -8,7 +8,7 @@ import {
 
 const router = express.Router();
 
-router.get("/invoices/:studentId/:acYear", authMiddleware, listDueInvoicesForSchool);
+router.get("/invoices/:schoolId/:acYear", authMiddleware, listDueInvoicesForSchool);
 router.post("/payment-batches", authMiddleware, createPaymentBatch);
 router.get("/dashboard/school", authMiddleware, schoolFeesDashboard);
  
