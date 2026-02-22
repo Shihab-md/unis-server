@@ -29,7 +29,7 @@ const feeInvoiceSchema = new Schema(
 
     courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true, index: true },
 
-    source: { type: String, enum: ["ADMISSION", "COURSE_CHANGE", "MANUAL"], default: "ADMISSION", index: true },
+    source: { type: String, enum: ["ADMISSION", "COURSE_CHANGE", "MANUAL", "CERTIFICATE", "PROMOTE"], default: "ADMISSION", index: true },
     dueDate: { type: Date, index: true },
 
     items: { type: [invoiceItemSchema], required: true },

@@ -14,36 +14,6 @@ const requireRole = (role, allowed) => {
   }
 };
 
-// School side: list due invoices
-{/*
-export const listDueInvoicesForSchool = async (req, res) => {
-  try {
-    console.log("listDueInvoicesForSchool called")
-    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
-
-    const { schoolId, acYear, status } = req.params;
-
-    const q = {};
-    if (schoolId) q.schoolId = schoolId;
-    if (acYear) q.acYear = acYear;
- 
-    q.status = status ? status : { $in: ["ISSUED", "PARTIAL"] };
-    console.log(q)
-    const invoices = await FeeInvoice.find(q)
-      .select("invoiceNo schoolId studentId acYear courseId total paidTotal balance status createdAt source")
-      .sort({ createdAt: -1 })
-      .populate({ path: "userId", select: "name email role" })
-      .populate({ path: "courseId", select: "name years" })
-      .lean();
-
-    return res.status(200).json({ success: true, invoices });
-  } catch (e) {
-    console.log(e);
-    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
-  }
-};
-*/}
-
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called");
@@ -73,7 +43,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
       }
     }
 
-    console.log("Invoice query:", q);
+    //console.log("Invoice query:", q);
 
     const invoices = await FeeInvoice.find(q)
       .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
@@ -159,38 +129,22 @@ export const createPaymentBatch = async (req, res) => {
       const inv = invMap.get(String(it.invoiceId));
       if (!inv) return res.status(400).json({ success: false, error: `Invoice not found: ${it.invoiceId}` });
 
-      console.log("1")
-
       if (String(inv.schoolId) !== String(schoolId))
         return res.status(400).json({ success: false, error: "All invoices must belong to the same school" });
-
-      console.log("2")
-
-      //if (String(inv.acYear) !== String(acYear))
-      //  return res.status(400).json({ success: false, error: "Invoice academic year mismatch" });
-
-      console.log("3")
 
       if (inv.status === "CANCELLED")
         return res.status(400).json({ success: false, error: `Invoice cancelled: ${inv._id}` });
 
-      console.log("4")
-
       if (Number(inv.balance) <= 0)
         return res.status(400).json({ success: false, error: `Invoice already paid: ${inv._id}` });
 
-      console.log("5")
-
       if (Number(it.amount) > Number(inv.balance))
         return res.status(400).json({ success: false, error: `Amount exceeds invoice balance: ${inv._id}` });
-
-      console.log("6")
 
       if (String(inv.studentId) !== String(it.studentId))
         return res.status(400).json({ success: false, error: `Student mismatch for invoice: ${inv._id}` });
     }
 
-    console.log("hi came here")
     let batchDoc;
 
     await session.withTransaction(async () => {
@@ -297,6 +251,73 @@ export const schoolFeesDashboard = async (req, res) => {
   } catch (e) {
     console.log(e);
     return res.status(500).json({ success: false, error: "school dashboard error" });
+  }
+};
+
+export const listBatchesSentToHQForSchool = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
+
+    const { schoolId, acYear, status } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(schoolId) || !mongoose.Types.ObjectId.isValid(acYear)) {
+      return res.status(400).json({ success: false, error: "Invalid schoolId/acYear" });
+    }
+
+    const q = { schoolId, acYear };
+
+    // status filter
+    if (status && status !== "ALL") {
+      q.status = status;
+    } else {
+      // default: show only sent & not cancelled
+      q.status = { $in: ["PENDING_APPROVAL", "APPROVED", "REJECTED"] };
+    }
+
+    const batches = await PaymentBatch.find(q)
+      .select("batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo proofUrl paidDate status createdBy approvedBy approvedAt rejectedReason createdAt")
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .lean();
+
+    const batchIds = batches.map((b) => b._id);
+
+    const items = await PaymentBatchItem.find({ batchId: { $in: batchIds } })
+      .select("batchId invoiceId studentId amount status error createdAt")
+      .populate({
+        path: "studentId",
+        select: "rollNumber userId",
+        populate: { path: "userId", select: "name" },
+      })
+      .populate({
+        path: "invoiceId",
+        select: "invoiceNo total paidTotal balance status courseId source",
+        populate: { path: "courseId", select: "name type" },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // group items under each batch
+    const map = new Map();
+    for (const it of items) {
+      const k = String(it.batchId);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(it);
+    }
+
+    const result = batches.map((b) => ({
+      ...b,
+      items: map.get(String(b._id)) || [],
+    }));
+
+    return res.status(200).json({ success: true, batches: result });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
   }
 };
 

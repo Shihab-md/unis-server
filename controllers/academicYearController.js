@@ -111,7 +111,8 @@ const updateAcademicYear = async (req, res) => {
     const { id } = req.params;
     const {
       acYear,
-      desc, } = req.body;
+      desc,
+      active } = req.body;
 
     const academicYear = await AcademicYear.findById({ _id: id });
     if (!academicYear) {
@@ -123,6 +124,7 @@ const updateAcademicYear = async (req, res) => {
     const updateAcademicYear = await AcademicYear.findByIdAndUpdate({ _id: id }, {
       acYear,
       desc: toCamelCase(desc),
+      active
     })
 
     if (!updateAcademicYear) {
