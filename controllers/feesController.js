@@ -254,7 +254,7 @@ export const schoolFeesDashboard = async (req, res) => {
   }
 };
 
-export const listBatchesSentToHQForSchool = async (req, res) => {
+{/*export const listBatchesSentToHQForSchool = async (req, res) => {
   try {
     requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
 
@@ -319,5 +319,101 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
   }
-};
+};*/}
+export const listBatchesSentToHQForSchool = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
 
+    const role = req.user?.role;
+
+    const { schoolId, acYear, status } = req.params;
+
+    // ✅ acYear is required always
+    if (!mongoose.Types.ObjectId.isValid(acYear)) {
+      return res.status(400).json({ success: false, error: "Invalid acYear" });
+    }
+
+    // ✅ build query
+    const q = { acYear };
+
+    const isHQ = role === "superadmin" || role === "hquser";
+
+    // ✅ schoolId behavior:
+    // - HQ: schoolId can be "ALL" or missing => no filter (all schools)
+    // - Admin: must have a valid schoolId (restricted)
+    if (isHQ) {
+      if (schoolId && schoolId !== "ALL") {
+        if (!mongoose.Types.ObjectId.isValid(schoolId)) {
+          return res.status(400).json({ success: false, error: "Invalid schoolId" });
+        }
+        q.schoolId = schoolId;
+      }
+      // else: ALL schools (no schoolId in query)
+    } else {
+      // admin must provide valid schoolId (or you can force from req.user mapping)
+      if (!mongoose.Types.ObjectId.isValid(schoolId)) {
+        return res.status(400).json({ success: false, error: "Invalid schoolId" });
+      }
+      q.schoolId = schoolId;
+    }
+
+    // ✅ status filter
+    if (status && status !== "ALL") {
+      q.status = status;
+    } else {
+      q.status = { $in: ["PENDING_APPROVAL", "APPROVED", "REJECTED"] };
+    }
+
+    const batches = await PaymentBatch.find(q)
+      .select(
+        "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo proofUrl paidDate status createdBy approvedBy approvedAt rejectedReason createdAt"
+      )
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .lean();
+
+    // ✅ if no batches, return early (avoid $in [])
+    if (!batches.length) {
+      return res.status(200).json({ success: true, batches: [] });
+    }
+
+    const batchIds = batches.map((b) => b._id);
+
+    const items = await PaymentBatchItem.find({ batchId: { $in: batchIds } })
+      .select("batchId invoiceId studentId amount status error createdAt")
+      .populate({
+        path: "studentId",
+        select: "rollNumber userId",
+        populate: { path: "userId", select: "name" },
+      })
+      .populate({
+        path: "invoiceId",
+        select: "invoiceNo total paidTotal balance status courseId source",
+        populate: { path: "courseId", select: "name type" },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // group items under each batch
+    const map = new Map();
+    for (const it of items) {
+      const k = String(it.batchId);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(it);
+    }
+
+    const result = batches.map((b) => ({
+      ...b,
+      items: map.get(String(b._id)) || [],
+    }));
+
+    return res.status(200).json({ success: true, batches: result });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+  }
+};
