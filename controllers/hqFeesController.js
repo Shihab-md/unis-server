@@ -409,3 +409,62 @@ export const hqFeesDashboard = async (req, res) => {
     return res.status(500).json({ success: false, error: "hq dashboard error" });
   }
 };
+
+export const listPendingInvoicesHQ_NotSent = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["superadmin", "hquser"]);
+
+    const { acYear, schoolId } = req.params;
+
+    if (!isObjectId(acYear)) {
+      return res.status(400).json({ success: false, error: "Invalid acYear" });
+    }
+
+    const invoiceQuery = {
+      acYear,
+      status: { $in: ["ISSUED", "PARTIAL"] },
+    };
+
+    // optional school filter (ALL supported)
+    if (schoolId && schoolId !== "ALL") {
+      if (!isObjectId(schoolId)) {
+        return res.status(400).json({ success: false, error: "Invalid schoolId" });
+      }
+      invoiceQuery.schoolId = schoolId;
+    }
+
+    // ✅ Find invoiceIds that are already sent to HQ (exist in PaymentBatchItem)
+    const batchItemQuery = {
+      acYear,
+      status: { $in: ["PENDING_APPROVAL", "APPLIED"] },
+      ...(invoiceQuery.schoolId ? { schoolId: invoiceQuery.schoolId } : {}),
+    };
+
+    const sentInvoiceIds = await PaymentBatchItem.distinct("invoiceId", batchItemQuery);
+
+    if (sentInvoiceIds?.length) {
+      invoiceQuery._id = { $nin: sentInvoiceIds };
+    }
+
+    const invoices = await FeeInvoice.find(invoiceQuery)
+      .select("invoiceNo schoolId studentId acYear courseId total paidTotal balance status createdAt source")
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .populate({
+        path: "studentId",
+        select: "rollNumber userId",
+        populate: { path: "userId", select: "name" },
+      })
+      .populate({ path: "courseId", select: "name type" })
+      .lean();
+
+    return res.status(200).json({ success: true, invoices });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+  }
+};

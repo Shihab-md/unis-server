@@ -5,7 +5,7 @@ import {
   getBatchDetails,
   approveBatch,
   rejectBatch,
-  hqFeesDashboard,
+  hqFeesDashboard, listPendingInvoicesHQ_NotSent,
 } from "../controllers/hqFeesController.js";
 
 const router = express.Router();
@@ -15,5 +15,6 @@ router.get("/payment-batches/:batchId", authMiddleware, getBatchDetails);
 router.post("/payment-batches/:batchId/approve", authMiddleware, approveBatch);
 router.post("/payment-batches/:batchId/reject", authMiddleware, rejectBatch);
 router.get("/dashboard", authMiddleware, hqFeesDashboard);
+router.get("/pending-invoices-not-sent/:acYear/:schoolId", authMiddleware, listPendingInvoicesHQ_NotSent);
 
 export default router;
