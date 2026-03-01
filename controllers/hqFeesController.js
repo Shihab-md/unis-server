@@ -15,7 +15,7 @@ const requireRole = (role, allowed) => {
   }
 };
 
-export const listPendingBatches = async (req, res) => {
+{/*export const listPendingBatches = async (req, res) => {
   try {
     requireRole(req.user?.role, ["superadmin", "hquser"]);
 
@@ -39,9 +39,9 @@ export const listPendingBatches = async (req, res) => {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
   }
-};
+};*/}
 
-export const getBatchDetails = async (req, res) => {
+{/*export const getBatchDetails = async (req, res) => {
   try {
     requireRole(req.user?.role, ["superadmin", "hquser"]);
 
@@ -60,6 +60,84 @@ export const getBatchDetails = async (req, res) => {
         },
         {
           path: "invoiceId", select: "invoiceNo courseId total status source balance",
+          populate: { path: "courseId", select: "name type" },
+        },
+      ])
+      .lean();
+
+    return res.status(200).json({ success: true, batch, items });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+  }
+};*/}
+
+export const listPendingBatches = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["superadmin", "hquser"]);
+
+    const { schoolId, acYear, status = "PENDING_APPROVAL" } = req.query;
+    const q = { status };
+    if (schoolId) q.schoolId = schoolId;
+    if (acYear) q.acYear = acYear;
+
+    const batches = await PaymentBatch.find(q)
+      // ✅ include drive proof fields in list response
+      .select(
+        "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo " +
+          "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
+          "paidDate status createdBy createdAt"
+      )
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .lean();
+
+    return res.status(200).json({ success: true, batches });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+  }
+};
+
+export const getBatchDetails = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["superadmin", "hquser"]);
+
+    console.log("Called - getBatchDetails");
+
+    const { batchId } = req.params;
+
+    // ✅ include drive proof fields + populate school for Niswan display in UI
+    const batch = await PaymentBatch.findById(batchId)
+      .select(
+        "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo " +
+          "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
+          "paidDate status createdBy createdAt"
+      )
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .lean();
+
+    if (!batch) return res.status(404).json({ success: false, error: "Batch not found" });
+
+    const items = await PaymentBatchItem.find({ batchId })
+      .select("batchId invoiceId studentId amount status allocations createdAt")
+      .populate([
+        {
+          path: "studentId",
+          select: "rollNumber userId",
+          populate: { path: "userId", select: "name" },
+        },
+        {
+          path: "invoiceId",
+          select: "invoiceNo courseId total status source balance",
           populate: { path: "courseId", select: "name type" },
         },
       ])

@@ -24,6 +24,11 @@ const paymentBatchSchema = new Schema(
       index: true,
     },
 
+    proofDriveFileId: { type: String },
+    proofDriveViewUrl: { type: String },
+    proofDriveDownloadUrl: { type: String },
+    proofFileName: { type: String },
+
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date },

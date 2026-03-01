@@ -27,6 +27,8 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 
 import publicRoutes from "./routes/publicRoutes.js";
 
+import googleDriveRoutes from "./routes/googleDriveRoutes.js";
+
 await connectToDatabase()
 await loadCache()
  
@@ -62,6 +64,8 @@ app.use("/api/hq/fees", hqFeesRoutes);
 //app.use("/api/upload", uploadRoutes);
 
 app.use("/api/public", publicRoutes);
+
+app.use("/api/integrations/google-drive", googleDriveRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
