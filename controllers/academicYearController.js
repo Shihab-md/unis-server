@@ -80,6 +80,36 @@ const getAcademicYearsFromCache = async (req, res) => {
   }
 };
 
+export const getActiveAcademicYearIdFromCache = async () => {
+  const redis = await getRedis();
+
+  let academicYearsRaw = [];
+  try {
+    const cached = await redis.get("academicYears");
+    academicYearsRaw = cached ? JSON.parse(cached) : [];
+  } catch {
+    academicYearsRaw = [];
+  }
+
+  const yearsList = Array.isArray(academicYearsRaw)
+    ? academicYearsRaw
+    : Array.isArray(academicYearsRaw?.academicYears)
+      ? academicYearsRaw.academicYears
+      : [];
+
+  // ✅ pick Active first
+  const active = yearsList.find((x) => String(x?.active) === "Active");
+
+  // optional: fallback to latest if no active exists
+  const sorted = yearsList
+    .slice()
+    .sort((a, b) =>
+      String(b?.acYear || b?.year || "").localeCompare(String(a?.acYear || a?.year || ""))
+    );
+
+  return active?._id || sorted?.[0]?._id || "";
+};
+
 {/*
 const getAcademicYearsFromCache = async (req, res) => {
   try {

@@ -17,6 +17,7 @@ import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase, getNextNumber, createInvoiceFromStructure } from "./commonController.js";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -520,8 +521,8 @@ const importStudentsData = async (req, res) => {
   const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
   const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
 
-  const AC_YEAR_ID = "680485d9361ed06368c57f7c"; // 2024-2025 
-
+  const AC_YEAR_ID = await getActiveAcademicYearIdFromCache(); // "68612e92eeebf699b9d34a21" // 2025-2026 "680485d9361ed06368c57f7c"; // 2024-2025 
+  //console.log("AC Year Id : " + AC_YEAR_ID)
   const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
 
   const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
@@ -2237,7 +2238,7 @@ export const listPromoteCandidates = async (req, res) => {
     if (!["superadmin", "hquser", "admin"].includes(role)) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
-    
+
     const { schoolId, targetAcYear, courseId } = req.params;
 
     if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
@@ -2315,7 +2316,7 @@ export const listPromoteCandidates = async (req, res) => {
         rollNumber: s.rollNumber,
         name: s.userId?.name || "-",
         feesPaid: Number(s.feesPaid || 0),
-        fromAcYearId: a.acYear, 
+        fromAcYearId: a.acYear,
         fromSlot: slot,
         fromYear: Number(a[`year${slot}`] || 0),
         fromStatus,
@@ -2633,7 +2634,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
     if (session) await session.endSession();
   }
 };
- 
+
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,

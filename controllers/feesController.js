@@ -3,6 +3,7 @@ import FeeInvoice from "../models/FeeInvoice.js";
 import PaymentBatch from "../models/PaymentBatch.js";
 import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import { getNextNumber } from "./commonController.js";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
@@ -19,11 +20,11 @@ export const listDueInvoicesForSchool = async (req, res) => {
     console.log("listDueInvoicesForSchool called");
     requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
 
-    const { schoolId, acYear, status } = req.params;
+    const { schoolId, status } = req.params;
 
     const q = {};
     if (schoolId) q.schoolId = schoolId;
-    //if (acYear) q.acYear = acYear;
+    const acYear = await getActiveAcademicYearIdFromCache(); 
 
     const dueStatuses = ["ISSUED", "PARTIAL"];
     q.status = status ? status : { $in: dueStatuses };
@@ -212,7 +213,7 @@ export const createPaymentBatch = async (req, res) => {
 
     const {
       schoolId,
-      acYear,
+      //acYear,
       mode = "bank",
       referenceNo = "",
 
@@ -230,6 +231,7 @@ export const createPaymentBatch = async (req, res) => {
       items,
     } = req.body || {};
 
+    const acYear = await getActiveAcademicYearIdFromCache(); 
     if (!isObjectId(schoolId) || !isObjectId(acYear)) {
       return res.status(400).json({ success: false, error: "Invalid schoolId/acYear" });
     }
