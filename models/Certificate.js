@@ -8,8 +8,17 @@ const certificateSchema = new Schema({
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
+
+  // Legacy field - keep for backward compatibility (we store Drive preview URL here)
   certificate: { type: String, required: true },
- 
+
+  // ✅ Google Drive storage fields
+  certificateDriveFileId: { type: String },
+  certificateDriveViewUrl: { type: String },
+  certificateDriveDownloadUrl: { type: String },
+  certificateDrivePreviewUrl: { type: String },
+  certificateFileName: { type: String },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
