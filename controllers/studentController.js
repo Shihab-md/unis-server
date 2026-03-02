@@ -914,7 +914,7 @@ const getStudentsBySchool = async (req, res) => {
   console.log("getStudentsBySchool : " + schoolId);
   try {
     const studentSelect =
-      "rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks about";
+      "rollNumber name dob doa fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks about address city";
 
     const studentsList = await Student.find({ schoolId: schoolId, active: "Active" })
       .select(studentSelect)
