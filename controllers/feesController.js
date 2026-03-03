@@ -24,7 +24,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
 
     const q = {};
     if (schoolId) q.schoolId = schoolId;
-    const acYear = await getActiveAcademicYearIdFromCache(); 
+    const acYear = await getActiveAcademicYearIdFromCache();
 
     const dueStatuses = ["ISSUED", "PARTIAL"];
     q.status = status ? status : { $in: dueStatuses };
@@ -232,7 +232,7 @@ export const createPaymentBatch = async (req, res) => {
       items,
     } = req.body || {};
 
-    const acYear = await getActiveAcademicYearIdFromCache(); 
+    const acYear = await getActiveAcademicYearIdFromCache();
     if (!isObjectId(schoolId) || !isObjectId(acYear)) {
       return res.status(400).json({ success: false, error: "Invalid schoolId/acYear" });
     }
@@ -251,8 +251,8 @@ export const createPaymentBatch = async (req, res) => {
 
     for (const it of items) {
       if (!it) continue;
-
-      if (!isObjectId(it.invoiceId) || !isObjectId(it.studentId)) {
+console.log(it.invoiceId +", "+ it.amount)
+      if (!isObjectId(it.invoiceId) || !isObjectId(it.studentId._id)) {
         return res.status(400).json({ success: false, error: "Invalid invoiceId/studentId in items" });
       }
 
@@ -276,7 +276,7 @@ export const createPaymentBatch = async (req, res) => {
       invoiceIds.push(it.invoiceId);
       normalizedItems.push({
         invoiceId: it.invoiceId,
-        studentId: it.studentId,
+        studentId: it.studentId._id,
         amount: amt,
         allocations,
       });
@@ -595,7 +595,7 @@ export const schoolFeesDashboard = async (req, res) => {
 export const listBatchesSentToHQForSchool = async (req, res) => {
   try {
     requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
-
+    console.log("Called - listBatchesSentToHQForSchool")
     const role = req.user?.role;
     const { schoolId, acYear, status } = req.params;
 
@@ -630,8 +630,8 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       .select(
         // ✅ added proofDrive* fields
         "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo " +
-          "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
-          "paidDate status createdBy approvedBy approvedAt rejectedReason createdAt"
+        "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
+        "paidDate status createdBy approvedBy approvedAt rejectedReason createdAt"
       )
       .sort({ createdAt: -1 })
       .populate({

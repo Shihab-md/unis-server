@@ -87,7 +87,8 @@ const loadCache = async () => {
                 .populate({ path: "districtStateId", select: "district state" })
                 .lean(),
 
-            AcademicYear.find({ active: { $ne: "In-Active" } })
+            //AcademicYear.find({ active: { $ne: "In-Active" } })
+            AcademicYear.find()
                 .sort({ acYear: 1 })
                 .select("_id acYear active")
                 .lean(),
