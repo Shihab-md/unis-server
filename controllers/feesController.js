@@ -50,6 +50,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
       .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
       .sort({ createdAt: -1 })
       .populate({ path: "userId", select: "name email" })
+      .populate({ path: "studentId", select: "rollNumber" })
       .populate({ path: "courseId", select: "name years type" })
       .lean();
 
