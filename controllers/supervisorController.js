@@ -108,7 +108,7 @@ const getSupervisors = async (req, res) => {
     // 1) Fetch supervisors
     const supervisors = await Supervisor.find({ active: "Active" })
       .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active userId routeName jobType remarks")
+      .select("supervisorId contactNumber active userId routeName jobType remarks dob doj")
       .populate({ path: "userId", select: "name email role" })
       .lean();
 
@@ -259,7 +259,7 @@ const getBySupFilter = async (req, res) => {
     // Fetch supervisors (lean + select only needed)
     const supervisors = await Supervisor.find(finalQuery)
       .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active jobType userId routeName remarks") // add fields you need
+      .select("supervisorId contactNumber active jobType userId routeName remarks dob doj") // add fields you need
       .populate({ path: "userId", select: "name email role" }) // safer than {password:0}
       .lean();
 

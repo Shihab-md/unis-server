@@ -135,3 +135,122 @@ export const createInvoiceFromStructure = async ({
 
   return invoice[0];
 };
+
+export function parseDate(rawDate) {
+  const fallback = new Date(2000, 0, 1);
+
+  const monthMap = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12,
+  };
+
+  const isAlpha = (x) => /^[A-Za-z]+$/.test(x);
+
+  const toInt = (x) => {
+    const n = Number(String(x));
+    return Number.isInteger(n) ? n : NaN;
+  };
+
+  // ✅ Excel serial date -> JS Date (UTC)
+  // Windows Excel: day 0 = 1899-12-30 (accounts for Excel's 1900 leap-year bug)
+  const excelSerialToDateUTC = (serial) => {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return null;
+
+    // common DOB range sanity: roughly 1900..2100
+    // Excel serial for 1900-01-01 ~ 2, for 2100-01-01 ~ 73049
+    if (n < 1 || n > 80000) return null;
+
+    const epoch = Date.UTC(1899, 11, 30); // 1899-12-30
+    const ms = epoch + Math.round(n) * 24 * 60 * 60 * 1000;
+    const dt = new Date(ms);
+
+    // extra sanity
+    const y = dt.getUTCFullYear();
+    if (y < 1900 || y > 2100) return null;
+
+    return dt;
+  };
+
+  const parse = (input) => {
+    if (input === null || input === undefined) return { ok: false, reason: "empty" };
+
+    // ✅ If it's a pure number (or numeric string) like "37258", treat as Excel serial
+    const numeric = Number(String(input).trim());
+    if (String(input).trim() !== "" && Number.isFinite(numeric) && /^[0-9]+(\.0+)?$/.test(String(input).trim())) {
+      const dt = excelSerialToDateUTC(numeric);
+      if (dt) return { ok: true, date: dt, reason: "excel_serial" };
+      // fall through if not in range
+    }
+
+    let s = String(input)
+      .trim()
+      .replace(/\r/g, "")
+      .replace(/\s+/g, "");
+
+    if (!s) return { ok: false, reason: "empty" };
+
+    // normalize separators to "-"
+    s = s.replace(/[./]/g, "-");
+
+    const parts = s.split("-").filter(Boolean);
+    if (parts.length !== 3) return { ok: false, reason: "expected 3 parts" };
+
+    // year: allow 2 or 4 digits
+    const yearRaw = parts[2];
+    let y = toInt(yearRaw);
+    if (!Number.isInteger(y)) return { ok: false, reason: "invalid year" };
+
+    if (String(yearRaw).length === 2) {
+      y = y <= 49 ? 2000 + y : 1900 + y;
+    }
+    if (y < 1000 || y > 9999) return { ok: false, reason: "invalid year" };
+
+    // DMY always for numeric. Also accept month-name-first.
+    let d, m;
+
+    if (isAlpha(parts[0])) {
+      // MMM-DD-YYYY => treat as DD-MMM-YYYY
+      m = monthMap[parts[0].toLowerCase()];
+      if (!m) return { ok: false, reason: "invalid month name" };
+      d = toInt(parts[1]);
+    } else {
+      d = toInt(parts[0]);
+
+      if (isAlpha(parts[1])) {
+        m = monthMap[parts[1].toLowerCase()];
+        if (!m) return { ok: false, reason: "invalid month name" };
+      } else {
+        m = toInt(parts[1]);
+      }
+    }
+
+    if (!Number.isInteger(d) || d < 1 || d > 31) return { ok: false, reason: "invalid day" };
+    if (!Number.isInteger(m) || m < 1 || m > 12) return { ok: false, reason: "invalid month" };
+
+    // validate actual calendar date
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+      return { ok: false, reason: "invalid calendar date" };
+    }
+
+    return { ok: true, date: dt, reason: "string_date" };
+  };
+
+  try {
+    const r = parse(rawDate);
+    return r.ok ? r.date : fallback;
+  } catch {
+    return fallback;
+  }
+}

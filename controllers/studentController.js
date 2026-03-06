@@ -16,7 +16,7 @@ import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import Numbering from "../models/Numbering.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
-import { toCamelCase, getNextNumber, createInvoiceFromStructure } from "./commonController.js";
+import { toCamelCase, getNextNumber, createInvoiceFromStructure, parseDate } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -726,8 +726,9 @@ const importStudentsData = async (req, res) => {
           const userId = savedUser[0]._id;
 
           // Create Student (store new rollNumber; keep old in remarks)
-          const dobDate = parseDob(studentData.dob);
-
+          //const dobDate = parseDob(studentData.dob);
+          const dobDate = parseDate(studentData.dob);
+          //console.log(studentData.dob+"->"+dobDate);
           const savedStudent = await Student.create(
             [
               {
@@ -739,15 +740,16 @@ const importStudentsData = async (req, res) => {
                 gender: "Female",
                 maritalStatus: "Single",
                 idMark1: "-",
-                fatherName: safeStr(studentData.fatherName),
+                fatherName: toCamelCase(safeStr(studentData.fatherName)),
                 fatherNumber: safeStr(studentData.fatherNumber),
-                motherName: safeStr(studentData.motherName),
+                motherName: toCamelCase(safeStr(studentData.motherName)),
                 motherNumber: safeStr(studentData.motherNumber),
-                guardianName: safeStr(studentData.guardianName),
+                guardianName: toCamelCase(safeStr(studentData.guardianName)),
                 guardianNumber: safeStr(studentData.guardianNumber),
-                guardianRelation: safeStr(studentData.guardianRelation),
-                address: safeStr(studentData.address),
-                city: safeStr(studentData.city),
+                guardianRelation: toCamelCase(safeStr(studentData.guardianRelation)),
+                address: toCamelCase(safeStr(studentData.address)),
+                pincode: 0,
+                city: toCamelCase(safeStr(studentData.city)),
                 districtStateId: school.districtStateId,
                 hostel: "No",
                 active: "Active",
@@ -891,7 +893,7 @@ const markFeesPaid = async (req, res) => {
 const getStudents = async (req, res) => {
   try {
     const students = await Student.find()
-      .select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId remarks about")
+      //.select("rollNumber name dob fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId schoolId districtStateId remarks about")
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
@@ -917,7 +919,7 @@ const getStudentsBySchool = async (req, res) => {
       "rollNumber name dob doa fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber course year fees active userId districtStateId courses feesPaid remarks about address city";
 
     const studentsList = await Student.find({ schoolId: schoolId, active: "Active" })
-      .select(studentSelect)
+      //.select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "districtStateId", select: "district state" })
@@ -1107,9 +1109,9 @@ const getByFilter = async (req, res) => {
     // ----------------------------
     const studentSelect =
       "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about";
-
+ 
     const studentsMap = await Student.find(studentQuery)
-      .select(studentSelect)
+      //.select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
