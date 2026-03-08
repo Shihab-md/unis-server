@@ -961,7 +961,7 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Template not found." });
     }
-    console.log("OK");
+    //console.log("OK");
 
     const academics = await Academic.find({
       $or: [{ 'courseId1': template.courseId, 'status1': 'Completed' },
@@ -976,14 +976,14 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
         .status(404)
         .json({ success: false, error: "Academic not found for the Niswan and Course." });
     }
-    console.log("OK OK");
+    //console.log("OK OK");
 
     let studentIds = [];
     for (const academic of academics) {
       studentIds.push(String(academic.studentId));
     }
-
-    console.log(studentIds.length);
+    //console.log(academics);
+    //console.log(studentIds.length);
 
     let students
     if (studentIds.length > 0) {
@@ -1109,7 +1109,7 @@ const getByFilter = async (req, res) => {
     // ----------------------------
     const studentSelect =
       "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about";
- 
+
     const studentsMap = await Student.find(studentQuery)
       //.select(studentSelect)
       .sort({ rollNumber: 1 })
@@ -2136,103 +2136,6 @@ const computeTotalFeesFromAcademic = (acad) => {
   return sum;
 };
 
-/**
- * GET /students/promote/candidates/:schoolId/:targetAcYear/:courseId
- * Returns students eligible to promote for the given course (only).
- */
-/**export const listPromoteCandidates = async (req, res) => {
-  try {
-    console.log("listPromoteCandidates")
-
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    const { schoolId, targetAcYear, courseId } = req.params;
-    console.log("AC Year : " + targetAcYear)
-    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
-      return res.status(400).json({ success: false, error: "Invalid params" });
-    }
-
-    // Students in school (active only)
-    const students = await Student.find({ schoolId: schoolId, active: "Active", feesPaid: 1 })
-      .select("_id userId rollNumber feesPaid")
-      .populate({ path: "userId", select: "name" })
-      .lean();
-
-    if (!students.length) return res.status(200).json({ success: true, students: [] });
-
-    const studentIds = students.map((s) => s._id);
-
-    // Latest academic containing course for each student (any year)
-    const academics = await Academic.find({
-      studentId: { $in: studentIds },
-      $or: [
-        { courseId1: courseId },
-        { courseId2: courseId },
-        { courseId3: courseId },
-        { courseId4: courseId },
-        { courseId5: courseId },
-      ],
-    })
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .select(
-        "_id studentId acYear courseId1 courseId2 courseId3 courseId4 courseId5 year1 year2 year3 year4 year5 status1 status2 status3 status4 status5"
-      )
-      .lean();
-
-    const latestByStudent = new Map();
-    for (const a of academics) {
-      const k = String(a.studentId);
-      if (!latestByStudent.has(k)) latestByStudent.set(k, a);
-    }
-
-    // Students already promoted for this course in target year
-    const alreadyTarget = await Academic.find({
-      studentId: { $in: studentIds },
-      acYear: targetAcYear,
-      $or: [
-        { courseId1: courseId },
-        { courseId2: courseId },
-        { courseId3: courseId },
-        { courseId4: courseId },
-        { courseId5: courseId },
-      ],
-    })
-      .select("studentId")
-      .lean();
-
-    const alreadySet = new Set(alreadyTarget.map((a) => String(a.studentId)));
-
-    const out = [];
-    for (const s of students) {
-      const a = latestByStudent.get(String(s._id));
-      if (!a) continue; // student never had this course
-      if (alreadySet.has(String(s._id))) continue; // already promoted for this course in target year
-
-      const slot = findCourseSlotIndex(a, courseId);
-      const fromYear = slot ? Number(a[`year${slot}`] || 0) : 0;
-      const fromStatus = slot ? String(a[`status${slot}`] || "") : "";
-
-      out.push({
-        studentId: s._id,
-        rollNumber: s.rollNumber,
-        name: s.userId?.name || "-",
-        feesPaid: Number(s.feesPaid || 0),
-        fromAcYearId: a.acYear,
-        fromSlot: slot,
-        fromYear,
-        fromStatus,
-      });
-    }
-
-    return res.status(200).json({ success: true, students: out });
-  } catch (e) {
-    console.log(e);
-    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
-  }
-};*/
 export const listPromoteCandidates = async (req, res) => {
   try {
     console.log("listPromoteCandidates");
@@ -2337,12 +2240,6 @@ export const listPromoteCandidates = async (req, res) => {
   }
 };
 
-/**
- * POST /students/promote/bulk
- * policy: PROMOTE | NOT_PROMOTE | COMPLETE
- * - PROMOTE/NOT_PROMOTE: create invoice for course fees
- * - COMPLETE: no course fees invoice; create certificate print invoice only
- */
 export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
@@ -2357,21 +2254,36 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       targetAcYear,
       courseId,
       studentIds,
-      policy = "PROMOTE", // PROMOTE | NOT_PROMOTE | COMPLETE
+      policy = "PROMOTE",
       requireFeesPaid = true,
       chunkSize = 10,
-      certificateFee = 50, // ✅ for COMPLETE (default)
+      certificateFee = 50,
+      gradesByStudentId = {}, // ✅ NEW
     } = req.body || {};
 
-    console.log("Called : promoteStudentsBulkByCourse")
     if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
       return res.status(400).json({ success: false, error: "Invalid schoolId / targetAcYear / courseId" });
     }
+
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({ success: false, error: "studentIds required" });
     }
 
     const uniqueIds = [...new Set(studentIds.map(String))].filter(isObjectId);
+
+    // ✅ Require grade per selected student for PROMOTE / COMPLETE
+    if (policy === "PROMOTE" || policy === "COMPLETE") {
+      const missingGradeStudentIds = uniqueIds.filter(
+        (sid) => !String(gradesByStudentId?.[sid] || "").trim()
+      );
+
+      if (missingGradeStudentIds.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Grade is required for all selected students. Missing: ${missingGradeStudentIds.length}`,
+        });
+      }
+    }
 
     const chunk = (arr, size) => {
       const out = [];
@@ -2387,12 +2299,11 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       skipped: 0,
       errors: [],
     };
-    console.log("Called 2")
+
     const course = await Course.findById(courseId).select("_id name type").lean();
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       const idsChunk = chunks[chunkIndex];
-
       session = await mongoose.startSession();
 
       try {
@@ -2411,19 +2322,19 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               summary.errors.push({ studentId: sid, reason: "Student not found in this school" });
               continue;
             }
+
             if (String(st.active) !== "Active") {
               summary.skipped++;
               continue;
             }
 
-            // ✅ For COMPLETE, you may want to allow even if fees not paid previously.
-            // If you want strict rule even for COMPLETE, remove this "policy !== COMPLETE" condition.
             if (requireFeesPaid && policy !== "COMPLETE" && Number(st.feesPaid || 0) !== 1) {
               summary.skipped++;
               continue;
             }
 
-            // Latest academic containing this course
+            const studentGrade = String(gradesByStudentId?.[String(sid)] || "").trim();
+
             const sourceAcad = await Academic.findOne({
               studentId: sid,
               $or: [
@@ -2455,7 +2366,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               continue;
             }
 
-            // Target academic upsert (so other courses can be promoted later)
             const targetFilter = { studentId: sid, acYear: targetAcYear };
 
             let targetDoc = await Academic.findOne(targetFilter).session(session);
@@ -2463,14 +2373,12 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               targetDoc = new Academic({ studentId: sid, acYear: targetAcYear });
             }
 
-            // Already has this course in target year -> skip (unless policy COMPLETE wants to mark complete again)
             const alreadyInTarget = findCourseSlotIndex(targetDoc, courseId);
             if (alreadyInTarget) {
               summary.skipped++;
               continue;
             }
 
-            // Destination slot: prefer same slot, else first empty
             let destSlot = srcSlot;
             const existingCourseAtDest = targetDoc[`courseId${destSlot}`];
 
@@ -2482,49 +2390,56 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
                   break;
                 }
               }
+
               if (!destSlot) {
-                summary.errors.push({ studentId: sid, reason: "No empty course slot in target academic" });
+                summary.errors.push({
+                  studentId: sid,
+                  reason: "No empty course slot in target academic",
+                });
                 continue;
               }
             }
 
             const srcYear = Number(sourceAcad[`year${srcSlot}`] || 0);
 
-            // ✅ Decide year based on policy
             const nextYear =
               policy === "NOT_PROMOTE"
                 ? Math.max(srcYear, 1)
-                : Math.max(srcYear + 1, 1); // PROMOTE or COMPLETE -> next year
+                : Math.max(srcYear + 1, 1);
 
-            // Copy slot values
             targetDoc[`instituteId${destSlot}`] = sourceAcad[`instituteId${srcSlot}`] || null;
             targetDoc[`courseId${destSlot}`] = courseId;
             targetDoc[`refNumber${destSlot}`] = sourceAcad[`refNumber${srcSlot}`] || "";
 
             if (policy === "COMPLETE") {
-              // ✅ COMPLETE: no course fee, mark completed
               targetDoc[`fees${destSlot}`] = 0;
               targetDoc[`discount${destSlot}`] = 0;
               targetDoc[`finalFees${destSlot}`] = 0;
               targetDoc[`status${destSlot}`] = "Completed";
               targetDoc[`year${destSlot}`] = nextYear;
+              targetDoc[`grade${destSlot}`] = studentGrade;
             } else {
-              // ✅ PROMOTE / NOT_PROMOTE: normal admission + fees
               targetDoc[`fees${destSlot}`] = Number(sourceAcad[`fees${srcSlot}`] || 0);
               targetDoc[`discount${destSlot}`] = Number(sourceAcad[`discount${srcSlot}`] || 0);
               targetDoc[`finalFees${destSlot}`] = Number(sourceAcad[`finalFees${srcSlot}`] || 0);
               targetDoc[`status${destSlot}`] = "Admission";
               targetDoc[`year${destSlot}`] = nextYear;
+
+              if (policy === "PROMOTE") {
+                targetDoc[`grade${destSlot}`] = studentGrade;
+              } else {
+                targetDoc[`grade${destSlot}`] = "";
+              }
             }
 
             await targetDoc.save({ session });
 
-            // ✅ Account due update
-            // - PROMOTE/NOT_PROMOTE: include course fees (finalFees)
-            // - COMPLETE: do NOT include course fee (it is 0), but if certificateFee > 0, we should set dues for certificate
             const totalFees = computeTotalFeesFromAcademic(targetDoc);
             const certFeeNum = Number(certificateFee || 0);
-            const certDue = policy === "COMPLETE" && Number.isFinite(certFeeNum) && certFeeNum > 0 ? certFeeNum : 0;
+            const certDue =
+              policy === "COMPLETE" && Number.isFinite(certFeeNum) && certFeeNum > 0
+                ? certFeeNum
+                : 0;
 
             const totalDue = totalFees + certDue;
 
@@ -2544,9 +2459,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               });
             }
 
-            // ✅ Invoice creation
             if (policy === "COMPLETE") {
-              // Create certificate invoice ONLY (avoid duplicates)
               const certFee = Number(certificateFee || 0);
               if (Number.isFinite(certFee) && certFee > 0) {
                 const existingCertInvoice = await FeeInvoice.findOne({
@@ -2561,7 +2474,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
                   .lean();
 
                 if (!existingCertInvoice) {
-                  // use fallback invoice with one head by passing totalFees and a special source
                   await createFeesInvoiceSafe({
                     schoolId: st.schoolId,
                     studentId: sid,
@@ -2577,7 +2489,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
                 }
               }
             } else {
-              // PROMOTE / NOT_PROMOTE: create course fee invoice (avoid duplicates)
               const existingInvoice = await FeeInvoice.findOne({
                 studentId: sid,
                 acYear: targetAcYear,
@@ -2608,12 +2519,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               }
             }
 
-            // ✅ If new due exists, mark as unpaid
-            // (You commented earlier; enable it now)
-            //if (totalDue > 0) {
-            //  await Student.updateOne({ _id: sid }, { $set: { feesPaid: 0 } }, { session });
-            //}
-
             summary.promoted++;
           }
         });
@@ -2631,7 +2536,10 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
     return res.status(200).json({ success: true, summary });
   } catch (e) {
     console.log(e);
-    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
   } finally {
     if (session) await session.endSession();
   }

@@ -8,6 +8,12 @@ const integrationCredentialSchema = new Schema(
     folderId: { type: String, required: true },
     connectedBy: { type: Schema.Types.ObjectId, ref: "User" },
     connectedAt: { type: Date, default: Date.now },
+
+    status: { type: String, default: "ACTIVE" }, // ACTIVE | EXPIRED | ERROR
+    lastError: { type: String, default: "" },
+    lastValidatedAt: { type: Date },
+    oauthFingerprint: { type: String },
+    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );

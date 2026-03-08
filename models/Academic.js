@@ -13,6 +13,7 @@ const academicSchema = new Schema({
   discount1: { type: Number },
   finalFees1: { type: Number },
   status1: { type: String },
+  grade1: { type: String, trim: true, maxlength: 20 },
 
   instituteId2: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId2: { type: Schema.Types.ObjectId, ref: "Course" },
@@ -22,6 +23,7 @@ const academicSchema = new Schema({
   discount2: { type: Number },
   finalFees2: { type: Number },
   status2: { type: String },
+  grade2: { type: String, trim: true, maxlength: 20 },
 
   instituteId3: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId3: { type: Schema.Types.ObjectId, ref: "Course" },
@@ -31,6 +33,7 @@ const academicSchema = new Schema({
   discount3: { type: Number },
   finalFees3: { type: Number },
   status3: { type: String },
+  grade3: { type: String, trim: true, maxlength: 20 },
 
   instituteId4: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId4: { type: Schema.Types.ObjectId, ref: "Course" },
@@ -40,6 +43,7 @@ const academicSchema = new Schema({
   discount4: { type: Number },
   finalFees4: { type: Number },
   status4: { type: String },
+  grade4: { type: String, trim: true, maxlength: 20 },
 
   instituteId5: { type: Schema.Types.ObjectId, ref: "Institute" },
   courseId5: { type: Schema.Types.ObjectId, ref: "Course" },
@@ -49,6 +53,7 @@ const academicSchema = new Schema({
   discount5: { type: Number },
   finalFees5: { type: Number },
   status5: { type: String },
+  grade5: { type: String, trim: true, maxlength: 20 },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

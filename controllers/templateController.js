@@ -7,6 +7,103 @@ import { toCamelCase } from "./commonController.js";
 const upload = multer({ storage: multer.memoryStorage() });
 
 const addTemplate = async (req, res) => {
+  let newTemplate;
+
+  try {
+    const { courseId, details } = req.body;
+
+    if (!courseId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "courseId is required" });
+    }
+
+    // ✅ Check duplicate before create
+    const existingTemplate = await Template.findOne({ courseId })
+      .select("_id courseId")
+      .lean();
+
+    if (existingTemplate) {
+      return res.status(400).json({
+        success: false,
+        error: "Already record found for this course.",
+      });
+    }
+
+    newTemplate = new Template({
+      courseId,
+      details: toCamelCase(details),
+      template: "-",
+    });
+
+    newTemplate = await newTemplate.save();
+
+    const redis = await getRedis();
+    await redis.set("totalTemplates", await Template.countDocuments());
+
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+
+      let ext = "png";
+      let contentType = "image/png";
+
+      if (req.file?.mimetype === "application/pdf") {
+        ext = "pdf";
+        contentType = "application/pdf";
+      } else if (req.file?.mimetype === "image/png") {
+        ext = "png";
+        contentType = "image/png";
+      } else if (req.file?.mimetype === "image/jpeg") {
+        ext = "jpg";
+        contentType = "image/jpeg";
+      }
+
+      const blob = await put(`templates/${newTemplate._id}.${ext}`, fileBuffer, {
+        access: "public",
+        contentType,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        allowOverwrite: true,
+      });
+
+      const template = await Template.findByIdAndUpdate(
+        newTemplate._id,
+        { template: blob.downloadUrl },
+        { new: true }
+      );
+
+      if (!template) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Template not found." });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Template Created Successfully.",
+    });
+  } catch (error) {
+    if (newTemplate) {
+      await Template.deleteOne({ _id: newTemplate._id });
+    }
+
+    console.log(error);
+
+    // ✅ In case duplicate happens from race condition / unique index
+    if (error?.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        error: "Already record found for this course.",
+      });
+    }
+
+    return res
+      .status(500)
+      .json({ success: false, error: "server error in adding template" });
+  }
+};
+
+{/*const addTemplate = async (req, res) => {
 
   let newTemplate;
   try {
@@ -28,9 +125,24 @@ const addTemplate = async (req, res) => {
 
     if (req.file) {
       const fileBuffer = req.file.buffer;
-      const blob = await put("templates/" + newTemplate._id + ".png", fileBuffer, {
-        access: 'public',
-        contentType: 'image/png',
+
+      let ext = "png";
+      let contentType = "image/png";
+
+      if (req.file?.mimetype === "application/pdf") {
+        ext = "pdf";
+        contentType = "application/pdf";
+      } else if (req.file?.mimetype === "image/png") {
+        ext = "png";
+        contentType = "image/png";
+      } else if (req.file?.mimetype === "image/jpeg") {
+        ext = "jpg";
+        contentType = "image/jpeg";
+      }
+
+      const blob = await put(`templates/${newTemplate._id}.${ext}`, fileBuffer, {
+        access: "public",
+        contentType,
         token: process.env.BLOB_READ_WRITE_TOKEN,
         allowOverwrite: true,
       });
@@ -56,7 +168,7 @@ const addTemplate = async (req, res) => {
       .json({ success: false, error: "server error in adding template" });
   }
 };
-
+*/}
 const getTemplates = async (req, res) => {
   try {
     const templates = await Template.find().select('details')

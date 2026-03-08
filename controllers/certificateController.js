@@ -1,10 +1,11 @@
 import multer from "multer";
+import crypto from "crypto";
 import Certificate from "../models/Certificate.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
 import Academic from "../models/Academic.js";
-import { createCanvas, loadImage, registerFont } from "canvas";
+import { createCanvas, registerFont } from "canvas";
 
 import { google } from "googleapis";
 import { Readable } from "stream";
@@ -15,24 +16,130 @@ import * as fs from "fs";
 import * as path from "path";
 import getRedis from "../db/redis.js";
 
+import { PDFDocument } from "pdf-lib";
+
 const upload = multer({});
 
 // ---------------- Google Drive helpers (Certificates) ----------------
+const buildGoogleOauthFingerprint = () => {
+  const raw = [
+    process.env.GOOGLE_CLIENT_ID || "",
+    process.env.GOOGLE_CLIENT_SECRET || "",
+    process.env.GOOGLE_REDIRECT_URI || "",
+  ].join("|");
+
+  return crypto.createHash("sha256").update(raw).digest("hex");
+};
+
+const looksLikeRefreshToken = (token) => {
+  if (!token || typeof token !== "string") return false;
+  const t = token.trim();
+  return t.length > 20 && !t.includes(" ") && !t.includes("\n");
+};
+
+const maskToken = (token) => {
+  if (!token) return "EMPTY";
+  return `${token.slice(0, 6)}...${token.slice(-4)}`;
+};
+
+const markDriveExpired = async (message = "invalid_grant") => {
+  try {
+    await IntegrationCredential.updateOne(
+      { key: "google_drive" },
+      {
+        $set: {
+          status: "EXPIRED",
+          lastError: message,
+          updatedAt: new Date(),
+        },
+      }
+    );
+  } catch (e) {
+    console.log("markDriveExpired error:", e?.message || e);
+  }
+};
+
 const buildDriveClient = async () => {
-  const cred = await IntegrationCredential.findOne({ key: "google_drive" }).lean();
-  if (!cred?.refreshTokenEnc) throw new Error("Google Drive not connected");
+  try {
+    const cred = await IntegrationCredential.findOne({ key: "google_drive" }).lean();
 
-  const refreshToken = decryptText(cred.refreshTokenEnc);
+    if (!cred?.refreshTokenEnc) {
+      throw new Error("Google Drive not connected");
+    }
 
-  const oAuth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+    const expectedFingerprint = buildGoogleOauthFingerprint();
 
-  oAuth2Client.setCredentials({ refresh_token: refreshToken });
-  const drive = google.drive({ version: "v3", auth: oAuth2Client });
-  return { drive };
+    if (cred?.oauthFingerprint && cred.oauthFingerprint !== expectedFingerprint) {
+      throw new Error("Google OAuth configuration changed. Please reconnect Google Drive.");
+    }
+
+    const refreshToken = decryptText(cred.refreshTokenEnc);
+
+    if (!looksLikeRefreshToken(refreshToken)) {
+      console.log("Invalid decrypted refresh token:", maskToken(refreshToken));
+      throw new Error("Stored Google Drive token is invalid. Please reconnect Google Drive.");
+    }
+
+    const oAuth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
+
+    // Force validate refresh token now
+    await oAuth2Client.getAccessToken();
+
+    await IntegrationCredential.updateOne(
+      { key: "google_drive" },
+      {
+        $set: {
+          status: "ACTIVE",
+          lastError: "",
+          lastValidatedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    const drive = google.drive({ version: "v3", auth: oAuth2Client });
+    return { drive };
+  } catch (error) {
+    console.log("buildDriveClient error:", error?.response?.data || error?.message || error);
+
+    if (
+      error?.response?.data?.error === "invalid_grant" ||
+      String(error?.message || "").includes("invalid_grant")
+    ) {
+      await markDriveExpired("invalid_grant");
+      throw new Error("Google Drive connection expired. Please reconnect Google Drive.");
+    }
+
+    throw error;
+  }
+};
+
+const runWithDriveRetry = async (fn) => {
+  try {
+    const { drive } = await buildDriveClient();
+    return await fn(drive);
+  } catch (error) {
+    const msg = String(error?.message || "");
+
+    const shouldNotRetry =
+      msg.includes("reconnect Google Drive") ||
+      msg.includes("OAuth configuration changed") ||
+      msg.includes("Stored Google Drive token is invalid");
+
+    if (shouldNotRetry) {
+      throw error;
+    }
+
+    console.log("Retrying Drive operation once...");
+    const { drive } = await buildDriveClient();
+    return await fn(drive);
+  }
 };
 
 const findChildFolderId = async (drive, parentId, folderName) => {
@@ -93,10 +200,10 @@ const formatTs = (d = new Date()) => {
   return `${DD}${MM}${YYYY}${HH}${mm}${ss}`;
 };
 
-const buildTimestampedName = (originalName = "file.png") => {
+const buildTimestampedName = (originalName = "file.pdf") => {
   const dot = originalName.lastIndexOf(".");
   const base = dot > 0 ? originalName.slice(0, dot) : originalName;
-  const ext = dot > 0 ? originalName.slice(dot) : ".png";
+  const ext = dot > 0 ? originalName.slice(dot) : ".pdf";
   const safeBase = base
     .replace(/[^\w\-]+/g, "_")
     .replace(/_+/g, "_")
@@ -128,21 +235,274 @@ const uploadBufferToDrive = async (drive, folderId, fileName, buffer, mimeType) 
     downloadUrl: driveDownloadUrl(fileId),
   };
 };
-// --------------------------------------------------------------------
 
+// ---------------- Common helpers ----------------
+const fetchBinary = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch binary: ${url}, status: ${response.status}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+};
+
+// ---------------- Font cache for canvas overlay ----------------
+const registeredFontFamilies = new Set();
+
+const ensureFontRegistered = async ({ url, fileName, family }) => {
+  if (registeredFontFamilies.has(family)) return;
+
+  const tempDir = path.join(process.cwd(), "tmp_fonts");
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const tempFontPath = path.join(tempDir, fileName);
+
+  if (!fs.existsSync(tempFontPath)) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const fontBuffer = Buffer.from(arrayBuffer);
+    fs.writeFileSync(tempFontPath, fontBuffer);
+  }
+
+  registerFont(tempFontPath, { family });
+  registeredFontFamilies.add(family);
+};
+
+const prepareCanvasFonts = async () => {
+  try {
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/Nirmalab.ttc",
+      fileName: "Nirmalab.ttc",
+      family: "Nirmala",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/DUBAI-REGULAR.TTF",
+      fileName: "DUBAI-REGULAR.TTF",
+      family: "DUBAI-REGULAR",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/arial.ttf",
+      fileName: "Arial.ttf",
+      family: "Arial",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/arialbd.ttf",
+      fileName: "Arial-Bold.ttf",
+      family: "Arial-Bold",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/COMICZ.TTF",
+      fileName: "COMICZ.TTF",
+      family: "Comic",
+    });
+  } catch (error) {
+    throw new Error("Font setting Error. " + error.toString());
+  }
+};
+
+// ---------------- Canvas text helpers ----------------
+const measureAndFit = (ctx, text, family, startSize, maxWidth, minSize = 8, weight = "") => {
+  let size = startSize;
+  const value = String(text || "");
+
+  while (size > minSize) {
+    ctx.font = `${weight ? weight + " " : ""}${size}px ${family}`;
+    const w = ctx.measureText(value).width;
+    if (w <= maxWidth) break;
+    size -= 1;
+  }
+
+  return size;
+};
+
+// High-resolution transparent overlay for all dynamic text
+const buildCertificateOverlayPng = async ({
+  width,
+  height,
+  school,
+  student,
+  startYear,
+  endYear,
+  certificateNum,
+  dat,
+  issueDateText,
+  isMakthab,
+  scale = 3,
+}) => {
+  const canvas = createCanvas(width * scale, height * scale);
+  const ctx = canvas.getContext("2d");
+
+  ctx.scale(scale, scale);
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.textBaseline = "alphabetic";
+
+  const centerX = width / 2;
+
+  // Header texts
+  const nameArabic = school?.nameArabic ? String(school.nameArabic) : "";
+  const nameNative = school?.nameNative ? String(school.nameNative) : "";
+  const nameEnglish = school?.nameEnglish ? String(school.nameEnglish).toUpperCase() : "";
+  const addressLine = school?.address
+    ? `${school.address}, ${school.district || ""}`
+    : "";
+
+  if (nameArabic) {
+    let arabicSize = 21;
+    if (nameArabic.length <= 30) arabicSize = 21;
+    else if (nameArabic.length <= 43) arabicSize = 19;
+    else if (nameArabic.length <= 51) arabicSize = 17;
+    else arabicSize = 15;
+
+    arabicSize = measureAndFit(
+      ctx,
+      nameArabic,
+      "DUBAI-REGULAR",
+      arabicSize,
+      width * 0.72,
+      10
+    );
+
+    ctx.font = `${arabicSize}px DUBAI-REGULAR`;
+    ctx.fillStyle = "rgb(14, 84, 49)";
+    ctx.textAlign = "center";
+    ctx.fillText(nameArabic, centerX, 97);
+  }
+
+  if (nameNative) {
+    let nativeSize = 19;
+    if (nameNative.length <= 22) nativeSize = 19;
+    else if (nameNative.length <= 51) nativeSize = 17;
+    else nativeSize = 15;
+
+    nativeSize = measureAndFit(
+      ctx,
+      nameNative,
+      "Nirmala",
+      nativeSize,
+      width * 0.78,
+      10,
+      "bold"
+    );
+
+    ctx.font = `bold ${nativeSize}px Nirmala`;
+    ctx.fillStyle = "rgb(161, 14, 94)";
+    ctx.textAlign = "center";
+    ctx.fillText(nameNative, centerX, 122);
+  }
+
+  if (nameEnglish) {
+    let englishSize = measureAndFit(
+      ctx,
+      nameEnglish,
+      "Arial-Bold",
+      18,
+      width * 0.78,
+      10,
+      "bold"
+    );
+
+    ctx.font = `bold ${englishSize}px Arial-Bold`;
+    ctx.fillStyle = "rgb(161, 14, 94)";
+    ctx.textAlign = "center";
+    // keep hidden if not needed on template
+    // ctx.fillText(nameEnglish, centerX, 148);
+  }
+
+  if (addressLine) {
+    let addrSize = measureAndFit(
+      ctx,
+      addressLine,
+      "Arial-Bold",
+      11,
+      width * 0.82,
+      8,
+      "bold"
+    );
+
+    ctx.font = `bold ${addrSize}px Arial-Bold`;
+    ctx.fillStyle = "rgb(4, 25, 93)";
+    ctx.textAlign = "center";
+    ctx.fillText(addressLine, centerX, 140);
+  }
+
+  // Body texts
+  const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
+  const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
+  const fatherName = student?.fatherName
+    ? String(student.fatherName).toUpperCase()
+    : student?.motherName
+      ? String(student.motherName).toUpperCase()
+      : student?.guardianName
+        ? String(student.guardianName).toUpperCase()
+        : "";
+
+  ctx.fillStyle = "rgb(14, 56, 194)";
+  ctx.textAlign = "start";
+
+  if (!isMakthab) {
+    ctx.font = "10px Comic";
+    ctx.fillText(name, 160, 360);
+    ctx.fillText(fatherName, 120, 400);
+
+    ctx.font = "9px Arial";
+    ctx.fillText(rollNumber, 470, 360);
+    ctx.font = "10px Arial";
+    ctx.fillText("JUNE-" + startYear, 320, 430);
+    ctx.fillText("APRIL-" + endYear, 410, 430);
+    ctx.fillText(String(certificateNum), 120, 600);
+    ctx.fillText(issueDateText, 120, 610);
+
+  } else {
+    ctx.font = "16px Comic";
+    ctx.fillText(name, 180, 320);
+    ctx.fillText(fatherName, 190, 250);
+
+    ctx.font = "bold 23px Arial";
+    ctx.fillText(rollNumber, 320, 320);
+    ctx.fillText(String(new Date().getFullYear()), 340, 360);
+    ctx.fillText(issueDateText, 260, 460);
+  }
+
+  return canvas.toBuffer("image/png");
+};
+
+// ---------------- PDF template loader ----------------
+const loadTemplatePdf = async (templateUrl) => {
+  const cleanUrl = String(templateUrl || "").replace("?download=1", "");
+  const bytes = await fetchBinary(cleanUrl);
+  return PDFDocument.load(bytes);
+};
+
+// ---------- main ----------
 const addCertificate = async (req, res) => {
   try {
-    const { templateId, schoolId, studentId } = req.body;
+    const { templateId, schoolId, studentId, issueDate } = req.body;
 
     const template = await Template.findById({ _id: templateId }).populate({
       path: "courseId",
       select: "_id name",
     });
 
-    console.log("CourseId - " + template?.courseId?._id);
-
     if (!template) {
       return res.status(404).json({ success: false, error: "Template not found." });
+    }
+
+    if (!issueDate) {
+      return res.status(400).json({
+        success: false,
+        error: "Certificate issue date is required.",
+      });
     }
 
     const school = await School.findById({ _id: schoolId });
@@ -155,9 +515,10 @@ const addCertificate = async (req, res) => {
       profileImage: 0,
     });
 
-    console.log("Student Roll Number : " + student?.rollNumber);
+    if (!student) {
+      return res.status(404).json({ success: false, error: "Student not found." });
+    }
 
-    // Get academic START year
     const academicStart = await Academic.findOne({
       $or: [
         { courseId1: template.courseId },
@@ -176,10 +537,6 @@ const addCertificate = async (req, res) => {
       return res.status(404).json({ success: false, error: "Academics not found for the Student." });
     }
 
-    let startYear = academicStart.acYear.acYear.substr(0, 4);
-    console.log("Academic Start Year : " + startYear);
-
-    // Get academic END year
     const academicEnd = await Academic.findOne({
       $or: [
         { courseId1: template.courseId },
@@ -194,154 +551,102 @@ const addCertificate = async (req, res) => {
       .limit(1)
       .populate({ path: "acYear", select: "acYear" });
 
-    let endYear = academicEnd.acYear.acYear.substr(5, 4);
-    console.log("Academic End Year : " + endYear);
+    if (!academicEnd || !academicEnd.acYear || !academicEnd.acYear.acYear) {
+      return res.status(404).json({ success: false, error: "Academic end year not found." });
+    }
+
+    const startYear = academicStart.acYear.acYear.substr(0, 4);
+    const endYear = academicEnd.acYear.acYear.substr(5, 4);
+
+    const isMakthab = template.courseId.name.includes("Makthab");
 
     let certificateNum;
-    if (!template.courseId.name.includes("Makthab")) {
+    if (!isMakthab) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-      if (cert) {
-        return res.status(404).json({
-          success: false,
-          error: "Certificate Already Found. No : " + cert.code,
-        });
-      }
+      // if (cert) {
+      //   return res.status(404).json({
+      //     success: false,
+      //     error: "Certificate Already Found. No : " + cert.code,
+      //   });
+      // }
 
-      await Certificate.findOne({})
-        .sort({ _id: -1 })
-        .limit(1)
-        .then((certificate) => {
-          if (certificate) certificateNum = Number(certificate.code) + 1;
-          else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
-        });
+      const lastCertificate = await Certificate.findOne({}).sort({ _id: -1 }).limit(1);
+      if (lastCertificate) certificateNum = Number(lastCertificate.code) + 1;
+      else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
     }
 
-    // Get the template image (still from Vercel Blob URL for now)
-    const image = await loadImage(String(template.template || "").replace("?download=1", ""));
-
-    //----------------------------- Fonts -----------------------------
-    try {
-      let response = await fetch("https://www.unis.org.in/Nirmalab.ttc");
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      let arrayBuffer = await response.arrayBuffer();
-      let fontBuffer = Buffer.from(arrayBuffer);
-      let tempFontPath = path.join("/tmp", "Nirmalab.ttc");
-      fs.writeFileSync(tempFontPath, fontBuffer);
-      registerFont(tempFontPath, { family: "Nirmala" });
-
-      response = await fetch("https://www.unis.org.in/DUBAI-BOLD.TTF");
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      arrayBuffer = await response.arrayBuffer();
-      fontBuffer = Buffer.from(arrayBuffer);
-      tempFontPath = path.join("/tmp", "DUBAI-BOLD.TTF");
-      fs.writeFileSync(tempFontPath, fontBuffer);
-      registerFont(tempFontPath, { family: "DUBAI-BOLD" });
-
-      response = await fetch("https://www.unis.org.in/arial.ttf");
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      arrayBuffer = await response.arrayBuffer();
-      fontBuffer = Buffer.from(arrayBuffer);
-      tempFontPath = path.join("/tmp", "Arial.ttf");
-      fs.writeFileSync(tempFontPath, fontBuffer);
-      registerFont(tempFontPath, { family: "Arial" });
-
-      response = await fetch("https://www.unis.org.in/arialbd.ttf");
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      arrayBuffer = await response.arrayBuffer();
-      fontBuffer = Buffer.from(arrayBuffer);
-      tempFontPath = path.join("/tmp", "Arial-Bold.ttf");
-      fs.writeFileSync(tempFontPath, fontBuffer);
-      registerFont(tempFontPath, { family: "Arial-Bold" });
-
-      response = await fetch("https://www.unis.org.in/COMICZ.TTF");
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      arrayBuffer = await response.arrayBuffer();
-      fontBuffer = Buffer.from(arrayBuffer);
-      tempFontPath = path.join("/tmp", "COMICZ.TTF");
-      fs.writeFileSync(tempFontPath, fontBuffer);
-      registerFont(tempFontPath, { family: "Comic" });
-    } catch (error) {
-      console.log(error);
-      return res.status(500).json({ success: false, error: "Font setting Error." + error.toString() });
+    const issueDateObj = new Date(issueDate);
+    if (Number.isNaN(issueDateObj.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid certificate issue date.",
+      });
     }
-    //------------------------------------
+    const issueDateText = issueDateObj.toLocaleDateString("en-GB");
 
-    const canvas = createCanvas(image.width, image.height);
-    const context = canvas.getContext("2d");
-    context.imageSmoothingEnabled = false;
-    context.drawImage(image, 0, 0, image.width, image.height);
+    const dat = new Date().toLocaleDateString();
 
-    // Niswan Name in Arabic
-    let nameArabic = school.nameArabic ? school.nameArabic : "";
-    console.log("Arabic length : " + nameArabic.length);
-    if (nameArabic.length <= 30) context.font = "46px DUBAI-BOLD";
-    else if (nameArabic.length <= 43) context.font = "41px DUBAI-BOLD";
-    else if (nameArabic.length <= 51) context.font = "35px DUBAI-BOLD";
-    else context.font = "32px DUBAI-BOLD";
-    context.fillStyle = "rgb(14, 84, 49)";
-    context.textAlign = "center";
-    context.fillText(nameArabic, image.width / 2, 189);
+    const name = student?.userId?.name ? student.userId.name.toUpperCase() : "";
+    const rollNumber = student?.rollNumber ? student.rollNumber.toUpperCase() : "";
 
-    let nameNativeOrEnglish = school.nameNative
-      ? school.nameNative
-      : school.nameEnglish
-        ? school.nameEnglish.toUpperCase()
-        : "";
-    console.log("Native / English length : " + nameNativeOrEnglish.length);
-    if (nameNativeOrEnglish.length <= 22) context.font = "bold 34px Nirmala";
-    else if (nameNativeOrEnglish.length <= 51) context.font = "bold 30px Nirmala";
-    else context.font = "bold 27px Nirmala";
-    context.fillStyle = "rgb(161, 14, 94)";
-    context.textAlign = "center";
-    context.fillText(nameNativeOrEnglish, image.width / 2, 244);
-    context.fillText(nameNativeOrEnglish, image.width / 2, 245);
-    context.fillText(nameNativeOrEnglish, image.width / 2 + 1, 245);
+    const baseFileName =
+      `${template.courseId.name}_${rollNumber}_${name}_${new Date().getTime()}`
+        .replace(/\s+/g, "_")
+        .replace(/[^\w.-]/g, "");
 
-    context.font = "bold 21px Arial-Bold";
-    context.fillStyle = "rgb(4, 25, 93)";
-    context.textAlign = "center";
-    context.fillText(school.address ? school.address + ", " + school.district : "", image.width / 2, 289);
+    const fileName = `${baseFileName}.pdf`;
 
-    context.fillStyle = "rgb(14, 56, 194)";
-    context.textAlign = "start";
+    await prepareCanvasFonts();
 
-    let name = student.userId.name ? student.userId.name : "";
-    let rollNumber = student.rollNumber ? student.rollNumber : "";
-    let fatherName = student.fatherName
-      ? student.fatherName
-      : student.motherName
-        ? student.motherName
-        : student.guardianName
-          ? student.guardianName
-          : "";
+    // Load PDF template as base
+    const templatePdf = await loadTemplatePdf(template.template);
+    const outputPdf = await PDFDocument.create();
 
-    let dat = new Date().toLocaleDateString();
-    let fileName = template.courseId.name + "_" + rollNumber + "_" + name + "_" + new Date().getTime() + ".png";
-    let base64String;
+    const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
+    outputPdf.addPage(basePage);
 
-    // For Muballiga and Muallama (only saved to DB)
-    if (!template.courseId.name.includes("Makthab")) {
-      context.font = "25px Comic";
-      context.fillText(name.toUpperCase(), 370, 790);
-      context.fillText(fatherName.toUpperCase(), 249, 840);
+    const page = outputPdf.getPage(0);
+    const pageWidth = Math.round(page.getWidth());
+    const pageHeight = Math.round(page.getHeight());
 
-      context.font = "bold 23px Arial-Bold";
-      context.fillText(rollNumber.toUpperCase(), 1150, 790);
+    // Build sharp transparent overlay
+    const overlayPngBuffer = await buildCertificateOverlayPng({
+      width: pageWidth,
+      height: pageHeight,
+      school,
+      student,
+      startYear,
+      endYear,
+      certificateNum,
+      dat,
+      issueDateText,
+      isMakthab,
+      scale: 3,
+    });
 
-      context.fillText("JUNE-" + startYear, 475, 890);
-      context.fillText("APRIL-" + endYear, 672, 890);
+    const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
+    page.drawImage(overlayImage, {
+      x: 0,
+      y: 0,
+      width: pageWidth,
+      height: pageHeight,
+    });
 
-      context.fillText(certificateNum, 259, 1475);
-      context.fillText(dat, 260, 1510);
+    const pdfBytes = Buffer.from(await outputPdf.save());
 
-      // ✅ Upload to Google Drive instead of Vercel Blob
-      const { drive } = await buildDriveClient();
-      const folderId = await ensureFolderPath(drive, ["UNIS", "Certificates"]);
-
+    if (!isMakthab) {
       const outName = buildTimestampedName(fileName);
-      const pngBuffer = canvas.toBuffer("image/png", { resolution: 250 });
 
-      const uploaded = await uploadBufferToDrive(drive, folderId, outName, pngBuffer, "image/png");
+      const uploaded = await runWithDriveRetry(async (drive) => {
+        const folderId = await ensureFolderPath(drive, ["UNIS", "Certificates"]);
+        return await uploadBufferToDrive(
+          drive,
+          folderId,
+          outName,
+          pdfBytes,
+          "application/pdf"
+        );
+      });
 
       const newCertificate = new Certificate({
         code: certificateNum,
@@ -350,20 +655,16 @@ const addCertificate = async (req, res) => {
         studentId: studentId,
         schoolId: schoolId,
         userId: student.userId,
-
-        // legacy: store Drive preview URL here so existing UI <img src> still works
         certificate: uploaded.previewUrl,
-
-        // drive fields
         certificateDriveFileId: uploaded.fileId,
         certificateDriveViewUrl: uploaded.viewUrl,
         certificateDriveDownloadUrl: uploaded.downloadUrl,
         certificateDrivePreviewUrl: uploaded.previewUrl,
         certificateFileName: uploaded.fileName,
+        issueDate: issueDateObj,
       });
 
       await newCertificate.save();
-      console.log("Saved : " + certificateNum + ", File Name : " + uploaded.fileName);
 
       const redis = await getRedis();
       await redis.set("totalCertificates", await Certificate.countDocuments());
@@ -371,45 +672,50 @@ const addCertificate = async (req, res) => {
       return res.status(200).json({
         success: true,
         message: "Certificate Created Successfully.",
-        image: uploaded.downloadUrl, // for Add.jsx download
+        file: uploaded.downloadUrl,
         downloadUrl: uploaded.downloadUrl,
         viewUrl: uploaded.previewUrl,
         fileName: uploaded.fileName,
+        mimeType: "application/pdf",
         type: "url",
       });
-    } else {
-      // For Other than Muballiga and Muallama (NOT saved to DB)
-      context.font = "25px Comic";
-      context.fillText(name.toUpperCase(), 395, 832);
-      context.fillText(fatherName.toUpperCase(), 335, 886);
-
-      context.font = "bold 23px Arial-Bold";
-      context.fillText(rollNumber.toUpperCase(), 1100, 832);
-      context.fillText(new Date().getFullYear(), 640, 1000);
-      context.fillText(dat, 260, 1472);
-
-      base64String = canvas.toDataURL("image/png", 1.0).split(",")[1];
-
-      console.log("Created File Name : " + fileName);
-
-      return res.status(200).json({
-        success: true,
-        message: "Certificate Created Successfully.",
-        image: base64String,
-        fileName: fileName,
-        type: "base64",
-      });
     }
+
+    const base64String = pdfBytes.toString("base64");
+
+    return res.status(200).json({
+      success: true,
+      message: "Certificate Created Successfully.",
+      file: base64String,
+      fileName,
+      mimeType: "application/pdf",
+      type: "base64pdf",
+    });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({ success: false, error: "server error in create certificate." });
+
+    if (
+      String(error?.message || "").includes("Google Drive connection expired") ||
+      String(error?.message || "").includes("Google OAuth configuration changed") ||
+      String(error?.message || "").includes("Stored Google Drive token is invalid")
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "server error in create certificate.",
+    });
   }
 };
 
 const getCertificates = async (req, res) => {
   try {
     const certificates = await Certificate.find({})
-      .select("code")
+      .select("code issueDate")
       .populate({ path: "templateId", select: "code" })
       .populate({ path: "courseId", select: "name" })
       .populate({ path: "studentId", select: "rollNumber fatherName motherName guardianName" })
@@ -430,23 +736,23 @@ const getByCertFilter = async (req, res) => {
   console.log("getByCertFilter : " + certSchoolId + ", " + certCourseId + ",  " + certACYearId);
 
   try {
-    let filterQuery = Certificate.find().select("code");
+    let filterQuery = Certificate.find().select("code issueDate");
 
-    if (certSchoolId && certSchoolId?.length > 0 && certSchoolId != "null" && certSchoolId != "undefined") {
+    if (certSchoolId && certSchoolId?.length > 0 && certSchoolId !== "null" && certSchoolId !== "undefined") {
       console.log("School Id Added : " + certSchoolId);
       filterQuery = filterQuery.where("schoolId").in(certSchoolId);
     }
 
-    if (certCourseId && certCourseId?.length > 0 && certCourseId != "null" && certCourseId != "undefined") {
+    if (certCourseId && certCourseId?.length > 0 && certCourseId !== "null" && certCourseId !== "undefined") {
       console.log("Course Id Added : " + certCourseId);
       filterQuery = filterQuery.where("courseId").in(certCourseId);
     }
 
-    if (certACYearId && certACYearId?.length > 0 && certACYearId != "null" && certACYearId != "undefined") {
+    if (certACYearId && certACYearId?.length > 0 && certACYearId !== "null" && certACYearId !== "undefined") {
       console.log("acYear Added : " + certACYearId);
 
       const academics = await Academic.find({ acYear: certACYearId });
-      let studentIds = [];
+      const studentIds = [];
       academics.forEach((academic) => studentIds.push(academic.studentId));
       console.log("Student Ids : " + studentIds);
       filterQuery = filterQuery.where("studentId").in(studentIds);
@@ -473,17 +779,16 @@ const getByCertFilter = async (req, res) => {
 const getCertificate = async (req, res) => {
   const { id } = req.params;
   try {
-    let certificate = await Certificate.findById({ _id: id })
+    const certificate = await Certificate.findById({ _id: id })
+      .select("code issueDate certificate certificateDriveFileId certificateDriveViewUrl certificateDriveDownloadUrl certificateDrivePreviewUrl certificateFileName")
       .populate({ path: "templateId", select: "code" })
       .populate({ path: "courseId", select: "name" })
       .populate({ path: "studentId", select: "rollNumber fatherName motherName guardianName" })
       .populate({ path: "userId", select: "name" })
       .populate({ path: "schoolId", select: "code nameEnglish" });
 
-    //console.log("Result Sent");
     return res.status(200).json({ success: true, certificate });
   } catch (error) {
-    //console.log(error);
     return res.status(500).json({ success: false, error: "get certificate server error" });
   }
 };
