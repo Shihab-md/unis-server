@@ -305,9 +305,64 @@ const prepareCanvasFonts = async () => {
       fileName: "COMICZ.TTF",
       family: "Comic",
     });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/Amiri-Regular.ttf",
+      fileName: "Amiri-Regular.ttf",
+      family: "Amiri",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/Amiri-Bold.ttf",
+      fileName: "Amiri-Bold.ttf",
+      family: "Amiri Bold",
+    });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/NotoNaskhArabic-Regular.ttf",
+      fileName: "NotoNaskhArabic-Regular.ttf",
+      family: "Noto Naskh Arabic",
+    });
+    {/*
+    await ensureFontRegistered({
+      url: "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/Tajawal-Regular.ttf",
+      fileName: "Tajawal-Regular.ttf",
+      family: "Tajawal",
+    });
+
+    await ensureFontRegistered({
+      url: "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/Tajawal-Bold.ttf",
+      fileName: "Tajawal-Bold.ttf",
+      family: "Tajawal Bold",
+    });
+
+    await ensureFontRegistered({
+      url: "https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf",
+      fileName: "NotoNaskhArabic-Bold.ttf",
+      family: "Noto Naskh Arabic Bold",
+    });
+*/}
+
   } catch (error) {
     throw new Error("Font setting Error. " + error.toString());
   }
+};
+
+const formatArabicForCanvas = (text = "") => {
+  const str = String(text).trim();
+
+  // Wrap with RTL embedding marks
+  return `\u202B${str}\u202C`;
+};
+
+const fixArabicBrackets = (text = "") => {
+  return String(text)
+    .replace(/\(/g, "﴿")
+    .replace(/\)/g, "﴾");
+};
+
+const prepareArabicText = (text = "") => {
+  return formatArabicForCanvas(fixArabicBrackets(text));
 };
 
 // ---------------- Canvas text helpers ----------------
@@ -337,6 +392,7 @@ const buildCertificateOverlayPng = async ({
   dat,
   issueDateText,
   isMakthab,
+  grade,
   scale = 3,
 }) => {
   const canvas = createCanvas(width * scale, height * scale);
@@ -353,9 +409,15 @@ const buildCertificateOverlayPng = async ({
   const nameArabic = school?.nameArabic ? String(school.nameArabic) : "";
   const nameNative = school?.nameNative ? String(school.nameNative) : "";
   const nameEnglish = school?.nameEnglish ? String(school.nameEnglish).toUpperCase() : "";
-  const addressLine = school?.address
-    ? `${school.address}, ${school.district || ""}`
-    : "";
+  const addressLine = [
+    school?.address,
+    school?.city,
+    school?.districtStateId?.district,
+    school?.districtStateId?.state,
+  ]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(", ");
 
   if (nameArabic) {
     let arabicSize = 21;
@@ -367,23 +429,23 @@ const buildCertificateOverlayPng = async ({
     arabicSize = measureAndFit(
       ctx,
       nameArabic,
-      "DUBAI-REGULAR",
+      "Amiri Bold",
       arabicSize,
       width * 0.72,
       10
     );
 
-    ctx.font = `${arabicSize}px DUBAI-REGULAR`;
+    ctx.font = `${arabicSize}px Amiri Bold`;
     ctx.fillStyle = "rgb(14, 84, 49)";
     ctx.textAlign = "center";
-    ctx.fillText(nameArabic, centerX, 97);
+    ctx.fillText(prepareArabicText(nameArabic), centerX, 102);
   }
 
   if (nameNative) {
-    let nativeSize = 19;
-    if (nameNative.length <= 22) nativeSize = 19;
-    else if (nameNative.length <= 51) nativeSize = 17;
-    else nativeSize = 15;
+    let nativeSize = 15;
+    if (nameNative.length <= 22) nativeSize = 15;
+    else if (nameNative.length <= 51) nativeSize = 13;
+    else nativeSize = 11;
 
     nativeSize = measureAndFit(
       ctx,
@@ -398,7 +460,8 @@ const buildCertificateOverlayPng = async ({
     ctx.font = `bold ${nativeSize}px Nirmala`;
     ctx.fillStyle = "rgb(161, 14, 94)";
     ctx.textAlign = "center";
-    ctx.fillText(nameNative, centerX, 122);
+    ctx.fillText(nameNative, centerX, 125);
+    ctx.fillText(nameNative, centerX, 125);
   }
 
   if (nameEnglish) {
@@ -420,20 +483,21 @@ const buildCertificateOverlayPng = async ({
   }
 
   if (addressLine) {
-    let addrSize = measureAndFit(
+    let addrSize = 9;
+    addrSize = measureAndFit(
       ctx,
       addressLine,
-      "Arial-Bold",
-      11,
+      "Arial-bold",
+      9,
       width * 0.82,
       8,
       "bold"
     );
 
-    ctx.font = `bold ${addrSize}px Arial-Bold`;
+    ctx.font = `bold ${addrSize}px Arial-bold`;
     ctx.fillStyle = "rgb(4, 25, 93)";
     ctx.textAlign = "center";
-    ctx.fillText(addressLine, centerX, 140);
+    ctx.fillText(addressLine, centerX, 143);
   }
 
   // Body texts
@@ -452,23 +516,23 @@ const buildCertificateOverlayPng = async ({
 
   if (!isMakthab) {
     ctx.font = "10px Comic";
-    ctx.fillText(name, 160, 360);
-    ctx.fillText(fatherName, 120, 400);
+    ctx.fillText(name, 158, 345);
+    ctx.fillText(fatherName, 104, 366);
 
-    ctx.font = "9px Arial";
-    ctx.fillText(rollNumber, 470, 360);
-    ctx.font = "10px Arial";
-    ctx.fillText("JUNE-" + startYear, 320, 430);
-    ctx.fillText("APRIL-" + endYear, 410, 430);
-    ctx.fillText(String(certificateNum), 120, 600);
-    ctx.fillText(issueDateText, 120, 610);
+    ctx.font = "10px Arial-Bold";
+    ctx.fillText(rollNumber, 479, 345);
+    ctx.fillText(grade, 220, 387);
+    ctx.fillText("JUNE-" + startYear, 332, 387);
+    ctx.fillText("APRIL-" + endYear, 423, 387);
+    ctx.fillText(String(certificateNum), 95, 624);
+    ctx.fillText(issueDateText, 105, 637);
 
   } else {
     ctx.font = "16px Comic";
     ctx.fillText(name, 180, 320);
     ctx.fillText(fatherName, 190, 250);
 
-    ctx.font = "bold 23px Arial";
+    ctx.font = "bold 23px Arial-Bold";
     ctx.fillText(rollNumber, 320, 320);
     ctx.fillText(String(new Date().getFullYear()), 340, 360);
     ctx.fillText(issueDateText, 260, 460);
@@ -489,10 +553,11 @@ const addCertificate = async (req, res) => {
   try {
     const { templateId, schoolId, studentId, issueDate } = req.body;
 
-    const template = await Template.findById({ _id: templateId }).populate({
-      path: "courseId",
-      select: "_id name",
-    });
+    const template = await Template.findById({ _id: templateId })
+      .populate({
+        path: "courseId",
+        select: "_id name",
+      });
 
     if (!template) {
       return res.status(404).json({ success: false, error: "Template not found." });
@@ -505,15 +570,20 @@ const addCertificate = async (req, res) => {
       });
     }
 
-    const school = await School.findById({ _id: schoolId });
+    const school = await School.findById({ _id: schoolId })
+      .populate({
+        path: "districtStateId",
+        select: "district state",
+      });
     if (!school) {
       return res.status(404).json({ success: false, error: "School not found." });
     }
 
-    const student = await Student.findById({ _id: studentId }).populate("userId", {
-      password: 0,
-      profileImage: 0,
-    });
+    const student = await Student.findById({ _id: studentId })
+      .populate("userId", {
+        password: 0,
+        profileImage: 0,
+      });
 
     if (!student) {
       return res.status(404).json({ success: false, error: "Student not found." });
@@ -554,6 +624,33 @@ const addCertificate = async (req, res) => {
     if (!academicEnd || !academicEnd.acYear || !academicEnd.acYear.acYear) {
       return res.status(404).json({ success: false, error: "Academic end year not found." });
     }
+
+    //console.log("Grade : " + academicEnd)
+    const getIdValue = (value) => {
+      if (!value) return "";
+      if (typeof value === "string") return value;
+      if (value._id) return String(value._id);
+      return String(value);
+    };
+
+    const targetCourseId = getIdValue(template.courseId);
+
+    let matchedIndex = null;
+    let grade = "";
+
+    for (let i = 1; i <= 5; i++) {
+      const courseIdValue = getIdValue(academicEnd[`courseId${i}`]);
+
+      if (courseIdValue === targetCourseId) {
+        matchedIndex = i;
+        grade = academicEnd[`grade${i}`] || "";
+        break;
+      }
+    }
+
+    //console.log("targetCourseId:", targetCourseId);
+    //console.log("matchedIndex:", matchedIndex);
+    //console.log("Grade:", grade);
 
     const startYear = academicStart.acYear.acYear.substr(0, 4);
     const endYear = academicEnd.acYear.acYear.substr(5, 4);
@@ -621,6 +718,7 @@ const addCertificate = async (req, res) => {
       dat,
       issueDateText,
       isMakthab,
+      grade,
       scale: 3,
     });
 
