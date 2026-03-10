@@ -323,6 +323,12 @@ const prepareCanvasFonts = async () => {
       fileName: "NotoNaskhArabic-Regular.ttf",
       family: "Noto Naskh Arabic",
     });
+
+    await ensureFontRegistered({
+      url: "https://www.unis.org.in/georgiab.ttf",
+      fileName: "georgiab.ttf",
+      family: "georgiab",
+    });
     {/*
     await ensureFontRegistered({
       url: "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/Tajawal-Regular.ttf",
@@ -420,48 +426,51 @@ const buildCertificateOverlayPng = async ({
     .join(", ");
 
   if (nameArabic) {
-    let arabicSize = 21;
-    if (nameArabic.length <= 30) arabicSize = 21;
-    else if (nameArabic.length <= 43) arabicSize = 19;
-    else if (nameArabic.length <= 51) arabicSize = 17;
-    else arabicSize = 15;
+    let arabicSize = 19;
+    //if (nameArabic.length <= 30) arabicSize = 21;
+    //else if (nameArabic.length <= 43) arabicSize = 19;
+    //else if (nameArabic.length <= 51) arabicSize = 17;
+    //else arabicSize = 15;
 
-    arabicSize = measureAndFit(
-      ctx,
-      nameArabic,
-      "Amiri Bold",
-      arabicSize,
-      width * 0.72,
-      10
-    );
+    // arabicSize = measureAndFit(
+    //   ctx,
+    //   nameArabic,
+    //   "Amiri Bold",
+    //   arabicSize,
+    //   width * 0.72,
+    //   10
+    // );
 
     ctx.font = `${arabicSize}px Amiri Bold`;
     ctx.fillStyle = "rgb(14, 84, 49)";
     ctx.textAlign = "center";
-    ctx.fillText(prepareArabicText(nameArabic), centerX, 102);
+    ctx.fillText(prepareArabicText(nameArabic), centerX, 100);
   }
 
-  if (nameNative) {
-    let nativeSize = 15;
-    if (nameNative.length <= 22) nativeSize = 15;
-    else if (nameNative.length <= 51) nativeSize = 13;
-    else nativeSize = 11;
+  const niswanName = nameNative?.trim() || nameEnglish?.trim() || "-";
+  if (niswanName) {
+    let nativeSize = 14;
+    console.log("Len : " + niswanName.length)
+    //if (nameNative.length <= 22) nativeSize = 15;
+    //else if (nameNative.length <= 51) nativeSize = 13;
+    //else nativeSize = 11;
 
-    nativeSize = measureAndFit(
-      ctx,
-      nameNative,
-      "Nirmala",
-      nativeSize,
-      width * 0.78,
-      10,
-      "bold"
-    );
+    // nativeSize = measureAndFit(
+    //   ctx,
+    //   nameNative,
+    //   "Nirmala",
+    //   nativeSize,
+    //   width * 0.78,
+    //   10,
+    //   "bold"
+    // );
 
     ctx.font = `bold ${nativeSize}px Nirmala`;
     ctx.fillStyle = "rgb(161, 14, 94)";
     ctx.textAlign = "center";
-    ctx.fillText(nameNative, centerX, 125);
-    ctx.fillText(nameNative, centerX, 125);
+    ctx.fillText(niswanName, centerX, 126);
+    ctx.fillText(niswanName, centerX, 126);
+    ctx.fillText(niswanName, centerX, 126);
   }
 
   if (nameEnglish) {
@@ -483,21 +492,21 @@ const buildCertificateOverlayPng = async ({
   }
 
   if (addressLine) {
-    let addrSize = 9;
-    addrSize = measureAndFit(
-      ctx,
-      addressLine,
-      "Arial-bold",
-      9,
-      width * 0.82,
-      8,
-      "bold"
-    );
+    let addrSize = 10;
+    // addrSize = measureAndFit(
+    //   ctx,
+    //   addressLine,
+    //   "Arial-bold",
+    //   9,
+    //   width * 0.82,
+    //   8,
+    //   "bold"
+    // );
 
     ctx.font = `bold ${addrSize}px Arial-bold`;
     ctx.fillStyle = "rgb(4, 25, 93)";
     ctx.textAlign = "center";
-    ctx.fillText(addressLine, centerX, 143);
+    ctx.fillText(addressLine, centerX, 145);
   }
 
   // Body texts
@@ -515,16 +524,22 @@ const buildCertificateOverlayPng = async ({
   ctx.textAlign = "start";
 
   if (!isMakthab) {
-    ctx.font = "10px Comic";
+    ctx.font = "11px Arial-Bold";
     ctx.fillText(name, 158, 345);
     ctx.fillText(fatherName, 104, 366);
 
-    ctx.font = "10px Arial-Bold";
-    ctx.fillText(rollNumber, 479, 345);
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText(rollNumber, 476, 345);
+
+    ctx.font = "12px Arial-Bold";
     ctx.fillText(grade, 220, 387);
-    ctx.fillText("JUNE-" + startYear, 332, 387);
-    ctx.fillText("APRIL-" + endYear, 423, 387);
-    ctx.fillText(String(certificateNum), 95, 624);
+
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText("JUNE-" + startYear, 329, 387);
+    ctx.fillText("APRIL-" + endYear, 419, 387);
+
+    ctx.font = "10px Arial-Bold";
+    ctx.fillText(String(certificateNum), 105, 624);
     ctx.fillText(issueDateText, 105, 637);
 
   } else {
