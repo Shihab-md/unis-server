@@ -945,6 +945,122 @@ const getStudentsBySchool = async (req, res) => {
   }
 };
 
+// For certificate module.
+const getStudentsBySchoolAndTemplate = async (req, res) => {
+  const { schoolId, templateId } = req.params;
+
+  console.log("getStudentsBySchoolAndTemplate : " + schoolId + " ,  " + templateId);
+
+  try {
+    const template = await Template.findById(templateId).populate({
+      path: "courseId",
+      select: "_id name",
+    });
+
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: "Template not found.",
+      });
+    }
+
+    const academics = await Academic.find({
+      $or: [
+        { courseId1: template.courseId, status1: "Completed" },
+        { courseId2: template.courseId, status2: "Completed" },
+        { courseId3: template.courseId, status3: "Completed" },
+        { courseId4: template.courseId, status4: "Completed" },
+        { courseId5: template.courseId, status5: "Completed" },
+      ],
+    }).select("_id studentId acYear");
+
+    if (!academics || academics.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Academic not found for the Niswan and Course.",
+      });
+    }
+
+    const studentIds = [...new Set(academics.map((a) => String(a.studentId)))];
+
+    let students = [];
+    if (studentIds.length > 0) {
+      students = await Student.find({
+        _id: { $in: studentIds },
+        schoolId: schoolId,
+      })
+        .sort({ rollNumber: 1 })
+        .populate("userId", { password: 0, profileImage: 0 })
+        .lean();
+    }
+
+    if (!students || students.length === 0) {
+      return res.status(200).json({
+        success: true,
+        students: [],
+      });
+    }
+
+    const studentIdSet = new Set(students.map((s) => String(s._id)));
+
+    // only keep academics for students of this school
+    const validAcademics = academics.filter((a) => studentIdSet.has(String(a.studentId)));
+
+    // build latest academic year map for this template course
+    // useful when certificate invoice was created against the completed academic/acYear
+    const latestAcademicByStudent = new Map();
+    for (const academic of validAcademics) {
+      const sid = String(academic.studentId);
+      const prev = latestAcademicByStudent.get(sid);
+
+      if (!prev || new Date(academic.createdAt || 0) > new Date(prev.createdAt || 0)) {
+        latestAcademicByStudent.set(sid, academic);
+      }
+    }
+
+    const schoolStudentIds = students.map((s) => s._id);
+
+    // find paid certificate invoices for these students and this course
+    const paidCertificateInvoices = await FeeInvoice.find({
+      schoolId,
+      studentId: { $in: schoolStudentIds },
+      courseId: template.courseId._id || template.courseId,
+      source: "CERTIFICATE",
+      status: "PAID",
+    })
+      .select("_id studentId acYear academicId status source")
+      .lean();
+
+    const paidCertificateStudentSet = new Set(
+      paidCertificateInvoices.map((inv) => String(inv.studentId))
+    );
+
+    const studentsWithEligibility = students.map((student) => {
+      const sid = String(student._id);
+      const certificateFeePaid = paidCertificateStudentSet.has(sid);
+
+      return {
+        ...student,
+        certificateFeePaid,
+        canSelectCertificate: certificateFeePaid,
+        certificateBlockReason: certificateFeePaid ? "" : "Certificate fee pending",
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      students: studentsWithEligibility,
+    });
+  } catch (error) {
+    console.log("getStudentsBySchoolAndTemplate error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "get students bySchoolIdAndTemplate server error",
+    });
+  }
+};
+
+{/*
 const getStudentsBySchoolAndTemplate = async (req, res) => {
 
   const { schoolId, templateId } = req.params;
@@ -999,7 +1115,7 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
       .json({ success: false, error: "get students bySchoolIdAndTemplate server error" });
   }
 };
-
+*/}
 const getActiveStudents = async (req, res) => {
   try {
     const students = await Student.find({ active: "Active" })
