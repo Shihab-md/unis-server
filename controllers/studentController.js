@@ -2135,7 +2135,7 @@ const computeTotalFeesFromAcademic = (acad) => {
   }
   return sum;
 };
-
+{/*
 export const listPromoteCandidates = async (req, res) => {
   try {
     console.log("listPromoteCandidates");
@@ -2237,6 +2237,159 @@ export const listPromoteCandidates = async (req, res) => {
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
+  }
+};
+*/}
+export const listPromoteCandidates = async (req, res) => {
+  try {
+    console.log("listPromoteCandidates");
+
+    const role = req.user?.role;
+    if (!["superadmin", "hquser", "admin"].includes(role)) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    const { schoolId, targetAcYear, courseId } = req.params;
+
+    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
+      return res.status(400).json({ success: false, error: "Invalid params" });
+    }
+
+    const currentYear = await AcademicYear.findOne({ active: "Active" })
+      .select("_id acYear active")
+      .lean();
+
+    if (!currentYear?._id) {
+      return res.status(400).json({
+        success: false,
+        error: "Current Academic Year (Active) not configured",
+      });
+    }
+
+    const course = await Course.findById(courseId)
+      .select("_id code name years")
+      .lean();
+
+    if (!course?._id) {
+      return res.status(404).json({
+        success: false,
+        error: "Course not found",
+      });
+    }
+
+    const currentAcYearId = String(currentYear._id);
+    const totalCourseYears = Number(course.years || 0);
+
+    const students = await Student.find({
+      schoolId,
+      active: "Active",
+      feesPaid: 1,
+    })
+      .select("_id userId rollNumber feesPaid")
+      .populate({ path: "userId", select: "name" })
+      .lean();
+
+    if (!students.length) {
+      return res.status(200).json({
+        success: true,
+        currentAcYearId,
+        currentAcYear: currentYear.acYear,
+        course: {
+          _id: course._id,
+          code: course.code || "",
+          name: course.name || "",
+          years: totalCourseYears,
+        },
+        students: [],
+      });
+    }
+
+    const studentIds = students.map((s) => s._id);
+
+    const academics = await Academic.find({
+      studentId: { $in: studentIds },
+      acYear: currentAcYearId,
+      $or: [
+        { courseId1: courseId },
+        { courseId2: courseId },
+        { courseId3: courseId },
+        { courseId4: courseId },
+        { courseId5: courseId },
+      ],
+    })
+      .select(
+        "_id studentId acYear " +
+          "courseId1 courseId2 courseId3 courseId4 courseId5 " +
+          "year1 year2 year3 year4 year5 " +
+          "status1 status2 status3 status4 status5"
+      )
+      .lean();
+
+    const byStudent = new Map(academics.map((a) => [String(a.studentId), a]));
+
+    const alreadyTarget = await Academic.find({
+      studentId: { $in: studentIds },
+      acYear: targetAcYear,
+      $or: [
+        { courseId1: courseId },
+        { courseId2: courseId },
+        { courseId3: courseId },
+        { courseId4: courseId },
+        { courseId5: courseId },
+      ],
+    })
+      .select("studentId")
+      .lean();
+
+    const alreadySet = new Set(alreadyTarget.map((a) => String(a.studentId)));
+
+    const out = [];
+
+    for (const s of students) {
+      const a = byStudent.get(String(s._id));
+      if (!a) continue;
+      if (alreadySet.has(String(s._id))) continue;
+
+      const slot = findCourseSlotIndex(a, courseId);
+      if (!slot) continue;
+
+      const fromStatus = String(a[`status${slot}`] || "");
+      if (fromStatus === "Completed") continue;
+
+      const fromYear = Number(a[`year${slot}`] || 0);
+      const isFinalYear = totalCourseYears > 0 && fromYear >= totalCourseYears;
+
+      out.push({
+        studentId: s._id,
+        rollNumber: s.rollNumber,
+        name: s.userId?.name || "-",
+        feesPaid: Number(s.feesPaid || 0),
+        fromAcYearId: a.acYear,
+        fromSlot: slot,
+        fromYear,
+        fromStatus,
+        isFinalYear,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      currentAcYearId,
+      currentAcYear: currentYear.acYear,
+      course: {
+        _id: course._id,
+        code: course.code || "",
+        name: course.name || "",
+        years: totalCourseYears,
+      },
+      students: out,
+    });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
   }
 };
 
