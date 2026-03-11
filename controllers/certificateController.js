@@ -521,15 +521,16 @@ const buildCertificateOverlayPng = async ({
         : "";
 
   ctx.fillStyle = "rgb(14, 56, 194)";
-  ctx.textAlign = "start";
 
   if (!isMakthab) {
+    ctx.textAlign = "center";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, 158, 345);
-    ctx.fillText(fatherName, 104, 366);
+    ctx.fillText(name, centerX - 20, 346); //158, 345);
+    ctx.fillText(fatherName, centerX - 70, 367); //104, 366);
 
+    ctx.textAlign = "start";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(rollNumber, 476, 345);
+    ctx.fillText(rollNumber, 475, 346);
 
     ctx.font = "12px Arial-Bold";
     ctx.fillText(grade, 220, 387);
