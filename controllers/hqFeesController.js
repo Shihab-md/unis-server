@@ -329,7 +329,7 @@ export const hqFeesDashboard = async (req, res) => {
 export const listPendingInvoicesHQ_NotSent = async (req, res) => {
   try {
     requireRole(req.user?.role, ["superadmin", "hquser"]);
-
+    console.log("listPendingInvoicesHQ_NotSent")
     const { acYear, schoolId } = req.params;
 
     if (!isObjectId(acYear)) {
@@ -376,6 +376,7 @@ export const listPendingInvoicesHQ_NotSent = async (req, res) => {
         populate: { path: "userId", select: "name" },
       })
       .populate({ path: "courseId", select: "name type" })
+      .populate({ path: "acYear", select: "acYear" })
       .lean();
 
     return res.status(200).json({ success: true, invoices });
