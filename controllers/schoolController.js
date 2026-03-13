@@ -153,6 +153,13 @@ const addSchool = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
 
+    const totalSchoolsList = await School.find()
+      .sort({ code: 1 })
+      .select("_id code nameEnglish districtStateId active")
+      .populate({ path: "districtStateId", select: "district state" })
+      .lean();
+    redis.set("schools", JSON.stringify(totalSchoolsList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "Niswan is created." });
   } catch (error) {
     console.log(error);

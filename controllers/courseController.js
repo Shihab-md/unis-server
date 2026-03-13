@@ -94,6 +94,12 @@ const addCourse = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalCourses', await Course.countDocuments());
 
+    const totalCoursesList = await Course.find()
+      .sort({ code: 1 })
+      .select("_id name type fees years code")
+      .lean();
+    redis.set("courses", JSON.stringify(totalCoursesList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "Course Created Successfully." });
   } catch (error) {
     console.log(error);

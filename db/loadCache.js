@@ -97,7 +97,7 @@ const loadCache = async () => {
                 .sort({ iCode: 1 })
                 .select("_id name type iCode") 
                 .lean(),
-
+ 
             Course.find()
                 .sort({ code: 1 })
                 .select("_id name type fees years code")
@@ -126,7 +126,7 @@ const loadCache = async () => {
         ]);
 
         console.log("Cache loaded into Redis!");
-    } catch (error) {
+    } catch (error) { 
         console.log("[loadCache] error:", error);
     }
 };

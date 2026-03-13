@@ -26,6 +26,12 @@ const addAcademicYear = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalAcademicYears', await AcademicYear.countDocuments());
 
+    const totalAcademicYearsList = await AcademicYear.find()
+      .sort({ acYear: 1 })
+      .select("_id acYear active")
+      .lean();
+    redis.set("academicYears", JSON.stringify(totalAcademicYearsList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "AcademicYear Created Successfully." });
   } catch (error) {
     console.log(error);

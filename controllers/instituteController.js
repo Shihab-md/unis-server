@@ -44,6 +44,12 @@ const addInstitute = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalInstitutes', await Institute.countDocuments());
 
+    const totalInstitutesList = await Institute.find()
+      .sort({ iCode: 1 })
+      .select("_id name type iCode")
+      .lean();
+    redis.set("institutes", JSON.stringify(totalInstitutesList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "Institute Created Successfully." });
   } catch (error) {
     console.log(error);

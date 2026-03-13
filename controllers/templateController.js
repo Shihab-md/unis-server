@@ -41,6 +41,12 @@ const addTemplate = async (req, res) => {
     const redis = await getRedis();
     await redis.set("totalTemplates", await Template.countDocuments());
 
+    const templatesList = await Template.find()
+      .select("_id courseId")
+      .populate({ path: "courseId", select: "name" })
+      .lean();
+    redis.set("templates", JSON.stringify(templatesList), { EX: 60 * 30 });
+
     if (req.file) {
       const fileBuffer = req.file.buffer;
 
@@ -103,72 +109,6 @@ const addTemplate = async (req, res) => {
   }
 };
 
-{/*const addTemplate = async (req, res) => {
-
-  let newTemplate;
-  try {
-    const {
-      courseId,
-      details,
-    } = req.body;
-
-    newTemplate = new Template({
-      courseId,
-      details: toCamelCase(details),
-      template: "-",
-    });
-
-    newTemplate = await newTemplate.save();
-
-    const redis = await getRedis();
-    await redis.set('totalTemplates', await Template.countDocuments());
-
-    if (req.file) {
-      const fileBuffer = req.file.buffer;
-
-      let ext = "png";
-      let contentType = "image/png";
-
-      if (req.file?.mimetype === "application/pdf") {
-        ext = "pdf";
-        contentType = "application/pdf";
-      } else if (req.file?.mimetype === "image/png") {
-        ext = "png";
-        contentType = "image/png";
-      } else if (req.file?.mimetype === "image/jpeg") {
-        ext = "jpg";
-        contentType = "image/jpeg";
-      }
-
-      const blob = await put(`templates/${newTemplate._id}.${ext}`, fileBuffer, {
-        access: "public",
-        contentType,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-        allowOverwrite: true,
-      });
-
-      //  console.log(blob.downloadUrl)
-      const template = await Template.findByIdAndUpdate({ _id: newTemplate._id }, { template: blob.downloadUrl });
-      if (!template) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Template not found." });
-      }
-    }
-
-    return res.status(200).json({ success: true, message: "Template Created Successfully." });
-  } catch (error) {
-
-    if (newTemplate) {
-      await Template.deleteOne({ _id: newTemplate._id });
-    }
-    console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: "server error in adding template" });
-  }
-};
-*/}
 const getTemplates = async (req, res) => {
   try {
     const templates = await Template.find().select('details')

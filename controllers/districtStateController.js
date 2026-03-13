@@ -27,6 +27,12 @@ const addDistrictState = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalDistrictStates', await DistrictState.countDocuments());
 
+    const districtStatesList = await DistrictState.find()
+      .sort({ state: 1, district: 1 })
+      .select("_id district state")
+      .lean();
+    redis.set("districtStates", JSON.stringify(districtStatesList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "District and State Created Successfully." });
 
   } catch (error) {

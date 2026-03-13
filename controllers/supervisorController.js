@@ -86,6 +86,13 @@ const addSupervisor = async (req, res) => {
       await User.findByIdAndUpdate({ _id: savedUser._id }, { profileImage: blob.downloadUrl });
     }
 
+    const totalSupervisorsList = await Supervisor.find()
+      .sort({ supervisorId: 1 })
+      .select("_id supervisorId userId active")
+      .populate({ path: "userId", select: "name" })
+      .lean();
+    redis.set("supervisors", JSON.stringify(totalSupervisorsList), { EX: 60 * 30 });
+
     return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
   } catch (error) {
     console.log(error);
@@ -318,7 +325,7 @@ const getSupervisor = async (req, res) => {
     }
 
     return res.status(200).json({ success: true, supervisor });
- 
+
   } catch (error) {
     console.log(error);
     return res
