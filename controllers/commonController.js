@@ -154,6 +154,174 @@ export function parseDate(rawDate) {
     dec: 12, december: 12,
   };
 
+  const isAlpha = (x) => /^[A-Za-z]+$/.test(String(x || ""));
+
+  const toInt = (x) => {
+    const n = Number(String(x));
+    return Number.isInteger(n) ? n : NaN;
+  };
+
+  // ✅ Excel serial date -> JS Date (UTC)
+  // Windows Excel: day 0 = 1899-12-30
+  const excelSerialToDateUTC = (serial) => {
+    const n = Number(serial);
+    if (!Number.isFinite(n)) return null;
+
+    // common DOB range sanity
+    if (n < 1 || n > 80000) return null;
+
+    const epoch = Date.UTC(1899, 11, 30);
+    const ms = epoch + Math.round(n) * 24 * 60 * 60 * 1000;
+    const dt = new Date(ms);
+
+    const y = dt.getUTCFullYear();
+    if (y < 1900 || y > 2100) return null;
+
+    return dt;
+  };
+
+  const parse = (input) => {
+    if (input === null || input === undefined) {
+      return { ok: false, reason: "empty" };
+    }
+
+    const inputStr = String(input).trim();
+
+    // ✅ Pure numeric like 37258 => Excel serial
+    const numeric = Number(inputStr);
+    if (
+      inputStr !== "" &&
+      Number.isFinite(numeric) &&
+      /^[0-9]+(\.0+)?$/.test(inputStr)
+    ) {
+      const dt = excelSerialToDateUTC(numeric);
+      if (dt) return { ok: true, date: dt, reason: "excel_serial" };
+      // fall through if not valid serial
+    }
+
+    let s = inputStr
+      .replace(/\r/g, "")
+      .replace(/\s+/g, "");
+
+    if (!s) return { ok: false, reason: "empty" };
+
+    // normalize separators to "-"
+    s = s.replace(/[./]/g, "-");
+
+    const parts = s.split("-").filter(Boolean);
+    if (parts.length !== 3) {
+      return { ok: false, reason: "expected 3 parts" };
+    }
+
+    const yearRaw = parts[2];
+    let y = toInt(yearRaw);
+    if (!Number.isInteger(y)) {
+      return { ok: false, reason: "invalid year" };
+    }
+
+    // support 2-digit year
+    if (String(yearRaw).length === 2) {
+      y = y <= 49 ? 2000 + y : 1900 + y;
+    }
+
+    if (y < 1000 || y > 9999) {
+      return { ok: false, reason: "invalid year" };
+    }
+
+    let d, m;
+
+    // ✅ Handle month name formats
+    if (isAlpha(parts[0])) {
+      // MMM-DD-YYYY
+      m = monthMap[parts[0].toLowerCase()];
+      if (!m) return { ok: false, reason: "invalid month name" };
+
+      d = toInt(parts[1]);
+      if (!Number.isInteger(d) || d < 1 || d > 31) {
+        return { ok: false, reason: "invalid day" };
+      }
+    } else if (isAlpha(parts[1])) {
+      // DD-MMM-YYYY
+      d = toInt(parts[0]);
+      m = monthMap[parts[1].toLowerCase()];
+
+      if (!Number.isInteger(d) || d < 1 || d > 31) {
+        return { ok: false, reason: "invalid day" };
+      }
+      if (!m) return { ok: false, reason: "invalid month name" };
+    } else {
+      // ✅ Numeric date parsing with smart day/month swap
+      const n1 = toInt(parts[0]);
+      const n2 = toInt(parts[1]);
+
+      if (!Number.isInteger(n1) || !Number.isInteger(n2)) {
+        return { ok: false, reason: "invalid numeric date parts" };
+      }
+
+      // Rule:
+      // - if first > 12 => DD-MM-YYYY
+      // - else if second > 12 => MM-DD-YYYY
+      // - else ambiguous => default DD-MM-YYYY
+      if (n1 > 12) {
+        d = n1;
+        m = n2;
+      } else if (n2 > 12) {
+        d = n2;
+        m = n1;
+      } else {
+        d = n1;
+        m = n2;
+      }
+    }
+
+    if (!Number.isInteger(d) || d < 1 || d > 31) {
+      return { ok: false, reason: "invalid day" };
+    }
+
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      return { ok: false, reason: "invalid month" };
+    }
+
+    // validate actual calendar date
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (
+      dt.getUTCFullYear() !== y ||
+      dt.getUTCMonth() !== m - 1 ||
+      dt.getUTCDate() !== d
+    ) {
+      return { ok: false, reason: "invalid calendar date" };
+    }
+
+    return { ok: true, date: dt, reason: "string_date" };
+  };
+
+  try {
+    const r = parse(rawDate);
+    return r.ok ? r.date : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+{/*
+export function parseDate(rawDate) {
+  const fallback = new Date(2000, 0, 1);
+
+  const monthMap = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12,
+  };
+
   const isAlpha = (x) => /^[A-Za-z]+$/.test(x);
 
   const toInt = (x) => {
@@ -254,3 +422,4 @@ export function parseDate(rawDate) {
     return fallback;
   }
 }
+*/}
