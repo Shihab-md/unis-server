@@ -377,7 +377,7 @@ const buildCertificateOverlayPng = async ({
   certificateNum,
   dat,
   issueDateText,
-  isMakthab,
+  tempType,
   grade,
   scale = 3,
 }) => {
@@ -405,74 +405,148 @@ const buildCertificateOverlayPng = async ({
     .filter(Boolean)
     .join(", ");
 
-  if (nameNative) {
-    if (nameArabic) {
-      let arabicSize = 16;
-      ctx.font = `${arabicSize}px Amiri Bold`;
-      ctx.fillStyle = "rgb(14, 84, 49)";
-      ctx.textAlign = "center";
-      ctx.fillText(prepareArabicText(nameArabic), centerX, 93);
-    }
-
+  if (tempType != 1) {
     if (nameNative) {
-      let nativeSize = 14;
-      ctx.font = `bold ${nativeSize}px Nirmala`;
-      ctx.fillStyle = "rgb(161, 14, 94)";
-      ctx.textAlign = "center";
-      ctx.fillText(nameNative, centerX, 115);
-      ctx.fillText(nameNative, centerX, 115);
-      ctx.fillText(nameNative, centerX, 115);
-    }
+      if (nameArabic) {
+        let arabicSize = 16;
+        ctx.font = `${arabicSize}px Amiri Bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(prepareArabicText(nameArabic), centerX, 93);
+      }
 
-    if (nameEnglish) {
-      let englishSize = 13
-      ctx.font = `bold ${englishSize}px Arial-bold`;
-      ctx.fillStyle = "rgb(14, 84, 49)";
-      ctx.textAlign = "center";
-      ctx.fillText(nameEnglish, centerX, 135);
-      ctx.fillText(nameEnglish, centerX, 135);
-    }
+      if (nameNative) {
+        let nativeSize = 14;
+        ctx.font = `bold ${nativeSize}px Nirmala`;
+        ctx.fillStyle = "rgb(161, 14, 94)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameNative, centerX, 115);
+        ctx.fillText(nameNative, centerX, 115);
+        ctx.fillText(nameNative, centerX, 115);
+      }
 
-    if (addressLine) {
-      let addrSize = 9;
-      ctx.font = `bold ${addrSize}px Arial-bold`;
-      ctx.fillStyle = "rgb(4, 25, 93)";
-      ctx.textAlign = "center";
-      ctx.fillText(addressLine, centerX, 150);
+      if (nameEnglish) {
+        let englishSize = 13
+        ctx.font = `bold ${englishSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameEnglish, centerX, 135);
+        ctx.fillText(nameEnglish, centerX, 135);
+      }
+
+      if (addressLine) {
+        let addrSize = 9;
+        ctx.font = `bold ${addrSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(4, 25, 93)";
+        ctx.textAlign = "center";
+        ctx.fillText(addressLine, centerX, 150);
+      }
+    } else {
+      console.log("No Native.")
+      if (nameArabic) {
+        let arabicSize = 19;
+        ctx.font = `${arabicSize}px Amiri Bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(prepareArabicText(nameArabic), centerX, 100);
+      }
+
+      if (nameEnglish) {
+        let englishSize = measureAndFit(
+          ctx,
+          nameEnglish,
+          "Arial",
+          15,
+          width * 0.78,
+          10,
+          "bold"
+        );
+        ctx.font = `bold ${englishSize}px Arial`;
+        ctx.fillStyle = "rgb(161, 14, 94)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameEnglish, centerX, 128);
+        ctx.fillText(nameEnglish, centerX, 128);
+      }
+
+      if (addressLine) {
+        let addrSize = 10;
+        ctx.font = `bold ${addrSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(4, 25, 93)";
+        ctx.textAlign = "center";
+        ctx.fillText(addressLine, centerX, 145);
+      }
     }
   } else {
-    console.log("No Native.")
-    if (nameArabic) {
-      let arabicSize = 19;
-      ctx.font = `${arabicSize}px Amiri Bold`;
-      ctx.fillStyle = "rgb(14, 84, 49)";
-      ctx.textAlign = "center";
-      ctx.fillText(prepareArabicText(nameArabic), centerX, 100);
-    }
 
-    if (nameEnglish) {
-      let englishSize = measureAndFit(
-        ctx,
-        nameEnglish,
-        "Arial",
-        15,
-        width * 0.78,
-        10,
-        "bold"
-      );
-      ctx.font = `bold ${englishSize}px Arial`;
-      ctx.fillStyle = "rgb(161, 14, 94)";
-      ctx.textAlign = "center";
-      ctx.fillText(nameEnglish, centerX, 128);
-      ctx.fillText(nameEnglish, centerX, 128);
-    }
+    if (nameNative) {
+      if (nameArabic) {
+        let arabicSize = 16;
+        ctx.font = `${arabicSize}px Amiri Bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(prepareArabicText(nameArabic), centerX, 106);
+      }
 
-    if (addressLine) {
-      let addrSize = 10;
-      ctx.font = `bold ${addrSize}px Arial-bold`;
-      ctx.fillStyle = "rgb(4, 25, 93)";
-      ctx.textAlign = "center";
-      ctx.fillText(addressLine, centerX, 145);
+      if (nameNative) {
+        let nativeSize = 14;
+        ctx.font = `bold ${nativeSize}px Nirmala`;
+        ctx.fillStyle = "rgb(161, 14, 94)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameNative, centerX, 131);
+        ctx.fillText(nameNative, centerX, 131);
+        ctx.fillText(nameNative, centerX, 131);
+      }
+
+      if (nameEnglish) {
+        let englishSize = 13
+        ctx.font = `bold ${englishSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameEnglish, centerX, 152);
+        ctx.fillText(nameEnglish, centerX, 152);
+      }
+
+      if (addressLine) {
+        let addrSize = 9;
+        ctx.font = `bold ${addrSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(4, 25, 93)";
+        ctx.textAlign = "center";
+        ctx.fillText(addressLine, centerX, 168);
+      }
+    } else {
+      console.log("No Native.")
+      if (nameArabic) {
+        let arabicSize = 19;
+        ctx.font = `${arabicSize}px Amiri Bold`;
+        ctx.fillStyle = "rgb(14, 84, 49)";
+        ctx.textAlign = "center";
+        ctx.fillText(prepareArabicText(nameArabic), centerX, 115);
+      }
+
+      if (nameEnglish) {
+        let englishSize = measureAndFit(
+          ctx,
+          nameEnglish,
+          "Arial",
+          15,
+          width * 0.78,
+          10,
+          "bold"
+        );
+        ctx.font = `bold ${englishSize}px Arial`;
+        ctx.fillStyle = "rgb(161, 14, 94)";
+        ctx.textAlign = "center";
+        ctx.fillText(nameEnglish, centerX, 143);
+        ctx.fillText(nameEnglish, centerX, 143);
+      }
+
+      if (addressLine) {
+        let addrSize = 10;
+        ctx.font = `bold ${addrSize}px Arial-bold`;
+        ctx.fillStyle = "rgb(4, 25, 93)";
+        ctx.textAlign = "center";
+        ctx.fillText(addressLine, centerX, 160);
+      }
     }
   }
 
@@ -489,11 +563,11 @@ const buildCertificateOverlayPng = async ({
 
   ctx.fillStyle = "rgb(14, 56, 194)";
 
-  if (!isMakthab) {
+  if (tempType == 3) { // Muballiga
     ctx.textAlign = "center";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 20, 346); //158, 345);
-    ctx.fillText(fatherName, centerX - 70, 367); //104, 366);
+    ctx.fillText(name, centerX - 20, 346);
+    ctx.fillText(fatherName, centerX - 70, 367);
 
     ctx.textAlign = "start";
     ctx.font = "11px Arial-Bold";
@@ -510,15 +584,44 @@ const buildCertificateOverlayPng = async ({
     ctx.fillText(String(certificateNum), 105, 624);
     ctx.fillText(issueDateText, 105, 637);
 
-  } else {
-    ctx.font = "16px Comic";
-    ctx.fillText(name, 180, 320);
-    ctx.fillText(fatherName, 190, 250);
+  } else if (tempType == 2) { // Muallama
+    ctx.textAlign = "center";
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText(name, centerX - 20, 333);
+    ctx.fillText(fatherName, centerX - 70, 354);
 
-    ctx.font = "bold 23px Arial-Bold";
-    ctx.fillText(rollNumber, 320, 320);
-    ctx.fillText(String(new Date().getFullYear()), 340, 360);
-    ctx.fillText(issueDateText, 260, 460);
+    ctx.textAlign = "start";
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText(rollNumber, 476, 334);
+
+    ctx.font = "12px Arial-Bold";
+    ctx.fillText(grade, 221, 374);
+
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText("JUNE-" + startYear, 329, 374);
+    ctx.fillText("APRIL-" + endYear, 419, 374);
+
+    ctx.font = "10px Arial-Bold";
+    ctx.fillText(String(certificateNum), 105, 624);
+    ctx.fillText(issueDateText, 105, 637);
+
+  } else { // Makthab
+    ctx.textAlign = "center";
+    ctx.font = "11px Arial-Bold";
+    ctx.fillText(name, centerX - 15, 367);
+    ctx.fillText(fatherName, centerX - 45, 389);
+
+    ctx.textAlign = "start";
+    ctx.font = "10.5px Arial-Bold";
+    ctx.fillText(rollNumber, 480, 367);
+
+    ctx.font = "12px Arial-Bold";
+    ctx.fillText(grade, 540, 408);
+
+    ctx.fillText(String(new Date().getFullYear()), 235, 430);
+
+    ctx.font = "10px Arial-Bold";
+    ctx.fillText(issueDateText, 105, 616);
   }
 
   return canvas.toBuffer("image/png");
@@ -638,10 +741,15 @@ const addCertificate = async (req, res) => {
     const startYear = academicStart.acYear.acYear.substr(0, 4);
     const endYear = academicEnd.acYear.acYear.substr(5, 4);
 
-    const isMakthab = template.courseId.name.includes("Makthab");
+    let tempType = 1; //Makthab
+    if (template.courseId.name.includes("Muallama")) {
+      tempType = 2; //Muallama
+    } else if (template.courseId.name.includes("Muballiga")) {
+      tempType = 3; //Muballiga
+    }
 
     let certificateNum;
-    if (!isMakthab) {
+    if (tempType != 1) {
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
       // if (cert) {
       //   return res.status(404).json({
@@ -700,7 +808,7 @@ const addCertificate = async (req, res) => {
       certificateNum,
       dat,
       issueDateText,
-      isMakthab,
+      tempType,
       grade,
       scale: 3,
     });
@@ -715,7 +823,7 @@ const addCertificate = async (req, res) => {
 
     const pdfBytes = Buffer.from(await outputPdf.save());
 
-    if (!isMakthab) {
+    if (tempType != 1) { // != Makthab
       const outName = buildTimestampedName(fileName);
 
       const uploaded = await runWithDriveRetry(async (drive) => {
