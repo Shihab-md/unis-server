@@ -1,5 +1,4 @@
 import getRedis from "../db/redis.js"
-
 import Employee from "../models/Employee.js"
 import Supervisor from "../models/Supervisor.js"
 import School from "../models/School.js"
