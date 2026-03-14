@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { Schema } from "mongoose";
- 
+
 const studentSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },
@@ -16,7 +16,7 @@ const studentSchema = new Schema({
   idMark1: { type: String, required: true },
   idMark2: { type: String },
   about: { type: String },
- 
+
   fatherName: { type: String },
   fatherNumber: { type: Number },
   fatherOccupation: { type: String },
@@ -50,6 +50,8 @@ const studentSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 
+  oldRollNumber: { type: String, trim: true, index: true },
+  
   courses: [{ type: Schema.Types.ObjectId, ref: 'Course', required: true }],
 
   _course: { type: String },
@@ -65,6 +67,7 @@ studentSchema.virtual('academics').
   set(function (academics) { this._academics = academics; });
 
 studentSchema.index({ schoolId: 1, rollNumber: 1 });
+studentSchema.index({ schoolId: 1, oldRollNumber: 1 });
 studentSchema.index({ schoolId: 1, active: 1 });
 studentSchema.index({ schoolId: 1, feesPaid: 1 });
 

@@ -619,7 +619,7 @@ const importStudentsData = async (req, res) => {
     for (const s of schools) schoolMap.set(String(s.code), s);
 
     // ---------- Prefetch duplicates by OLD rollNumber (about OR remarks match) ----------
-    const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
+    /*const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
     const oldRemarks = oldRollNumbers.map((r) => `Old Roll Number : ${r}`);
 
     const existingStudents = oldRemarks.length
@@ -634,6 +634,23 @@ const importStudentsData = async (req, res) => {
     for (const s of existingStudents) {
       if (s?.about) existingOldRemarksSet.add(String(s.about));
       if (s?.remarks) existingOldRemarksSet.add(String(s.remarks));
+    }*/
+    const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
+
+    const existingStudents = oldRollNumbers.length
+      ? await Student.find({
+        schoolId: { $in: schools.map((s) => s._id) },
+        oldRollNumber: { $in: oldRollNumbers },
+      })
+        .select("oldRollNumber schoolId")
+        .lean()
+      : [];
+
+    const existingOldRollSet = new Set();
+    for (const s of existingStudents) {
+      if (s?.oldRollNumber) {
+        existingOldRollSet.add(`${String(s.schoolId)}__${String(s.oldRollNumber).trim()}`);
+      }
     }
     // ---------- Main loop ----------
     let row = 1;
@@ -654,8 +671,14 @@ const importStudentsData = async (req, res) => {
       if (!school) errors.push(`NiswanCode not available : ${niswanCode}`);
 
       // Duplicate check using remarks
-      const oldRemark = `Old Roll Number : ${oldRollNumber}`;
-      if (oldRollNumber && existingOldRemarksSet.has(oldRemark)) {
+      // const oldRemark = `Old Roll Number : ${oldRollNumber}`;
+      // if (oldRollNumber && existingOldRemarksSet.has(oldRemark)) {
+      //   errors.push(`Already imported (old roll found): ${oldRollNumber}`);
+      // }
+      const duplicateKey =
+        school && oldRollNumber ? `${String(school._id)}__${oldRollNumber}` : "";
+
+      if (duplicateKey && existingOldRollSet.has(duplicateKey)) {
         errors.push(`Already imported (old roll found): ${oldRollNumber}`);
       }
 
@@ -735,6 +758,7 @@ const importStudentsData = async (req, res) => {
                 userId,
                 schoolId: school._id,
                 rollNumber: newRollNumber, // ✅ NEW roll number
+                oldRollNumber: oldRollNumber,
                 doa: new Date(),
                 dob: dobDate,
                 gender: "Female",
@@ -813,7 +837,8 @@ const importStudentsData = async (req, res) => {
         });
 
         // mark old roll as imported (avoid duplicates in same file too)
-        existingOldRemarksSet.add(`Old Roll Number : ${oldRollNumber}`);
+        //existingOldRemarksSet.add(`Old Roll Number : ${oldRollNumber}`);
+        existingOldRollSet.add(`${String(school._id)}__${oldRollNumber}`);
 
         finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
         successCount++;
@@ -2275,9 +2300,9 @@ export const listPromoteCandidates = async (req, res) => {
     })
       .select(
         "_id studentId acYear " +
-          "courseId1 courseId2 courseId3 courseId4 courseId5 " +
-          "year1 year2 year3 year4 year5 " +
-          "status1 status2 status3 status4 status5"
+        "courseId1 courseId2 courseId3 courseId4 courseId5 " +
+        "year1 year2 year3 year4 year5 " +
+        "status1 status2 status3 status4 status5"
       )
       .lean();
 
