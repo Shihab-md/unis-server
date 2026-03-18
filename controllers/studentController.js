@@ -1100,7 +1100,7 @@ const getActiveStudents = async (req, res) => {
 };
 
 const getByFilter = async (req, res) => {
-  const {
+  let {
     schoolId,
     courseId,
     status,
@@ -1140,6 +1140,30 @@ const getByFilter = async (req, res) => {
     // 2) Academic filter -> get matching studentIds
     //    (Only if any academic filters are present)
     // ----------------------------
+    //console.log(acYear)
+    if (!acYear || acYear === "null" || acYear === "undefined") {
+      // ✅ Current Academic Year string (Apr–Mar)
+      const now = new Date();
+      const yearNow = now.getFullYear();
+      const month = now.getMonth() + 1;
+      acYear = `${yearNow - 1}-${yearNow}`;
+      if (month >= 4) {
+        acYear = `${yearNow}-${yearNow + 1}`;
+      }
+
+      const acYearDoc = await AcademicYear.findOne({ acYear: acYear })
+        .select("_id acYear")
+        .lean();
+
+      if (!acYearDoc) {
+        return res.status(400).json({
+          success: false,
+          error: `Academic year not found: ${acYear}`,
+        });
+      }
+      acYear = acYearDoc._id;
+    }
+    //console.log(acYear)
     const hasAcademicFilter =
       isValidParam(courseId) || isValidParam(acYear) || isValidParam(year) || isValidParam(courseStatus);
 
@@ -1178,7 +1202,7 @@ const getByFilter = async (req, res) => {
           ],
         });
       }
-
+      console.log(academicAnd)
       // Get only studentIds (faster than fetching full academic docs)
       const studentIds = await Academic.distinct("studentId", { $and: academicAnd });
 
@@ -2396,160 +2420,6 @@ export const listPromoteCandidates = async (req, res) => {
   }
 };
 
-{/*
-export const listPromoteCandidates = async (req, res) => {
-  try {
-    console.log("listPromoteCandidates");
-
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    const { schoolId, targetAcYear, courseId } = req.params;
-
-    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
-      return res.status(400).json({ success: false, error: "Invalid params" });
-    }
-
-    const currentYear = await AcademicYear.findOne({ active: "Active" })
-      .select("_id acYear active")
-      .lean();
-
-    if (!currentYear?._id) {
-      return res.status(400).json({
-        success: false,
-        error: "Current Academic Year (Active) not configured",
-      });
-    }
-
-    const course = await Course.findById(courseId)
-      .select("_id code name years")
-      .lean();
-
-    if (!course?._id) {
-      return res.status(404).json({
-        success: false,
-        error: "Course not found",
-      });
-    }
-
-    const currentAcYearId = String(currentYear._id);
-    const totalCourseYears = Number(course.years || 0);
-
-    const students = await Student.find({
-      schoolId,
-      active: "Active",
-      feesPaid: 1,
-    })
-      .select("_id userId rollNumber feesPaid")
-      .populate({ path: "userId", select: "name" })
-      .lean();
-
-    if (!students.length) {
-      return res.status(200).json({
-        success: true,
-        currentAcYearId,
-        currentAcYear: currentYear.acYear,
-        course: {
-          _id: course._id,
-          code: course.code || "",
-          name: course.name || "",
-          years: totalCourseYears,
-        },
-        students: [],
-      });
-    }
-
-    const studentIds = students.map((s) => s._id);
-
-    const academics = await Academic.find({
-      studentId: { $in: studentIds },
-      acYear: currentAcYearId,
-      $or: [
-        { courseId1: courseId },
-        { courseId2: courseId },
-        { courseId3: courseId },
-        { courseId4: courseId },
-        { courseId5: courseId },
-      ],
-    })
-      .select(
-        "_id studentId acYear " +
-          "courseId1 courseId2 courseId3 courseId4 courseId5 " +
-          "year1 year2 year3 year4 year5 " +
-          "status1 status2 status3 status4 status5"
-      )
-      .lean();
-
-    const byStudent = new Map(academics.map((a) => [String(a.studentId), a]));
-
-    const alreadyTarget = await Academic.find({
-      studentId: { $in: studentIds },
-      acYear: targetAcYear,
-      $or: [
-        { courseId1: courseId },
-        { courseId2: courseId },
-        { courseId3: courseId },
-        { courseId4: courseId },
-        { courseId5: courseId },
-      ],
-    })
-      .select("studentId")
-      .lean();
-
-    const alreadySet = new Set(alreadyTarget.map((a) => String(a.studentId)));
-
-    const out = [];
-
-    for (const s of students) {
-      const a = byStudent.get(String(s._id));
-      if (!a) continue;
-      if (alreadySet.has(String(s._id))) continue;
-
-      const slot = findCourseSlotIndex(a, courseId);
-      if (!slot) continue;
-
-      const fromStatus = String(a[`status${slot}`] || "");
-      if (fromStatus === "Completed") continue;
-
-      const fromYear = Number(a[`year${slot}`] || 0);
-      const isFinalYear = totalCourseYears > 0 && fromYear >= totalCourseYears;
-
-      out.push({
-        studentId: s._id,
-        rollNumber: s.rollNumber,
-        name: s.userId?.name || "-",
-        feesPaid: Number(s.feesPaid || 0),
-        fromAcYearId: a.acYear,
-        fromSlot: slot,
-        fromYear,
-        fromStatus,
-        isFinalYear,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      currentAcYearId,
-      currentAcYear: currentYear.acYear,
-      course: {
-        _id: course._id,
-        code: course.code || "",
-        name: course.name || "",
-        years: totalCourseYears,
-      },
-      students: out,
-    });
-  } catch (e) {
-    console.log(e);
-    return res.status(e.status || 500).json({
-      success: false,
-      error: e.message || "server error",
-    });
-  }
-};
-*/}
 export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
@@ -2764,7 +2634,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
             }
 
             const nextYear =
-              policy === "NOT_PROMOTE"
+              policy === "NOT_PROMOTE" || "COMPLETE"
                 ? Math.max(srcYear, 1)
                 : Math.max(srcYear + 1, 1);
 
@@ -2905,312 +2775,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
     if (session) await session.endSession();
   }
 };
-{/*
-export const promoteStudentsBulkByCourse = async (req, res) => {
-  let session = null;
 
-  try {
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    const {
-      schoolId,
-      targetAcYear,
-      courseId,
-      studentIds,
-      policy = "PROMOTE",
-      requireFeesPaid = true,
-      chunkSize = 10,
-      certificateFee = 50,
-      gradesByStudentId = {}, // ✅ NEW
-    } = req.body || {};
-
-    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
-      return res.status(400).json({ success: false, error: "Invalid schoolId / targetAcYear / courseId" });
-    }
-
-    if (!Array.isArray(studentIds) || studentIds.length === 0) {
-      return res.status(400).json({ success: false, error: "studentIds required" });
-    }
-
-    const uniqueIds = [...new Set(studentIds.map(String))].filter(isObjectId);
-
-    // ✅ Require grade per selected student for PROMOTE / COMPLETE
-    if (policy === "PROMOTE" || policy === "COMPLETE") {
-      const missingGradeStudentIds = uniqueIds.filter(
-        (sid) => !String(gradesByStudentId?.[sid] || "").trim()
-      );
-
-      if (missingGradeStudentIds.length > 0) {
-        return res.status(400).json({
-          success: false,
-          error: `Grade is required for all selected students. Missing: ${missingGradeStudentIds.length}`,
-        });
-      }
-    }
-
-    const chunk = (arr, size) => {
-      const out = [];
-      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-      return out;
-    };
-
-    const chunks = chunk(uniqueIds, Math.max(1, Number(chunkSize || 10)));
-
-    const summary = {
-      requested: uniqueIds.length,
-      promoted: 0,
-      skipped: 0,
-      errors: [],
-    };
-
-    const course = await Course.findById(courseId).select("_id name type").lean();
-
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      const idsChunk = chunks[chunkIndex];
-      session = await mongoose.startSession();
-
-      try {
-        await session.withTransaction(async () => {
-          const students = await Student.find({ _id: { $in: idsChunk }, schoolId })
-            .select("_id userId schoolId feesPaid active")
-            .session(session)
-            .lean();
-
-          const studentMap = new Map(students.map((s) => [String(s._id), s]));
-
-          for (const sid of idsChunk) {
-            const st = studentMap.get(String(sid));
-
-            if (!st) {
-              summary.errors.push({ studentId: sid, reason: "Student not found in this school" });
-              continue;
-            }
-
-            if (String(st.active) !== "Active") {
-              summary.skipped++;
-              continue;
-            }
-
-            if (requireFeesPaid && policy !== "COMPLETE" && Number(st.feesPaid || 0) !== 1) {
-              summary.skipped++;
-              continue;
-            }
-
-            const studentGrade = String(gradesByStudentId?.[String(sid)] || "").trim();
-
-            const sourceAcad = await Academic.findOne({
-              studentId: sid,
-              $or: [
-                { courseId1: courseId },
-                { courseId2: courseId },
-                { courseId3: courseId },
-                { courseId4: courseId },
-                { courseId5: courseId },
-              ],
-            })
-              .sort({ updatedAt: -1, createdAt: -1 })
-              .session(session)
-              .lean();
-
-            if (!sourceAcad) {
-              summary.skipped++;
-              continue;
-            }
-
-            const srcSlot = findCourseSlotIndex(sourceAcad, courseId);
-            if (!srcSlot) {
-              summary.skipped++;
-              continue;
-            }
-
-            const srcStatus = String(sourceAcad[`status${srcSlot}`] || "");
-            if (srcStatus === "Completed") {
-              summary.skipped++;
-              continue;
-            }
-
-            const targetFilter = { studentId: sid, acYear: targetAcYear };
-
-            let targetDoc = await Academic.findOne(targetFilter).session(session);
-            if (!targetDoc) {
-              targetDoc = new Academic({ studentId: sid, acYear: targetAcYear });
-            }
-
-            const alreadyInTarget = findCourseSlotIndex(targetDoc, courseId);
-            if (alreadyInTarget) {
-              summary.skipped++;
-              continue;
-            }
-
-            let destSlot = srcSlot;
-            const existingCourseAtDest = targetDoc[`courseId${destSlot}`];
-
-            if (existingCourseAtDest && String(existingCourseAtDest) !== String(courseId)) {
-              destSlot = null;
-              for (let i = 1; i <= 5; i++) {
-                if (!targetDoc[`courseId${i}`]) {
-                  destSlot = i;
-                  break;
-                }
-              }
-
-              if (!destSlot) {
-                summary.errors.push({
-                  studentId: sid,
-                  reason: "No empty course slot in target academic",
-                });
-                continue;
-              }
-            }
-
-            const srcYear = Number(sourceAcad[`year${srcSlot}`] || 0);
-
-            const nextYear =
-              policy === "NOT_PROMOTE"
-                ? Math.max(srcYear, 1)
-                : Math.max(srcYear + 1, 1);
-
-            targetDoc[`instituteId${destSlot}`] = sourceAcad[`instituteId${srcSlot}`] || null;
-            targetDoc[`courseId${destSlot}`] = courseId;
-            targetDoc[`refNumber${destSlot}`] = sourceAcad[`refNumber${srcSlot}`] || "";
-
-            if (policy === "COMPLETE") {
-              targetDoc[`fees${destSlot}`] = 0;
-              targetDoc[`discount${destSlot}`] = 0;
-              targetDoc[`finalFees${destSlot}`] = 0;
-              targetDoc[`status${destSlot}`] = "Completed";
-              targetDoc[`year${destSlot}`] = nextYear;
-              targetDoc[`grade${destSlot}`] = studentGrade;
-            } else {
-              targetDoc[`fees${destSlot}`] = Number(sourceAcad[`fees${srcSlot}`] || 0);
-              targetDoc[`discount${destSlot}`] = Number(sourceAcad[`discount${srcSlot}`] || 0);
-              targetDoc[`finalFees${destSlot}`] = Number(sourceAcad[`finalFees${srcSlot}`] || 0);
-              targetDoc[`status${destSlot}`] = "Admission";
-              targetDoc[`year${destSlot}`] = nextYear;
-
-              if (policy === "PROMOTE") {
-                targetDoc[`grade${destSlot}`] = studentGrade;
-              } else {
-                targetDoc[`grade${destSlot}`] = "";
-              }
-            }
-
-            await targetDoc.save({ session });
-
-            const totalFees = computeTotalFeesFromAcademic(targetDoc);
-            const certFeeNum = Number(certificateFee || 0);
-            const certDue =
-              policy === "COMPLETE" && Number.isFinite(certFeeNum) && certFeeNum > 0
-                ? certFeeNum
-                : 0;
-
-            const totalDue = totalFees + certDue;
-
-            if (totalDue > 0) {
-              await upsertFeesDueAccount({
-                userId: st.userId,
-                schoolId: st.schoolId,
-                acYear: targetAcYear,
-                academicId: targetDoc._id,
-                fees: totalDue,
-                receiptLabel: policy === "COMPLETE" ? "Certificate" : "Promote",
-                remarks:
-                  policy === "COMPLETE"
-                    ? `Certificate Print Fee: ${course?.name || "Course"}`
-                    : `Promoted: ${course?.name || "Course"}`,
-                session,
-              });
-            }
-
-            if (policy === "COMPLETE") {
-              const certFee = Number(certificateFee || 0);
-              if (Number.isFinite(certFee) && certFee > 0) {
-                const existingCertInvoice = await FeeInvoice.findOne({
-                  studentId: sid,
-                  acYear: targetAcYear,
-                  courseId,
-                  source: "CERTIFICATE",
-                  status: { $in: ["ISSUED", "PARTIAL"] },
-                })
-                  .select("_id")
-                  .session(session)
-                  .lean();
-
-                if (!existingCertInvoice) {
-                  await createFeesInvoiceSafe({
-                    schoolId: st.schoolId,
-                    studentId: sid,
-                    userId: st.userId,
-                    acYear: targetAcYear,
-                    academicId: targetDoc._id,
-                    courseId,
-                    totalFees: certFee,
-                    source: "CERTIFICATE",
-                    createdBy: req.user?._id || st.userId,
-                    session,
-                  });
-                }
-              }
-            } else {
-              const existingInvoice = await FeeInvoice.findOne({
-                studentId: sid,
-                acYear: targetAcYear,
-                courseId,
-                source: { $ne: "CERTIFICATE" },
-                status: { $in: ["ISSUED", "PARTIAL"] },
-              })
-                .select("_id")
-                .session(session)
-                .lean();
-
-              if (!existingInvoice) {
-                const slotFees = Number(targetDoc[`finalFees${destSlot}`] || 0);
-                if (Number.isFinite(slotFees) && slotFees > 0) {
-                  await createFeesInvoiceSafe({
-                    schoolId: st.schoolId,
-                    studentId: sid,
-                    userId: st.userId,
-                    acYear: targetAcYear,
-                    academicId: targetDoc._id,
-                    courseId,
-                    totalFees: slotFees,
-                    source: "PROMOTE",
-                    createdBy: req.user?._id || st.userId,
-                    session,
-                  });
-                }
-              }
-            }
-
-            summary.promoted++;
-          }
-        });
-      } catch (chunkErr) {
-        console.log(`[promoteStudentsBulkByCourse] chunk ${chunkIndex + 1} failed:`, chunkErr);
-        for (const sid of idsChunk) {
-          summary.errors.push({ studentId: sid, reason: chunkErr?.message || "Chunk failed" });
-        }
-      } finally {
-        await session.endSession();
-        session = null;
-      }
-    }
-
-    return res.status(200).json({ success: true, summary });
-  } catch (e) {
-    console.log(e);
-    return res.status(e.status || 500).json({
-      success: false,
-      error: e.message || "server error",
-    });
-  } finally {
-    if (session) await session.endSession();
-  }
-};
-*/}
 export {
   addStudent, upload, getStudents, getStudent, updateStudent, deleteStudent, getStudentForEdit,
   getAcademic, getStudentsBySchool, getStudentsBySchoolAndTemplate, getStudentsCount, importStudentsData,
