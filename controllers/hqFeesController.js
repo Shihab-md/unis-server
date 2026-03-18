@@ -82,8 +82,11 @@ export const getBatchDetails = async (req, res) => {
         },
         {
           path: "invoiceId",
-          select: "invoiceNo courseId total status source balance",
-          populate: { path: "courseId", select: "name type" },
+          select: "invoiceNo courseId acYear total status source balance",
+          populate: [
+            { path: "courseId", select: "name type" },
+            { path: "acYear", select: "acYear" },
+          ],
         },
       ])
       .lean();
