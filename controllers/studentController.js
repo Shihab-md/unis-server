@@ -518,31 +518,10 @@ const importStudentsData = async (req, res) => {
   let successCount = 0;
   let finalResultData = "";
 
-  const DEFAULT_COURSE_ID = "680cf72e79e49fb103ddb97c";
   const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
-
-  const AC_YEAR_ID = await getActiveAcademicYearIdFromCache(); // "68612e92eeebf699b9d34a21" // 2025-2026 "680485d9361ed06368c57f7c"; // 2024-2025 
-  //console.log("AC Year Id : " + AC_YEAR_ID)
   const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
 
   const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
-
-  const parseDob = (dobRaw) => {
-    const fallback = new Date(2000, 0, 1);
-    try {
-      const dob = safeStr(dobRaw);
-      if (!dob) return fallback;
-      const parts = dob.split("/");
-      if (parts.length !== 3) return fallback;
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      const d = new Date(year, month, day);
-      return Number.isNaN(d.getTime()) ? fallback : d;
-    } catch {
-      return fallback;
-    }
-  };
 
   const parseNumber = (v, def = 0) => {
     const s = safeStr(v);
@@ -590,7 +569,12 @@ const importStudentsData = async (req, res) => {
     }
 
     // ---------- Load Redis + courses map ----------
-    const redis = await getRedis();
+    let redis = null;
+    try {
+      redis = await getRedis();
+    } catch (e) {
+      console.log("Redis unavailable, continuing without cache");
+    }
 
     let courses = [];
     try {
@@ -618,23 +602,6 @@ const importStudentsData = async (req, res) => {
     const schoolMap = new Map();
     for (const s of schools) schoolMap.set(String(s.code), s);
 
-    // ---------- Prefetch duplicates by OLD rollNumber (about OR remarks match) ----------
-    /*const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
-    const oldRemarks = oldRollNumbers.map((r) => `Old Roll Number : ${r}`);
-
-    const existingStudents = oldRemarks.length
-      ? await Student.find({
-        $or: [{ about: { $in: oldRemarks } }, { remarks: { $in: oldRemarks } }],
-      })
-        .select("about remarks")
-        .lean()
-      : [];
-
-    const existingOldRemarksSet = new Set();
-    for (const s of existingStudents) {
-      if (s?.about) existingOldRemarksSet.add(String(s.about));
-      if (s?.remarks) existingOldRemarksSet.add(String(s.remarks));
-    }*/
     const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
 
     const existingStudents = oldRollNumbers.length
@@ -652,9 +619,18 @@ const importStudentsData = async (req, res) => {
         existingOldRollSet.add(`${String(s.schoolId)}__${String(s.oldRollNumber).trim()}`);
       }
     }
+
+    const AC_YEAR_ID = await getActiveAcademicYearIdFromCache(); // "68612e92eeebf699b9d34a21" // 2025-2026 "680485d9361ed06368c57f7c"; // 2024-2025 
+
+    if (!isObjectId(AC_YEAR_ID)) {
+      return res.status(400).json({
+        success: false,
+        error: "Active academic year not found",
+      });
+    }
+
     // ---------- Main loop ----------
     let row = 1;
-
     for (const studentData of studentsDataList) {
       const errors = [];
 
@@ -670,11 +646,6 @@ const importStudentsData = async (req, res) => {
       const school = niswanCode ? schoolMap.get(niswanCode) : null;
       if (!school) errors.push(`NiswanCode not available : ${niswanCode}`);
 
-      // Duplicate check using remarks
-      // const oldRemark = `Old Roll Number : ${oldRollNumber}`;
-      // if (oldRollNumber && existingOldRemarksSet.has(oldRemark)) {
-      //   errors.push(`Already imported (old roll found): ${oldRollNumber}`);
-      // }
       const duplicateKey =
         school && oldRollNumber ? `${String(school._id)}__${oldRollNumber}` : "";
 
@@ -700,8 +671,7 @@ const importStudentsData = async (req, res) => {
         row++;
         continue;
       }
-
-      const courseId = foundCourseId || DEFAULT_COURSE_ID;
+      const courseId = foundCourseId;
 
       const fees = parseNumber(feesVal, 0);
       if (fees <= 0) {
@@ -710,12 +680,7 @@ const importStudentsData = async (req, res) => {
         continue;
       }
 
-      // Makthab override
-      let finalYearCount = yearCount;
-      if (courseName === "Makthab") finalYearCount = 1;
-
       const session = await mongoose.startSession();
-
       try {
         await session.withTransaction(async () => {
           // ✅ Generate NEW roll number (atomic sequence)
@@ -749,9 +714,7 @@ const importStudentsData = async (req, res) => {
           const userId = savedUser[0]._id;
 
           // Create Student (store new rollNumber; keep old in remarks)
-          //const dobDate = parseDob(studentData.dob);
           const dobDate = parseDate(studentData.dob);
-          //console.log(studentData.dob+"->"+dobDate);
           const savedStudent = await Student.create(
             [
               {
@@ -806,9 +769,7 @@ const importStudentsData = async (req, res) => {
             { session }
           );
 
-          //if (i === 0) 
           currentAcademicId = savedAcademic[0]._id;
-          //}
 
           // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
           await upsertFeesDueAccount({
@@ -837,7 +798,6 @@ const importStudentsData = async (req, res) => {
         });
 
         // mark old roll as imported (avoid duplicates in same file too)
-        //existingOldRemarksSet.add(`Old Roll Number : ${oldRollNumber}`);
         existingOldRollSet.add(`${String(school._id)}__${oldRollNumber}`);
 
         finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
@@ -2445,6 +2405,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       return res.status(400).json({ success: false, error: "Invalid schoolId / targetAcYear / courseId" });
     }
 
+    console.log("Target AC Year : " + targetAcYear);
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({ success: false, error: "studentIds required" });
     }
@@ -2550,6 +2511,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
             const sourceAcad = await Academic.findOne({
               studentId: sid,
+              acYear: { $ne: targetAcYear },
               $or: [
                 { courseId1: courseId },
                 { courseId2: courseId },
@@ -2634,7 +2596,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
             }
 
             const nextYear =
-              policy === "NOT_PROMOTE" || "COMPLETE"
+              policy === "NOT_PROMOTE" || policy === "COMPLETE"
                 ? Math.max(srcYear, 1)
                 : Math.max(srcYear + 1, 1);
 
@@ -2653,13 +2615,14 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               targetDoc[`fees${destSlot}`] = Number(sourceAcad[`fees${srcSlot}`] || 0);
               targetDoc[`discount${destSlot}`] = Number(sourceAcad[`discount${srcSlot}`] || 0);
               targetDoc[`finalFees${destSlot}`] = Number(sourceAcad[`finalFees${srcSlot}`] || 0);
-              targetDoc[`status${destSlot}`] = "Admission";
               targetDoc[`year${destSlot}`] = nextYear;
 
               if (policy === "PROMOTE") {
                 targetDoc[`grade${destSlot}`] = studentGrade;
+                targetDoc[`status${destSlot}`] = "Promoted";
               } else {
                 targetDoc[`grade${destSlot}`] = "";
+                targetDoc[`status${destSlot}`] = "Not Promoted";
               }
             }
 
