@@ -895,6 +895,131 @@ const getStudents = async (req, res) => {
 };
 
 const getStudentsBySchool = async (req, res) => {
+  const { schoolId } = req.params;
+
+  console.log("getStudentsBySchool : " + schoolId);
+
+  try {
+    if (!isObjectId(schoolId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid schoolId",
+      });
+    }
+
+    const activeAcYearId = await getActiveAcademicYearIdFromCache();
+
+    const studentsList = await Student.find({
+      schoolId,
+      active: "Active",
+    })
+      .sort({ rollNumber: 1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({ path: "courses", select: "name type fees years code" }) // fallback only
+      .lean();
+
+    const studentIds = studentsList.map((s) => s._id);
+
+    let academicMap = new Map();
+
+    if (isObjectId(activeAcYearId) && studentIds.length > 0) {
+      const academics = await Academic.find({
+        studentId: { $in: studentIds },
+        acYear: activeAcYearId,
+      })
+        .select(
+          "studentId " +
+          "courseId1 year1 " +
+          "courseId2 year2 " +
+          "courseId3 year3 " +
+          "courseId4 year4 " +
+          "courseId5 year5"
+        )
+        .populate([
+          { path: "courseId1", select: "name type fees years code" },
+          { path: "courseId2", select: "name type fees years code" },
+          { path: "courseId3", select: "name type fees years code" },
+          { path: "courseId4", select: "name type fees years code" },
+          { path: "courseId5", select: "name type fees years code" },
+        ])
+        .lean();
+
+      academicMap = new Map(
+        academics.map((a) => [String(a.studentId), a])
+      );
+    }
+
+    const students = studentsList.map((s) => {
+      const acad = academicMap.get(String(s._id));
+
+      let normalizedCourses = [];
+
+      if (acad) {
+        for (let i = 1; i <= 5; i++) {
+          const c = acad[`courseId${i}`];
+          const y = acad[`year${i}`];
+
+          if (c?._id) {
+            normalizedCourses.push({
+              _id: c._id,
+              name: c.name || "",
+              type: c.type || "",
+              fees: c.fees || 0,
+              code: c.code || "",
+              years: Number(y || 0), // ✅ student's current year
+              durationYears: Number(c.years || 0), // optional: actual course total duration
+            });
+          }
+        }
+      }
+
+      // fallback to Student.courses if academic not found
+      if (!normalizedCourses.length && Array.isArray(s.courses)) {
+        normalizedCourses = s.courses.map((c) => ({
+          _id: c._id,
+          name: c.name || "",
+          type: c.type || "",
+          fees: c.fees || 0,
+          code: c.code || "",
+          years: Number(c.years || 0),
+          durationYears: Number(c.years || 0),
+        }));
+      }
+
+      const result = {
+        ...s,
+        courses: normalizedCourses,
+      };
+
+      const isPaid =
+        result.feesPaid === 1 ||
+        result.feesPaid === true ||
+        result.feesPaid === "1";
+
+      if (!isPaid) {
+        const { rollNumber, ...rest } = result;
+        return rest;
+      }
+
+      return result;
+    });
+
+    return res.status(200).json({
+      success: true,
+      students,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "get students bySchoolId server error",
+    });
+  }
+};
+
+{/*}
+const getStudentsBySchool = async (req, res) => {
 
   const { schoolId } = req.params;
 
@@ -929,7 +1054,7 @@ const getStudentsBySchool = async (req, res) => {
       .json({ success: false, error: "get students bySchoolId server error" });
   }
 };
-
+*/}
 // For certificate module.
 const getStudentsBySchoolAndTemplate = async (req, res) => {
   const { schoolId, templateId } = req.params;
@@ -1068,11 +1193,291 @@ const getByFilter = async (req, res) => {
     maritalStatus,
     hosteller,
     year,
-    instituteId,     // (not used in your current logic - keep if you plan)
+    instituteId,
     courseStatus,
   } = req.params;
 
-  console.log("Get By Filter.")
+  console.log("Get By Filter.");
+
+  const isValidParam = (v) =>
+    v !== undefined &&
+    v !== null &&
+    v !== "" &&
+    v !== "null" &&
+    v !== "undefined";
+
+  try {
+    if (!isValidParam(schoolId) || !isObjectId(schoolId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Valid schoolId is required",
+      });
+    }
+
+    // ----------------------------
+    // 1) Build Student query
+    // ----------------------------
+    const studentQuery = { schoolId };
+
+    studentQuery.active =
+      isValidParam(status) && String(status).trim() ? status : "Active";
+
+    if (isValidParam(maritalStatus)) {
+      studentQuery.maritalStatus = {
+        $regex: `^${String(maritalStatus).trim()}$`,
+        $options: "i",
+      };
+    }
+
+    if (isValidParam(hosteller)) {
+      studentQuery.hostel = hosteller;
+    }
+
+    // ----------------------------
+    // 2) Resolve acYear
+    // ----------------------------
+    if (!isValidParam(acYear)) {
+      const now = new Date();
+      const yearNow = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      const currentAcYear =
+        month >= 4
+          ? `${yearNow}-${yearNow + 1}`
+          : `${yearNow - 1}-${yearNow}`;
+
+      const acYearDoc = await AcademicYear.findOne({ acYear: currentAcYear })
+        .select("_id acYear")
+        .lean();
+
+      if (!acYearDoc) {
+        return res.status(400).json({
+          success: false,
+          error: `Academic year not found: ${currentAcYear}`,
+        });
+      }
+
+      acYear = acYearDoc._id;
+    } else if (!isObjectId(acYear)) {
+      const acYearDoc = await AcademicYear.findOne({
+        acYear: String(acYear).trim(),
+      })
+        .select("_id acYear")
+        .lean();
+
+      if (!acYearDoc) {
+        return res.status(400).json({
+          success: false,
+          error: `Academic year not found: ${acYear}`,
+        });
+      }
+
+      acYear = acYearDoc._id;
+    }
+
+    // ----------------------------
+    // 3) Academic filter -> get matching studentIds
+    // ----------------------------
+    const hasSlotFilter =
+      isValidParam(courseId) ||
+      isValidParam(year) ||
+      isValidParam(courseStatus) ||
+      isValidParam(instituteId);
+
+    const academicQuery = {
+      acYear,
+    };
+
+    if (hasSlotFilter) {
+      let parsedYear = null;
+
+      if (isValidParam(year)) {
+        parsedYear = Number(year);
+        if (!Number.isFinite(parsedYear)) {
+          return res.status(400).json({
+            success: false,
+            error: "Invalid year filter",
+          });
+        }
+      }
+
+      const slotClauses = [1, 2, 3, 4, 5]
+        .map((slot) => {
+          const clause = {};
+
+          if (isValidParam(courseId)) {
+            clause[`courseId${slot}`] = courseId;
+          }
+
+          if (isValidParam(instituteId)) {
+            clause[`instituteId${slot}`] = instituteId;
+          }
+
+          if (isValidParam(year)) {
+            clause[`year${slot}`] = parsedYear;
+          }
+
+          if (isValidParam(courseStatus)) {
+            clause[`status${slot}`] = courseStatus;
+          }
+
+          return clause;
+        })
+        .filter((clause) => Object.keys(clause).length > 0);
+
+      if (slotClauses.length > 0) {
+        academicQuery.$or = slotClauses;
+      }
+    }
+
+    console.log("academicQuery =", academicQuery);
+
+    const studentIds = await Academic.distinct("studentId", academicQuery);
+
+    if (!studentIds || studentIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        students: [],
+      });
+    }
+
+    studentQuery._id = { $in: studentIds };
+
+    // ----------------------------
+    // 4) Fetch students
+    // ----------------------------
+    const studentSelect =
+      "rollNumber dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about address city";
+
+    const studentsList = await Student.find(studentQuery)
+      .select(studentSelect)
+      .sort({ rollNumber: 1 })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({ path: "courses", select: "name type fees years code" }) // fallback only
+      .lean();
+
+    // ----------------------------
+    // 5) Fetch academics for same filtered acYear
+    // ----------------------------
+    const filteredStudentIds = studentsList.map((s) => s._id);
+
+    let academicMap = new Map();
+
+    if (filteredStudentIds.length > 0) {
+      const academics = await Academic.find({
+        studentId: { $in: filteredStudentIds },
+        acYear,
+      })
+        .select(
+          "studentId " +
+          "courseId1 year1 " +
+          "courseId2 year2 " +
+          "courseId3 year3 " +
+          "courseId4 year4 " +
+          "courseId5 year5"
+        )
+        .populate([
+          { path: "courseId1", select: "name type fees years code" },
+          { path: "courseId2", select: "name type fees years code" },
+          { path: "courseId3", select: "name type fees years code" },
+          { path: "courseId4", select: "name type fees years code" },
+          { path: "courseId5", select: "name type fees years code" },
+        ])
+        .lean();
+
+      academicMap = new Map(
+        academics.map((a) => [String(a.studentId), a])
+      );
+    }
+
+    // ----------------------------
+    // 6) Normalize courses -> use academic current year
+    // ----------------------------
+    const students = studentsList.map((s) => {
+      const acad = academicMap.get(String(s._id));
+
+      let normalizedCourses = [];
+
+      if (acad) {
+        for (let i = 1; i <= 5; i++) {
+          const c = acad[`courseId${i}`];
+          const y = acad[`year${i}`];
+
+          if (c?._id) {
+            normalizedCourses.push({
+              _id: c._id,
+              name: c.name || "",
+              type: c.type || "",
+              fees: c.fees || 0,
+              code: c.code || "",
+              years: Number(y || 0), // ✅ student's current year
+              durationYears: Number(c.years || 0), // optional: course total duration
+            });
+          }
+        }
+      }
+
+      // fallback to Student.courses if academic not found
+      if (!normalizedCourses.length && Array.isArray(s.courses)) {
+        normalizedCourses = s.courses.map((c) => ({
+          _id: c._id,
+          name: c.name || "",
+          type: c.type || "",
+          fees: c.fees || 0,
+          code: c.code || "",
+          years: Number(c.years || 0),
+          durationYears: Number(c.years || 0),
+        }));
+      }
+
+      const result = {
+        ...s,
+        courses: normalizedCourses,
+      };
+
+      const isPaid =
+        result.feesPaid === 1 ||
+        result.feesPaid === true ||
+        result.feesPaid === "1";
+
+      if (!isPaid) {
+        const { rollNumber, ...rest } = result;
+        return rest;
+      }
+
+      return result;
+    });
+
+    return res.status(200).json({
+      success: true,
+      students,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "get students by FILTER server error",
+    });
+  }
+};
+
+{/*}
+const getByFilter = async (req, res) => {
+  let {
+    schoolId,
+    courseId,
+    status,
+    acYear,
+    maritalStatus,
+    hosteller,
+    year,
+    instituteId,
+    courseStatus,
+  } = req.params;
+
+  console.log("Get By Filter.");
 
   const isValidParam = (v) =>
     v !== undefined &&
@@ -1083,88 +1488,137 @@ const getByFilter = async (req, res) => {
 
   try {
     if (!isValidParam(schoolId)) {
-      return res.status(400).json({ success: false, error: "schoolId is required" });
+      return res.status(400).json({
+        success: false,
+        error: "schoolId is required",
+      });
     }
 
     // ----------------------------
     // 1) Build Student query
     // ----------------------------
     const studentQuery = { schoolId };
-    studentQuery.active = isValidParam(status) && String(status).trim() ? status : "Active";
+
+    studentQuery.active =
+      isValidParam(status) && String(status).trim() ? status : "Active";
+
     if (isValidParam(maritalStatus)) {
-      studentQuery.maritalStatus = { $regex: `^${maritalStatus.trim()}$`, $options: "i" };
+      studentQuery.maritalStatus = {
+        $regex: `^${String(maritalStatus).trim()}$`,
+        $options: "i",
+      };
     }
-    if (isValidParam(hosteller)) studentQuery.hostel = hosteller;
+
+    if (isValidParam(hosteller)) {
+      studentQuery.hostel = hosteller;
+    }
 
     // ----------------------------
-    // 2) Academic filter -> get matching studentIds
-    //    (Only if any academic filters are present)
+    // 2) Resolve acYear
     // ----------------------------
-    //console.log(acYear)
-    if (!acYear || acYear === "null" || acYear === "undefined") {
-      // ✅ Current Academic Year string (Apr–Mar)
+    if (!isValidParam(acYear)) {
       const now = new Date();
       const yearNow = now.getFullYear();
       const month = now.getMonth() + 1;
-      acYear = `${yearNow - 1}-${yearNow}`;
-      if (month >= 4) {
-        acYear = `${yearNow}-${yearNow + 1}`;
-      }
 
-      const acYearDoc = await AcademicYear.findOne({ acYear: acYear })
+      let currentAcYear =
+        month >= 4
+          ? `${yearNow}-${yearNow + 1}`
+          : `${yearNow - 1}-${yearNow}`;
+
+      const acYearDoc = await AcademicYear.findOne({ acYear: currentAcYear })
         .select("_id acYear")
         .lean();
 
       if (!acYearDoc) {
         return res.status(400).json({
           success: false,
-          error: `Academic year not found: ${acYear}`,
+          error: `Academic year not found: ${currentAcYear}`,
         });
       }
+
       acYear = acYearDoc._id;
+    } else {
+      // if UI sends year string like "2025-2026", resolve it
+      if (!isObjectId(acYear)) {
+        const acYearDoc = await AcademicYear.findOne({ acYear: String(acYear).trim() })
+          .select("_id acYear")
+          .lean();
+
+        if (!acYearDoc) {
+          return res.status(400).json({
+            success: false,
+            error: `Academic year not found: ${acYear}`,
+          });
+        }
+
+        acYear = acYearDoc._id;
+      }
     }
-    //console.log(acYear)
-    const hasAcademicFilter =
-      isValidParam(courseId) || isValidParam(acYear) || isValidParam(year) || isValidParam(courseStatus);
+
+    // ----------------------------
+    // 3) Academic filter -> get matching studentIds
+    // ----------------------------
+    const hasSlotFilter =
+      isValidParam(courseId) ||
+      isValidParam(year) ||
+      isValidParam(courseStatus) ||
+      isValidParam(instituteId);
+
+    const hasAcademicFilter = isValidParam(acYear) || hasSlotFilter;
 
     if (hasAcademicFilter) {
-      const academicAnd = [];
-
-      if (isValidParam(courseId)) {
-        academicAnd.push({
-          $or: [
-            { courseId1: courseId },
-            { courseId2: courseId },
-            { courseId3: courseId },
-            { courseId4: courseId },
-            { courseId5: courseId },
-          ],
-        });
-      }
+      const academicQuery = {};
 
       if (isValidParam(acYear)) {
-        academicAnd.push({ acYear });
+        academicQuery.acYear = acYear;
       }
 
-      if (isValidParam(year)) {
-        const y = Number(year);
-        academicAnd.push({ $or: [{ year1: y }, { year3: y }] });
+      if (hasSlotFilter) {
+        let parsedYear = null;
+
+        if (isValidParam(year)) {
+          parsedYear = Number(year);
+          if (!Number.isFinite(parsedYear)) {
+            return res.status(400).json({
+              success: false,
+              error: "Invalid year filter",
+            });
+          }
+        }
+
+        const slotClauses = [1, 2, 3, 4, 5]
+          .map((slot) => {
+            const clause = {};
+
+            if (isValidParam(courseId)) {
+              clause[`courseId${slot}`] = courseId;
+            }
+
+            if (isValidParam(instituteId)) {
+              clause[`instituteId${slot}`] = instituteId;
+            }
+
+            if (isValidParam(year)) {
+              clause[`year${slot}`] = parsedYear;
+            }
+
+            if (isValidParam(courseStatus)) {
+              clause[`status${slot}`] = courseStatus;
+            }
+
+            return clause;
+          })
+          .filter((clause) => Object.keys(clause).length > 0);
+
+        if (slotClauses.length > 0) {
+          academicQuery.$or = slotClauses;
+        }
       }
 
-      if (isValidParam(courseStatus)) {
-        academicAnd.push({
-          $or: [
-            { status1: courseStatus },
-            { status2: courseStatus },
-            { status3: courseStatus },
-            { status4: courseStatus },
-            { status5: courseStatus },
-          ],
-        });
-      }
-      console.log(academicAnd)
-      // Get only studentIds (faster than fetching full academic docs)
-      const studentIds = await Academic.distinct("studentId", { $and: academicAnd });
+      console.log("academicQuery =", academicQuery);
+
+      const studentIds = await Academic.distinct("studentId", academicQuery);
 
       if (!studentIds || studentIds.length === 0) {
         return res.status(200).json({ success: true, students: [] });
@@ -1174,13 +1628,13 @@ const getByFilter = async (req, res) => {
     }
 
     // ----------------------------
-    // 3) Fetch students (lean + minimal populate)
+    // 4) Fetch students
     // ----------------------------
     const studentSelect =
-      "rollNumber name dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about";
+      "rollNumber dob active maritalStatus hostel userId schoolId districtStateId courses feesPaid fatherName fatherNumber motherName motherNumber guardianName guardianRelation guardianNumber remarks about";
 
     const studentsMap = await Student.find(studentQuery)
-      //.select(studentSelect)
+      .select(studentSelect)
       .sort({ rollNumber: 1 })
       .populate({ path: "userId", select: "name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
@@ -1197,14 +1651,19 @@ const getByFilter = async (req, res) => {
       return s;
     });
 
-    return res.status(200).json({ success: true, students });
+    return res.status(200).json({
+      success: true,
+      students,
+    });
   } catch (error) {
     console.log(error);
-    return res
-      .status(500)
-      .json({ success: false, error: "get students by FILTER server error" });
+    return res.status(500).json({
+      success: false,
+      error: "get students by FILTER server error",
+    });
   }
-}
+};
+*/}
 
 const getStudent = async (req, res) => {
   const { id } = req.params;
