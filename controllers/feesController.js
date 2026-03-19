@@ -15,6 +15,7 @@ const requireRole = (role, allowed) => {
   }
 };
 
+
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called");
@@ -35,7 +36,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
     if (isDueListing) {
       const lockedInvoiceIds = await PaymentBatchItem.distinct("invoiceId", {
         schoolId,
-        acYear,
+        //acYear,
         status: "PENDING_APPROVAL",
       });
 
@@ -64,6 +65,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
     });
   }
 };
+
 
 export const createPaymentBatch = async (req, res) => {
   const session = await mongoose.startSession();

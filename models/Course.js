@@ -9,6 +9,8 @@ const courseSchema = new Schema({
   fees: { type: Number, required: true },
   years: { type: Number, required: true },
 
+  promotionOrder: { type: Number, index: true },
+  
   subject1: { type: String, required: true },
   subject1MaxMark: { type: Number, required: true },
   subject1PassMark: { type: Number, required: true },
