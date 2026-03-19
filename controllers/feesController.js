@@ -74,7 +74,7 @@ export const createPaymentBatch = async (req, res) => {
 
     const {
       schoolId,
-      acYear: bodyAcYear, // optional from UI
+      //acYear: bodyAcYear, // optional from UI
       mode = "bank",
       referenceNo = "",
 
@@ -91,8 +91,8 @@ export const createPaymentBatch = async (req, res) => {
     } = req.body || {};
 
     // decide batch-level acYear
-    const activeAcYear = await getActiveAcademicYearIdFromCache();
-    const batchAcYear = isObjectId(bodyAcYear) ? bodyAcYear : activeAcYear;
+    //const activeAcYear = await getActiveAcademicYearIdFromCache();
+    const batchAcYear = await getActiveAcademicYearIdFromCache(); //isObjectId(bodyAcYear) ? bodyAcYear : activeAcYear;
 
     if (!isObjectId(schoolId) || !isObjectId(batchAcYear)) {
       return res.status(400).json({
@@ -587,8 +587,11 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       })
       .populate({
         path: "invoiceId",
-        select: "invoiceNo total paidTotal balance status courseId source",
-        populate: { path: "courseId", select: "name type" },
+        select: "invoiceNo total paidTotal balance acYear status courseId source",
+        populate: [
+          { path: "courseId", select: "name type" },
+          { path: "acYear", select: "acYear" },
+        ],
       })
       .sort({ createdAt: -1 })
       .lean();
