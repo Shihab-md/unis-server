@@ -51,7 +51,7 @@ const studentSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 
   oldRollNumber: { type: String, trim: true, index: true },
-  
+
   courses: [{ type: Schema.Types.ObjectId, ref: 'Course', required: true }],
 
   _course: { type: String },
@@ -67,9 +67,17 @@ studentSchema.virtual('academics').
   set(function (academics) { this._academics = academics; });
 
 studentSchema.index({ schoolId: 1, rollNumber: 1 });
-studentSchema.index({ schoolId: 1, oldRollNumber: 1 });
 studentSchema.index({ schoolId: 1, active: 1 });
 studentSchema.index({ schoolId: 1, feesPaid: 1 });
+studentSchema.index(
+  { schoolId: 1, oldRollNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      oldRollNumber: { $exists: true, $type: "string", $ne: "" },
+    },
+  }
+);
 
 const Student = mongoose.model("Student", studentSchema);
 export default Student;

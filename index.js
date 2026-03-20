@@ -29,6 +29,8 @@ import publicRoutes from "./routes/publicRoutes.js";
 
 import googleDriveRoutes from "./routes/googleDriveRoutes.js";
 
+import inspectionReportRoutes from "./routes/inspectionReportRoutes.js";
+
 await connectToDatabase()
 await loadCache()
  
@@ -66,6 +68,8 @@ app.use("/api/hq/fees", hqFeesRoutes);
 app.use("/api/public", publicRoutes);
 
 app.use("/api/integrations/google-drive", googleDriveRoutes);
+
+app.use("/api/inspection-report", inspectionReportRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
