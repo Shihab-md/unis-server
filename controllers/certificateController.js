@@ -616,7 +616,7 @@ const buildCertificateOverlayPng = async ({
     ctx.fillText(rollNumber, 480, 367);
 
     ctx.font = "12px Arial-Bold";
-    ctx.fillText(grade, 540, 408);
+    //ctx.fillText(grade, 540, 408);
 
     ctx.fillText(String(new Date().getFullYear()), 235, 430);
 
