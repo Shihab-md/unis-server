@@ -75,6 +75,141 @@ const createFeesInvoiceSafe = async ({
   const fees = Number(totalFees || 0);
   if (!Number.isFinite(fees) || fees <= 0) return null;
 
+  // ✅ Certificate invoice must respect passed totalFees directly
+  if (String(source) === "CERTIFICATE") {
+    const invoiceNo = await getNextNumber({
+      name: "Invoice",
+      prefix: "INV",
+      pad: 7,
+    });
+
+    const items = [
+      {
+        headCode: "CERTIFICATE",
+        headName: "Certificate Fee",
+        amount: fees,
+        discount: 0,
+        fine: 0,
+        netAmount: fees,
+        paidAmount: 0,
+      },
+    ];
+
+    const inv = await FeeInvoice.create(
+      [
+        {
+          invoiceNo,
+          schoolId,
+          studentId,
+          userId,
+          acYear,
+          academicId,
+          courseId,
+          source: "CERTIFICATE",
+          items,
+          total: fees,
+          paidTotal: 0,
+          balance: fees,
+          status: "ISSUED",
+          createdBy,
+          notes: "Certificate fee invoice",
+        },
+      ],
+      { session }
+    );
+
+    return inv?.[0] || null;
+  }
+
+  try {
+    // Preferred: uses FeeStructure + proper heads + numbering service
+    const inv = await createInvoiceFromStructure({
+      schoolId,
+      studentId,
+      userId,
+      acYear,
+      academicId,
+      courseId,
+      source,
+      createdBy,
+      session,
+    });
+    return inv;
+  } catch (e) {
+    // Fallback: create a simple invoice with 1 head
+    const invoiceNo = await getNextNumber({
+      name: "Invoice",
+      prefix: "INV",
+      pad: 7,
+    });
+
+    const headCode =
+      String(source) === "PROMOTE"
+        ? "PROMOTE"
+        : String(source) === "ADMISSION"
+          ? "ADMISSION"
+          : "TOTAL";
+
+    const headName =
+      String(source) === "PROMOTE"
+        ? "Promotion Fees"
+        : String(source) === "ADMISSION"
+          ? "Course Fees"
+          : "Course Fees";
+
+    const items = [
+      {
+        headCode,
+        headName,
+        amount: fees,
+        discount: 0,
+        fine: 0,
+        netAmount: fees,
+        paidAmount: 0,
+      },
+    ];
+
+    const inv = await FeeInvoice.create(
+      [
+        {
+          invoiceNo,
+          schoolId,
+          studentId,
+          userId,
+          acYear,
+          academicId,
+          courseId,
+          source,
+          items,
+          total: fees,
+          paidTotal: 0,
+          balance: fees,
+          status: "ISSUED",
+          createdBy,
+          notes: e?.message ? `Fallback invoice: ${e.message}` : "Fallback invoice",
+        },
+      ],
+      { session }
+    );
+
+    return inv?.[0] || null;
+  }
+};
+{/*const createFeesInvoiceSafe = async ({
+  schoolId,
+  studentId,
+  userId,
+  acYear,
+  academicId,
+  courseId,
+  totalFees,
+  source = "ADMISSION",
+  createdBy,
+  session,
+}) => {
+  const fees = Number(totalFees || 0);
+  if (!Number.isFinite(fees) || fees <= 0) return null;
+
   try {
     // Preferred: uses FeeStructure + proper heads + numbering service
     const inv = await createInvoiceFromStructure({
@@ -131,6 +266,7 @@ const createFeesInvoiceSafe = async ({
     return inv?.[0] || null;
   }
 };
+*/}
 
 /* ----------------------- Fees helpers for multi-course slots ----------------------- */
 // ✅ MODIFIED: support 1..5 course slots in update/promote flows
@@ -1426,6 +1562,7 @@ const getByFilter = async (req, res) => {
   }
 };
 
+{/*
 const getStudent = async (req, res) => {
   const { id } = req.params;
 
@@ -1461,6 +1598,78 @@ const getStudent = async (req, res) => {
     student._academics = academics || [];
 
     // ✅ hide rollNumber if not paid
+    if (Number(student?.feesPaid) === 0) {
+      student.rollNumber = "-";
+    }
+
+    return res.status(200).json({ success: true, student });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get student by ID server error" });
+  }
+};
+*/}
+const getStudent = async (req, res) => {
+  const { id } = req.params;
+
+  console.log("getStudent : " + id);
+
+  try {
+    let student = await Student.findById(id)
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "courses", select: "name type fees years code" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .lean();
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: "Student data not found." });
+    }
+
+    const academics = await Academic.find({ studentId: student._id })
+      .populate({ path: "acYear", select: "_id acYear" })
+      .populate({ path: "instituteId1", select: "_id code name" })
+      .populate({ path: "courseId1", select: "_id iCode name type fees years code" })
+      .populate({ path: "instituteId2", select: "_id code name" })
+      .populate({ path: "courseId2", select: "_id iCode name type fees years code" })
+      .populate({ path: "instituteId3", select: "_id code name" })
+      .populate({ path: "courseId3", select: "_id iCode name type fees years code" })
+      .populate({ path: "instituteId4", select: "_id code name" })
+      .populate({ path: "courseId4", select: "_id iCode name type fees years code" })
+      .populate({ path: "instituteId5", select: "_id code name" })
+      .populate({ path: "courseId5", select: "_id iCode name type fees years code" })
+      .lean();
+
+    const invoices = await FeeInvoice.find({
+      studentId: student._id,
+      source: { $in: ["ADMISSION", "PROMOTE", "CERTIFICATE"] },
+    })
+      .select("invoiceNo acYear courseId source total paidTotal balance status createdAt")
+      .populate({ path: "acYear", select: "_id acYear" })
+      .populate({ path: "courseId", select: "_id name type years code" })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    student._academics = academics || [];
+    student._invoices = invoices || [];
+
+    // ✅ optional: easy certificate lookup map for frontend
+    const certificateFeeMap = {};
+    for (const inv of invoices) {
+      if (String(inv.source) === "CERTIFICATE" && inv.acYear?._id && inv.courseId?._id) {
+        const key = `${String(inv.acYear._id)}__${String(inv.courseId._id)}`;
+        certificateFeeMap[key] = {
+          invoiceNo: inv.invoiceNo,
+          total: Number(inv.total || 0),
+          paidTotal: Number(inv.paidTotal || 0),
+          balance: Number(inv.balance || 0),
+          status: inv.status || "",
+        };
+      }
+    }
+
+    student._certificateFeeMap = certificateFeeMap;
+
     if (Number(student?.feesPaid) === 0) {
       student.rollNumber = "-";
     }
@@ -2672,6 +2881,7 @@ export const listPromoteCandidates = async (req, res) => {
   }
 };
 
+{/*
 export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
@@ -2689,7 +2899,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       policy = "PROMOTE",
       requireFeesPaid = true,
       chunkSize = 10,
-      certificateFee = 50,
+      certificateFee = 75,
       gradesByStudentId = {},
     } = req.body || {};
 
@@ -3092,6 +3302,489 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
             if (normalizedPolicy === "COMPLETE") {
               const certFee = Number(certificateFee || 0);
+
+              if (Number.isFinite(certFee) && certFee > 0) {
+                const existingCertInvoice = await FeeInvoice.findOne({
+                  studentId: sid,
+                  acYear: targetAcYear,
+                  courseId: targetCourse._id,
+                  source: "CERTIFICATE",
+                  status: { $in: ["ISSUED", "PARTIAL"] },
+                })
+                  .select("_id")
+                  .session(session)
+                  .lean();
+
+                if (!existingCertInvoice) {
+                  await createFeesInvoiceSafe({
+                    schoolId: st.schoolId,
+                    studentId: sid,
+                    userId: st.userId,
+                    acYear: targetAcYear,
+                    academicId: targetDoc._id,
+                    courseId: targetCourse._id,
+                    totalFees: certFee,
+                    source: "CERTIFICATE",
+                    createdBy: req.user?._id || st.userId,
+                    session,
+                  });
+                }
+              }
+            } else {
+              const existingInvoice = await FeeInvoice.findOne({
+                studentId: sid,
+                acYear: targetAcYear,
+                courseId: targetCourse._id,
+                source: { $ne: "CERTIFICATE" },
+                status: { $in: ["ISSUED", "PARTIAL"] },
+              })
+                .select("_id")
+                .session(session)
+                .lean();
+
+              if (!existingInvoice) {
+                const slotFees = Number(targetDoc[`finalFees${destSlot}`] || 0);
+
+                if (Number.isFinite(slotFees) && slotFees > 0) {
+                  await createFeesInvoiceSafe({
+                    schoolId: st.schoolId,
+                    studentId: sid,
+                    userId: st.userId,
+                    acYear: targetAcYear,
+                    academicId: targetDoc._id,
+                    courseId: targetCourse._id,
+                    totalFees: slotFees,
+                    source: "PROMOTE",
+                    createdBy: req.user?._id || st.userId,
+                    session,
+                  });
+                }
+              }
+            }
+
+            chunkSummary.promoted++;
+          }
+        });
+
+        summary.promoted += chunkSummary.promoted;
+        summary.skipped += chunkSummary.skipped;
+        summary.errors.push(...chunkSummary.errors);
+      } catch (chunkErr) {
+        console.log(
+          `[promoteStudentsBulkByCourse] chunk ${chunkIndex + 1} failed:`,
+          chunkErr
+        );
+
+        summary.errors.push(
+          ...idsChunk.map((sid) => ({
+            studentId: sid,
+            reason: chunkErr?.message || "Chunk failed",
+          }))
+        );
+      } finally {
+        await session.endSession();
+        session = null;
+      }
+    }
+
+    return res.status(200).json({ success: true, summary });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
+  } finally {
+    if (session) await session.endSession();
+  }
+};
+*/}
+export const promoteStudentsBulkByCourse = async (req, res) => {
+  let session = null;
+
+  try {
+    const role = req.user?.role;
+    if (!["superadmin", "hquser", "admin"].includes(role)) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    const {
+      schoolId,
+      targetAcYear,
+      courseId,
+      studentIds,
+      policy = "PROMOTE",
+      requireFeesPaid = true,
+      chunkSize = 10,
+      certificateFee = 75,
+      gradesByStudentId = {},
+    } = req.body || {};
+
+    const normalizedPolicy = String(policy || "").trim();
+    const DEFAULT_CERTIFICATE_FEE = 75;
+
+    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid schoolId / targetAcYear / courseId",
+      });
+    }
+
+    console.log("Target AC Year : " + targetAcYear);
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "studentIds required",
+      });
+    }
+
+    if (!["PROMOTE", "NOT_PROMOTE", "COMPLETE"].includes(normalizedPolicy)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid policy",
+      });
+    }
+
+    const uniqueIds = [...new Set(studentIds.map(String))].filter(isObjectId);
+
+    if (normalizedPolicy === "PROMOTE" || normalizedPolicy === "COMPLETE") {
+      const missingGradeStudentIds = uniqueIds.filter(
+        (sid) => !String(gradesByStudentId?.[sid] || "").trim()
+      );
+
+      if (missingGradeStudentIds.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Grade is required for all selected students. Missing: ${missingGradeStudentIds.length}`,
+        });
+      }
+    }
+
+    const chunk = (arr, size) => {
+      const out = [];
+      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+      return out;
+    };
+
+    const chunks = chunk(uniqueIds, Math.max(1, Number(chunkSize || 10)));
+
+    const summary = {
+      requested: uniqueIds.length,
+      promoted: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    const sourceCourse = await Course.findById(courseId)
+      .select("_id name type years fees code promotionOrder")
+      .lean();
+
+    if (!sourceCourse?._id) {
+      return res.status(404).json({
+        success: false,
+        error: "Course not found",
+      });
+    }
+
+    const isSchoolEducation = String(sourceCourse.type || "") === "School Education";
+    const sourcePromotionOrder = Number(sourceCourse.promotionOrder || 0);
+
+    if (isSchoolEducation && sourcePromotionOrder <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `promotionOrder is not configured for School Education course: ${sourceCourse.name}`,
+      });
+    }
+
+    let nextSchoolCourse = null;
+
+    if (isSchoolEducation) {
+      nextSchoolCourse = await Course.findOne({
+        type: "School Education",
+        promotionOrder: sourcePromotionOrder + 1,
+      })
+        .select("_id name type years fees code promotionOrder")
+        .lean();
+    }
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const idsChunk = chunks[chunkIndex];
+      session = await mongoose.startSession();
+
+      const chunkSummary = {
+        promoted: 0,
+        skipped: 0,
+        errors: [],
+      };
+
+      try {
+        await session.withTransaction(async () => {
+          const students = await Student.find({ _id: { $in: idsChunk }, schoolId })
+            .select("_id userId schoolId feesPaid active")
+            .session(session)
+            .lean();
+
+          const studentMap = new Map(students.map((s) => [String(s._id), s]));
+
+          const pendingInvoices = await FeeInvoice.find({
+            studentId: { $in: idsChunk },
+            status: { $in: ["ISSUED", "PARTIAL"] },
+          })
+            .select("studentId")
+            .session(session)
+            .lean();
+
+          const pendingFeeStudentSet = new Set(
+            pendingInvoices.map((inv) => String(inv.studentId))
+          );
+
+          for (const sid of idsChunk) {
+            const st = studentMap.get(String(sid));
+
+            if (!st) {
+              chunkSummary.errors.push({
+                studentId: sid,
+                reason: "Student not found in this school",
+              });
+              continue;
+            }
+
+            if (String(st.active) !== "Active") {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            if (requireFeesPaid && Number(st.feesPaid || 0) !== 1) {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            if (pendingFeeStudentSet.has(String(sid))) {
+              chunkSummary.errors.push({
+                studentId: sid,
+                reason: "Pending fee invoice exists",
+              });
+              continue;
+            }
+
+            const studentGrade = String(gradesByStudentId?.[String(sid)] || "").trim();
+
+            const sourceAcad = await Academic.findOne({
+              studentId: sid,
+              acYear: { $ne: targetAcYear },
+              $or: [
+                { courseId1: courseId },
+                { courseId2: courseId },
+                { courseId3: courseId },
+                { courseId4: courseId },
+                { courseId5: courseId },
+              ],
+            })
+              .sort({ updatedAt: -1, createdAt: -1 })
+              .session(session)
+              .lean();
+
+            if (!sourceAcad) {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            const srcSlot = findCourseSlotIndex(sourceAcad, courseId);
+            if (!srcSlot) {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            const srcStatus = String(sourceAcad[`status${srcSlot}`] || "");
+            if (srcStatus === "Completed") {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            const rawSrcYear = Number(sourceAcad[`year${srcSlot}`] || 0);
+
+            const effectiveSrcYear = isSchoolEducation
+              ? Number(sourcePromotionOrder || 0)
+              : rawSrcYear > 0
+                ? rawSrcYear
+                : Number(sourceCourse?.years || 0) === 1
+                  ? 1
+                  : 0;
+
+            let targetCourse = sourceCourse;
+            let isFinalYear = false;
+
+            if (isSchoolEducation) {
+              isFinalYear = !nextSchoolCourse?._id;
+
+              if (normalizedPolicy === "PROMOTE") {
+                if (!nextSchoolCourse?._id) {
+                  chunkSummary.errors.push({
+                    studentId: sid,
+                    reason: `Final standard cannot be promoted: ${sourceCourse.name}`,
+                  });
+                  continue;
+                }
+                targetCourse = nextSchoolCourse;
+              }
+            } else {
+              isFinalYear =
+                Number(sourceCourse?.years || 0) > 0 &&
+                effectiveSrcYear >= Number(sourceCourse?.years || 0);
+            }
+
+            if (normalizedPolicy === "PROMOTE" && isFinalYear) {
+              chunkSummary.errors.push({
+                studentId: sid,
+                reason: "Final year student cannot be promoted",
+              });
+              continue;
+            }
+
+            if (normalizedPolicy === "COMPLETE" && !isFinalYear) {
+              chunkSummary.errors.push({
+                studentId: sid,
+                reason: "Only final year student can be completed",
+              });
+              continue;
+            }
+
+            // target academic
+            const targetFilter = { studentId: sid, acYear: targetAcYear };
+
+            let targetDoc = await Academic.findOne(targetFilter).session(session);
+            if (!targetDoc) {
+              targetDoc = new Academic({
+                studentId: sid,
+                acYear: targetAcYear,
+              });
+            }
+
+            const alreadyInTarget = findCourseSlotIndex(targetDoc, targetCourse._id);
+            if (alreadyInTarget) {
+              chunkSummary.skipped++;
+              continue;
+            }
+
+            // ✅ keep same slot category
+            let destSlot = srcSlot;
+
+            const existingCourseAtDest = targetDoc[`courseId${destSlot}`];
+
+            const canOverwriteSourceCourseInSameSlot =
+              normalizedPolicy === "PROMOTE" &&
+              isSchoolEducation &&
+              existingCourseAtDest &&
+              String(existingCourseAtDest) === String(sourceCourse._id) &&
+              String(targetCourse._id) !== String(sourceCourse._id);
+
+            if (
+              existingCourseAtDest &&
+              String(existingCourseAtDest) !== String(targetCourse._id) &&
+              !canOverwriteSourceCourseInSameSlot
+            ) {
+              destSlot = null;
+
+              for (let i = 1; i <= 5; i++) {
+                if (!targetDoc[`courseId${i}`]) {
+                  destSlot = i;
+                  break;
+                }
+              }
+
+              if (!destSlot) {
+                chunkSummary.errors.push({
+                  studentId: sid,
+                  reason: "No empty course slot in target academic",
+                });
+                continue;
+              }
+            }
+
+            let nextYear;
+
+            if (isSchoolEducation) {
+              if (normalizedPolicy === "PROMOTE") {
+                nextYear = Number(targetCourse.promotionOrder || effectiveSrcYear || 0);
+              } else {
+                nextYear = Number(sourceCourse.promotionOrder || effectiveSrcYear || 0);
+              }
+            } else {
+              nextYear =
+                normalizedPolicy === "NOT_PROMOTE" || normalizedPolicy === "COMPLETE"
+                  ? Math.max(effectiveSrcYear, 1)
+                  : Math.max(effectiveSrcYear + 1, 1);
+            }
+
+            let nextFees = Number(sourceAcad[`fees${srcSlot}`] || 0);
+            const carriedDiscount = Number(sourceAcad[`discount${srcSlot}`] || 0);
+            let nextFinalFees = Number(sourceAcad[`finalFees${srcSlot}`] || 0);
+
+            if (normalizedPolicy === "PROMOTE" && isSchoolEducation) {
+              nextFees = Number(targetCourse?.fees || 0);
+              nextFinalFees = Math.max(nextFees - carriedDiscount, 0);
+            }
+
+            targetDoc[`instituteId${destSlot}`] = sourceAcad[`instituteId${srcSlot}`] || null;
+            targetDoc[`courseId${destSlot}`] = targetCourse._id;
+            targetDoc[`refNumber${destSlot}`] = sourceAcad[`refNumber${srcSlot}`] || "";
+
+            if (normalizedPolicy === "COMPLETE") {
+              targetDoc[`fees${destSlot}`] = 0;
+              targetDoc[`discount${destSlot}`] = 0;
+              targetDoc[`finalFees${destSlot}`] = 0;
+              targetDoc[`status${destSlot}`] = "Completed";
+              targetDoc[`year${destSlot}`] = nextYear;
+              targetDoc[`grade${destSlot}`] = studentGrade;
+            } else {
+              targetDoc[`fees${destSlot}`] = nextFees;
+              targetDoc[`discount${destSlot}`] = carriedDiscount;
+              targetDoc[`finalFees${destSlot}`] = nextFinalFees;
+              targetDoc[`year${destSlot}`] = nextYear;
+
+              if (normalizedPolicy === "PROMOTE") {
+                targetDoc[`grade${destSlot}`] = studentGrade;
+                targetDoc[`status${destSlot}`] = "Promoted";
+              } else {
+                targetDoc[`grade${destSlot}`] = "";
+                targetDoc[`status${destSlot}`] = "Not Promoted";
+              }
+            }
+
+            await targetDoc.save({ session });
+
+            // ✅ normalize certificate fee safely
+            const normalizedCertificateFee =
+              normalizedPolicy === "COMPLETE"
+                ? (() => {
+                  const n = Number(certificateFee);
+                  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CERTIFICATE_FEE;
+                })()
+                : 0;
+
+            const totalFees = computeTotalFeesFromAcademic(targetDoc);
+            const certDue = normalizedPolicy === "COMPLETE" ? normalizedCertificateFee : 0;
+            const totalDue = totalFees + certDue;
+
+            if (totalDue > 0) {
+              await upsertFeesDueAccount({
+                userId: st.userId,
+                schoolId: st.schoolId,
+                acYear: targetAcYear,
+                academicId: targetDoc._id,
+                fees: totalDue,
+                receiptLabel: normalizedPolicy === "COMPLETE" ? "Certificate" : "Promote",
+                remarks:
+                  normalizedPolicy === "COMPLETE"
+                    ? `Certificate Print Fee: ${targetCourse?.name || sourceCourse?.name || "Course"}`
+                    : `Promoted: ${targetCourse?.name || sourceCourse?.name || "Course"}`,
+                session,
+              });
+            }
+
+            if (normalizedPolicy === "COMPLETE") {
+              const certFee = normalizedCertificateFee;
 
               if (Number.isFinite(certFee) && certFee > 0) {
                 const existingCertInvoice = await FeeInvoice.findOne({
