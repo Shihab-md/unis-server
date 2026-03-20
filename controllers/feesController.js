@@ -15,7 +15,71 @@ const requireRole = (role, allowed) => {
   }
 };
 
+export const listDueInvoicesForSchool = async (req, res) => {
+  try {
+    console.log("listDueInvoicesForSchool called");
+    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
 
+    const { schoolId, status } = req.params;
+
+    const q = {};
+    if (schoolId) q.schoolId = schoolId;
+    // const acYear = await getActiveAcademicYearIdFromCache();
+
+    const dueStatuses = ["ISSUED", "PARTIAL"];
+    q.status = status ? status : { $in: dueStatuses };
+    q.balance = { $gt: 0 };
+
+    const isDueListing = !status || dueStatuses.includes(status);
+    if (isDueListing) {
+      const lockedInvoiceIds = await PaymentBatchItem.distinct("invoiceId", {
+        schoolId,
+        // acYear,
+        status: "PENDING_APPROVAL",
+      });
+
+      if (lockedInvoiceIds?.length) {
+        q._id = { $nin: lockedInvoiceIds };
+      }
+    }
+
+    const invoicesRaw = await FeeInvoice.find(q)
+      .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
+      .sort({ createdAt: -1 })
+      .populate({ path: "userId", select: "name email" })
+      .populate({ path: "studentId", select: "rollNumber feesPaid" })
+      .populate({ path: "courseId", select: "name years type" })
+      .populate({ path: "acYear", select: "acYear" })
+      .lean();
+
+    const invoices = invoicesRaw.map((inv) => {
+      const isAdmission = String(inv.source || "") === "ADMISSION";
+      const isFeesPaid = Number(inv.studentId?.feesPaid || 0) === 1;
+
+      if (isAdmission && !isFeesPaid && inv.studentId) {
+        return {
+          ...inv,
+          studentId: {
+            ...inv.studentId,
+            rollNumber: "-",
+          },
+        };
+      }
+
+      return inv;
+    });
+
+    return res.status(200).json({ success: true, invoices });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
+  }
+};
+
+{/*
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called");
@@ -51,7 +115,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
       .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
       .sort({ createdAt: -1 })
       .populate({ path: "userId", select: "name email" })
-      .populate({ path: "studentId", select: "rollNumber" })
+      .populate({ path: "studentId", select: "rollNumber" }) 
       .populate({ path: "courseId", select: "name years type" })
       .populate({ path: "acYear", select: "acYear" })
       .lean();
@@ -65,7 +129,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
     });
   }
 };
-
+*/}
 
 export const createPaymentBatch = async (req, res) => {
   const session = await mongoose.startSession();
