@@ -2,11 +2,12 @@ import multer from "multer";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import mongoose from "mongoose";
-
+import Supervisor from "../models/Supervisor.js";
 import InspectionReport from "../models/InspectionReport.js";
 import School from "../models/School.js";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import { decryptText } from "../utils/cryptoHelper.js";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -21,10 +22,8 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      return cb(new Error("Only pdf, jpg, jpeg, png files are allowed."));
-    }
-    cb(null, true);
+    const ok = ALLOWED_MIME_TYPES.includes(file.mimetype);
+    cb(ok ? null : new Error("Only pdf, jpg, jpeg, png files are allowed."), ok);
   },
 });
 
@@ -43,113 +42,74 @@ const htmlToPlainText = (html = "") =>
 
 const getUserMeta = (req) => {
   const user = req.user || {};
+  const rawSchoolId = user.schoolId?._id || user.schoolId || null;
+
   return {
     id: user._id || user.id || null,
     role: String(user.role || "").toLowerCase(),
     name: user.name || user.fullName || user.username || user.email || "User",
-    schoolId: user.schoolId || null,
+    schoolId: rawSchoolId ? String(rawSchoolId) : null,
   };
 };
 
 const getNiswanValue = (schoolDoc) => {
   if (!schoolDoc) return "";
-  if (typeof schoolDoc.niswan === "string") return schoolDoc.niswan;
+  if (typeof schoolDoc.code === "string" && schoolDoc.code.trim()) return schoolDoc.code.trim();
+  if (typeof schoolDoc.niswan === "string" && schoolDoc.niswan.trim()) return schoolDoc.niswan.trim();
   if (typeof schoolDoc.isNiswan === "boolean") return schoolDoc.isNiswan ? "Yes" : "No";
   if (typeof schoolDoc.niswan === "boolean") return schoolDoc.niswan ? "Yes" : "No";
   return "";
 };
 
-const buildDriveClient = async () => {
-  const credential = await IntegrationCredential.findOne({
-    $or: [
-      { provider: "google-drive" },
-      { provider: "google_drive" },
-      { service: "google-drive" },
-      { service: "google_drive" },
-      { type: "google-drive" },
-      { type: "google_drive" },
-    ],
-  }).sort({ createdAt: -1 });
+const buildRawOAuthClient = () =>
+  new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
 
-  if (!credential) {
+const buildDriveClient = async () => {
+  const cred = await IntegrationCredential.findOne({ key: "google_drive" }).sort({
+    updatedAt: -1,
+    createdAt: -1,
+  });
+
+  if (!cred) {
     throw new Error("Google Drive is not connected. Please reconnect Google Drive.");
   }
 
-  const clientId =
-    credential.clientId ||
-    process.env.GOOGLE_CLIENT_ID ||
-    process.env.GDRIVE_CLIENT_ID;
-
-  const clientSecret =
-    credential.clientSecret ||
-    process.env.GOOGLE_CLIENT_SECRET ||
-    process.env.GDRIVE_CLIENT_SECRET;
-
-  const redirectUri =
-    credential.redirectUri ||
-    process.env.GOOGLE_REDIRECT_URI ||
-    process.env.GDRIVE_REDIRECT_URI;
-
-  const accessTokenEncrypted =
-    credential.accessToken ||
-    credential.encryptedAccessToken ||
-    credential.token;
-
-  const refreshTokenEncrypted =
-    credential.refreshToken ||
-    credential.encryptedRefreshToken;
-
-  const expiryDate =
-    credential.expiryDate ||
-    credential.tokenExpiryDate ||
-    credential.expiry_date ||
-    null;
-
-  if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error("Google Drive client configuration is incomplete.");
-  }
-
-  if (!accessTokenEncrypted || !refreshTokenEncrypted) {
+  if (!cred.refreshTokenEnc) {
     throw new Error("Google Drive connection expired. Please reconnect Google Drive.");
   }
 
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  const refreshToken = decryptText(cred.refreshTokenEnc);
 
-  let accessToken = accessTokenEncrypted;
-  let refreshToken = refreshTokenEncrypted;
-
-  try {
-    accessToken = decryptText(accessTokenEncrypted);
-  } catch (_) {}
+  const oAuth2Client = buildRawOAuthClient();
+  oAuth2Client.setCredentials({ refresh_token: refreshToken });
 
   try {
-    refreshToken = decryptText(refreshTokenEncrypted);
-  } catch (_) {}
-
-  oauth2Client.setCredentials({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    expiry_date: expiryDate ? new Date(expiryDate).getTime() : undefined,
-  });
-
-  try {
-    await oauth2Client.getAccessToken();
+    await oAuth2Client.getAccessToken();
   } catch (error) {
+    console.log("[InspectionReport] Google Drive auth error:", error?.message || error);
     throw new Error("Google Drive connection expired. Please reconnect Google Drive.");
   }
 
   return google.drive({
     version: "v3",
-    auth: oauth2Client,
+    auth: oAuth2Client,
   });
 };
 
 const findFolderByName = async (drive, name, parentId = null) => {
+  const safeName = String(name).replace(/'/g, "\\'");
   const parentClause = parentId ? `'${parentId}' in parents and ` : "";
+
   const response = await drive.files.list({
-    q: `${parentClause}mimeType='application/vnd.google-apps.folder' and trashed=false and name='${name.replace(/'/g, "\\'")}'`,
+    q: `${parentClause}mimeType='application/vnd.google-apps.folder' and trashed=false and name='${safeName}'`,
     fields: "files(id, name)",
     pageSize: 10,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
 
   return response.data.files?.[0] || null;
@@ -163,6 +123,7 @@ const createFolder = async (drive, name, parentId = null) => {
       ...(parentId ? { parents: [parentId] } : {}),
     },
     fields: "id, name",
+    supportsAllDrives: true,
   });
 
   return response.data;
@@ -171,6 +132,7 @@ const createFolder = async (drive, name, parentId = null) => {
 const ensureFolder = async (drive, name, parentId = null) => {
   const existing = await findFolderByName(drive, name, parentId);
   if (existing) return existing.id;
+
   const created = await createFolder(drive, name, parentId);
   return created.id;
 };
@@ -181,10 +143,36 @@ const ensureInspectionReportsFolder = async (drive) => {
   return reportsFolderId;
 };
 
+const buildTimestampedFileName = (originalName = "") => {
+  const dotIndex = originalName.lastIndexOf(".");
+  const hasExt = dotIndex > 0;
+
+  const baseName = hasExt ? originalName.slice(0, dotIndex) : originalName;
+  const extension = hasExt ? originalName.slice(dotIndex) : "";
+
+  const safeBaseName = String(baseName)
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.-]/g, "");
+
+  const now = new Date();
+  const timestamp =
+    now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0") +
+    "_" +
+    String(now.getHours()).padStart(2, "0") +
+    String(now.getMinutes()).padStart(2, "0") +
+    String(now.getSeconds()).padStart(2, "0");
+
+  return `${safeBaseName}_${timestamp}${extension}`;
+};
+
 const uploadBufferToDrive = async (drive, folderId, file) => {
+  const timestampedFileName = buildTimestampedFileName(file.originalname);
   const response = await drive.files.create({
     requestBody: {
-      name: file.originalname,
+      name: timestampedFileName,
       parents: [folderId],
     },
     media: {
@@ -192,6 +180,7 @@ const uploadBufferToDrive = async (drive, folderId, file) => {
       body: Readable.from(file.buffer),
     },
     fields: "id, name, webViewLink, webContentLink, mimeType, size",
+    supportsAllDrives: true,
   });
 
   const uploaded = response.data;
@@ -201,7 +190,8 @@ const uploadBufferToDrive = async (drive, folderId, file) => {
     mimeType: uploaded.mimeType || file.mimetype,
     size: Number(uploaded.size || file.size || 0),
     driveFileId: uploaded.id,
-    driveViewUrl: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
+    driveViewUrl:
+      uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
     driveDownloadUrl:
       uploaded.webContentLink || `https://drive.google.com/uc?id=${uploaded.id}&export=download`,
   };
@@ -218,7 +208,7 @@ export const addInspectionReport = async (req, res) => {
       });
     }
 
-    const { title, reportDate, acYear, contentHtml } = req.body;
+    const { title, schoolId, reportDate, contentHtml } = req.body;
 
     if (!title?.trim()) {
       return res.status(400).json({
@@ -234,10 +224,11 @@ export const addInspectionReport = async (req, res) => {
       });
     }
 
-    if (!acYear?.trim()) {
+    const parsedReportDate = new Date(`${reportDate}T00:00:00`);
+    if (Number.isNaN(parsedReportDate.getTime())) {
       return res.status(400).json({
         success: false,
-        message: "Academic year is required.",
+        message: "Invalid report date.",
       });
     }
 
@@ -247,14 +238,6 @@ export const addInspectionReport = async (req, res) => {
         message: "Inspection report content is required.",
       });
     }
-
-    let schoolDoc = null;
-    if (user.schoolId && mongoose.Types.ObjectId.isValid(user.schoolId)) {
-      schoolDoc = await School.findById(user.schoolId).lean();
-    }
-
-    const schoolName = schoolDoc?.name || schoolDoc?.schoolName || "";
-    const niswan = getNiswanValue(schoolDoc);
 
     let attachments = [];
     if (req.files?.length) {
@@ -268,13 +251,9 @@ export const addInspectionReport = async (req, res) => {
 
     const inspectionReport = await InspectionReport.create({
       title: title.trim(),
-      reportDate: new Date(reportDate),
-      schoolId: user.schoolId || null,
-      schoolName,
-      supervisorId: user.id,
-      supervisorName: user.name,
-      niswan,
-      acYear: acYear.trim(),
+      reportDate: parsedReportDate,
+      schoolId: schoolId,
+      userId: user.id,
       contentHtml,
       contentText: req.body.contentText?.trim() || htmlToPlainText(contentHtml),
       attachments,
@@ -287,59 +266,132 @@ export const addInspectionReport = async (req, res) => {
       data: inspectionReport,
     });
   } catch (error) {
-    return res.status(500).json({
+    console.log("[InspectionReport] addInspectionReport error:", error?.message || error);
+
+    const message = error?.message || "Failed to submit inspection report.";
+    const statusCode = message.includes("Google Drive") ? 400 : 500;
+
+    return res.status(statusCode).json({
       success: false,
-      message: error.message || "Failed to submit inspection report.",
+      message,
     });
   }
 };
 
 export const getInspectionReports = async (req, res) => {
   try {
+    console.log("called : getInspectionReports");
+
     const user = getUserMeta(req);
-    const { q = "", acYear = "", fromDate = "", toDate = "" } = req.query;
+    const { q = "", fromDate = "", toDate = "" } = req.query;
 
     const filter = {};
 
     if (user.role === "supervisor") {
-      filter.supervisorId = user.id;
-    }
-
-    if (acYear?.trim()) {
-      filter.acYear = acYear.trim();
+      filter.userId = user.id;
     }
 
     if (fromDate || toDate) {
       filter.reportDate = {};
-      if (fromDate) filter.reportDate.$gte = new Date(fromDate);
+
+      if (fromDate) {
+        const from = new Date(`${fromDate}T00:00:00`);
+        if (!Number.isNaN(from.getTime())) {
+          filter.reportDate.$gte = from;
+        }
+      }
+
       if (toDate) {
-        const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999);
-        filter.reportDate.$lte = end;
+        const end = new Date(`${toDate}T23:59:59.999`);
+        if (!Number.isNaN(end.getTime())) {
+          filter.reportDate.$lte = end;
+        }
       }
     }
 
-    if (q?.trim()) {
-      const regex = new RegExp(escapeRegex(q.trim()), "i");
-      filter.$or = [
-        { title: regex },
-        { supervisorName: regex },
-        { schoolName: regex },
-        { niswan: regex },
-        { acYear: regex },
-        { contentText: regex },
-      ];
-    }
-
     const inspectionReports = await InspectionReport.find(filter)
+      .populate({
+        path: "userId",
+        select: "name email",
+      })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish name schoolName niswan isNiswan",
+      })
       .sort({ reportDate: -1, createdAt: -1 })
       .lean();
 
+    const userIds = [
+      ...new Set(
+        inspectionReports
+          .map((report) => String(report.userId?._id || report.userId || ""))
+          .filter(Boolean)
+      ),
+    ];
+
+    const supervisors = userIds.length
+      ? await Supervisor.find({ userId: { $in: userIds } })
+        .select("userId supervisorId")
+        .lean()
+      : [];
+
+    const supervisorIdMap = new Map(
+      supervisors.map((sup) => [String(sup.userId), sup.supervisorId || "-"])
+    );
+
+    let data = inspectionReports.map((report) => {
+      const school = report.schoolId || {};
+      const supervisor = report.userId || {};
+      const reportUserId = String(supervisor._id || report.userId || "");
+
+      const schoolCode = school.code || "-";
+
+      const schoolName =
+        school.nameEnglish ||
+        school.name ||
+        school.schoolName ||
+        "-";
+
+      return {
+        _id: report._id,
+        title: report.title || "-",
+        reportDate: report.reportDate || null,
+
+        userId: supervisor._id || null,
+        supervisorId: supervisorIdMap.get(reportUserId) || "-",
+        supervisorName: supervisor.name || "-",
+        supervisorEmail: supervisor.email || "-",
+
+        schoolId: school._id || null,
+        schoolCode,
+        schoolName,
+
+        contentText: report.contentText || "",
+        attachments: Array.isArray(report.attachments) ? report.attachments : [],
+        createdAt: report.createdAt || null,
+        updatedAt: report.updatedAt || null,
+      };
+    });
+
+    if (q?.trim()) {
+      const search = q.trim().toLowerCase();
+
+      data = data.filter((report) =>
+        String(report.title || "").toLowerCase().includes(search) ||
+        String(report.supervisorId || "").toLowerCase().includes(search) ||
+        String(report.supervisorName || "").toLowerCase().includes(search) ||
+        String(report.schoolCode || "").toLowerCase().includes(search) ||
+        String(report.schoolName || "").toLowerCase().includes(search) ||
+        String(report.contentText || "").toLowerCase().includes(search)
+      );
+    }
+
     return res.status(200).json({
       success: true,
-      data: inspectionReports,
+      data,
     });
   } catch (error) {
+    console.log("getInspectionReports error:", error);
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch inspection reports.",
@@ -347,11 +399,117 @@ export const getInspectionReports = async (req, res) => {
   }
 };
 
+{/*
+export const getInspectionReports = async (req, res) => {
+  try {
+    console.log("called : getInspectionReports");
+
+    const user = getUserMeta(req);
+    const { q = "", fromDate = "", toDate = "" } = req.query;
+
+    const filter = {};
+
+    // schema uses userId, not supervisorId
+    if (user.role === "supervisor") {
+      filter.userId = user.id;
+    }
+
+    if (fromDate || toDate) {
+      filter.reportDate = {};
+
+      if (fromDate) {
+        const from = new Date(`${fromDate}T00:00:00`);
+        if (!Number.isNaN(from.getTime())) {
+          filter.reportDate.$gte = from;
+        }
+      }
+
+      if (toDate) {
+        const end = new Date(`${toDate}T23:59:59.999`);
+        if (!Number.isNaN(end.getTime())) {
+          filter.reportDate.$lte = end;
+        }
+      }
+    }
+
+    const inspectionReports = await InspectionReport.find(filter)
+      .populate({
+        path: "userId",
+        select: "name email",
+      })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish name schoolName niswan isNiswan",
+      })
+      .sort({ reportDate: -1, createdAt: -1 })
+      .lean();
+
+    let data = inspectionReports.map((report) => {
+      const school = report.schoolId || {};
+      const supervisor = report.userId || {};
+
+      const schoolCode =
+        school.code ||
+        "-";
+
+      const schoolName =
+        school.nameEnglish ||
+        school.name ||
+        school.schoolName ||
+        "-";
+
+      return {
+        _id: report._id,
+        title: report.title || "-",
+        reportDate: report.reportDate || null,
+
+        userId: supervisor._id || null,
+        supervisorName: supervisor.name || "-",
+        supervisorEmail: supervisor.email || "-",
+
+        schoolId: school._id || null,
+        schoolCode,
+        schoolName,
+
+        contentText: report.contentText || "",
+        attachments: Array.isArray(report.attachments) ? report.attachments : [],
+        createdAt: report.createdAt || null,
+        updatedAt: report.updatedAt || null,
+      };
+    });
+
+    if (q?.trim()) {
+      const search = q.trim().toLowerCase();
+
+      data = data.filter((report) =>
+        String(report.title || "").toLowerCase().includes(search) ||
+        String(report.supervisorName || "").toLowerCase().includes(search) ||
+        String(report.schoolName || "").toLowerCase().includes(search) ||
+        String(report.niswan || "").toLowerCase().includes(search) ||
+        String(report.contentText || "").toLowerCase().includes(search)
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.log("getInspectionReports error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch inspection reports.",
+    });
+  }
+};
+*/}
+
 export const getMyInspectionReports = async (req, res) => {
   try {
+    console.log("called : getMyInspectionReports");
     const user = getUserMeta(req);
-
-    const inspectionReports = await InspectionReport.find({ supervisorId: user.id })
+    console.log(user);
+    const inspectionReports = await InspectionReport.find({ userId: user.id })
       .sort({ reportDate: -1, createdAt: -1 })
       .lean();
 
@@ -372,7 +530,22 @@ export const getInspectionReportById = async (req, res) => {
     const user = getUserMeta(req);
     const { id } = req.params;
 
-    const inspectionReport = await InspectionReport.findById(id).lean();
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid inspection report id.",
+      });
+    }
+
+    const inspectionReport = await InspectionReport.findById(id)
+      .populate({
+        path: "userId",
+        select: "name email",
+      })
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish name schoolName niswan isNiswan",
+      }).lean();
 
     if (!inspectionReport) {
       return res.status(404).json({
@@ -383,13 +556,21 @@ export const getInspectionReportById = async (req, res) => {
 
     if (
       user.role === "supervisor" &&
-      String(inspectionReport.supervisorId) !== String(user.id)
+      String(inspectionReport.userId?._id) !== String(user.id)
     ) {
       return res.status(403).json({
         success: false,
         message: "You can view only your own inspection reports.",
       });
     }
+
+    const supervisorDoc = await Supervisor.findOne({
+      userId: inspectionReport.userId?._id || inspectionReport.userId,
+    })
+      .select("supervisorId")
+      .lean();
+
+    inspectionReport.supervisorId = supervisorDoc?.supervisorId || "-";
 
     return res.status(200).json({
       success: true,
