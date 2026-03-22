@@ -316,7 +316,11 @@ export const getInspectionReports = async (req, res) => {
       })
       .populate({
         path: "schoolId",
-        select: "code nameEnglish name schoolName niswan isNiswan",
+        select: "code nameEnglish nameArabic nameNative districtStateId",
+        populate: {
+          path: "districtStateId",
+          select: "district state",
+        },
       })
       .sort({ reportDate: -1, createdAt: -1 })
       .lean();
@@ -345,12 +349,10 @@ export const getInspectionReports = async (req, res) => {
       const reportUserId = String(supervisor._id || report.userId || "");
 
       const schoolCode = school.code || "-";
-
-      const schoolName =
-        school.nameEnglish ||
-        school.name ||
-        school.schoolName ||
-        "-";
+      const schoolName = school.nameEnglish || "-";
+      const schoolNameArabic = school.nameArabic || "-";
+      const schoolNameNative = school.nameNative || "-";
+      const districtState = school?.districtStateId?.district + ", " + school?.districtStateId?.state;
 
       return {
         _id: report._id,
@@ -365,6 +367,9 @@ export const getInspectionReports = async (req, res) => {
         schoolId: school._id || null,
         schoolCode,
         schoolName,
+        schoolNameArabic,
+        schoolNameNative,
+        districtState,
 
         contentText: report.contentText || "",
         attachments: Array.isArray(report.attachments) ? report.attachments : [],
@@ -398,111 +403,6 @@ export const getInspectionReports = async (req, res) => {
     });
   }
 };
-
-{/*
-export const getInspectionReports = async (req, res) => {
-  try {
-    console.log("called : getInspectionReports");
-
-    const user = getUserMeta(req);
-    const { q = "", fromDate = "", toDate = "" } = req.query;
-
-    const filter = {};
-
-    // schema uses userId, not supervisorId
-    if (user.role === "supervisor") {
-      filter.userId = user.id;
-    }
-
-    if (fromDate || toDate) {
-      filter.reportDate = {};
-
-      if (fromDate) {
-        const from = new Date(`${fromDate}T00:00:00`);
-        if (!Number.isNaN(from.getTime())) {
-          filter.reportDate.$gte = from;
-        }
-      }
-
-      if (toDate) {
-        const end = new Date(`${toDate}T23:59:59.999`);
-        if (!Number.isNaN(end.getTime())) {
-          filter.reportDate.$lte = end;
-        }
-      }
-    }
-
-    const inspectionReports = await InspectionReport.find(filter)
-      .populate({
-        path: "userId",
-        select: "name email",
-      })
-      .populate({
-        path: "schoolId",
-        select: "code nameEnglish name schoolName niswan isNiswan",
-      })
-      .sort({ reportDate: -1, createdAt: -1 })
-      .lean();
-
-    let data = inspectionReports.map((report) => {
-      const school = report.schoolId || {};
-      const supervisor = report.userId || {};
-
-      const schoolCode =
-        school.code ||
-        "-";
-
-      const schoolName =
-        school.nameEnglish ||
-        school.name ||
-        school.schoolName ||
-        "-";
-
-      return {
-        _id: report._id,
-        title: report.title || "-",
-        reportDate: report.reportDate || null,
-
-        userId: supervisor._id || null,
-        supervisorName: supervisor.name || "-",
-        supervisorEmail: supervisor.email || "-",
-
-        schoolId: school._id || null,
-        schoolCode,
-        schoolName,
-
-        contentText: report.contentText || "",
-        attachments: Array.isArray(report.attachments) ? report.attachments : [],
-        createdAt: report.createdAt || null,
-        updatedAt: report.updatedAt || null,
-      };
-    });
-
-    if (q?.trim()) {
-      const search = q.trim().toLowerCase();
-
-      data = data.filter((report) =>
-        String(report.title || "").toLowerCase().includes(search) ||
-        String(report.supervisorName || "").toLowerCase().includes(search) ||
-        String(report.schoolName || "").toLowerCase().includes(search) ||
-        String(report.niswan || "").toLowerCase().includes(search) ||
-        String(report.contentText || "").toLowerCase().includes(search)
-      );
-    }
-
-    return res.status(200).json({
-      success: true,
-      data,
-    });
-  } catch (error) {
-    console.log("getInspectionReports error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to fetch inspection reports.",
-    });
-  }
-};
-*/}
 
 export const getMyInspectionReports = async (req, res) => {
   try {
@@ -544,8 +444,13 @@ export const getInspectionReportById = async (req, res) => {
       })
       .populate({
         path: "schoolId",
-        select: "code nameEnglish name schoolName niswan isNiswan",
-      }).lean();
+        select: "code nameEnglish nameArabic nameNative districtStateId",
+        populate: {
+          path: "districtStateId",
+          select: "district state",
+        },
+      })
+      .lean();
 
     if (!inspectionReport) {
       return res.status(404).json({
@@ -567,10 +472,12 @@ export const getInspectionReportById = async (req, res) => {
     const supervisorDoc = await Supervisor.findOne({
       userId: inspectionReport.userId?._id || inspectionReport.userId,
     })
-      .select("supervisorId")
+      .select("supervisorId contactNumber routeName")
       .lean();
 
     inspectionReport.supervisorId = supervisorDoc?.supervisorId || "-";
+    inspectionReport.contactNumber = supervisorDoc?.contactNumber || "-";
+    inspectionReport.routeName = supervisorDoc?.routeName || "-";
 
     return res.status(200).json({
       success: true,
