@@ -1,5 +1,6 @@
 import multer from "multer";
 import { google } from "googleapis";
+import speechPkg from "@google-cloud/speech";
 import { Readable } from "stream";
 import mongoose from "mongoose";
 import Supervisor from "../models/Supervisor.js";
@@ -9,12 +10,22 @@ import IntegrationCredential from "../models/IntegrationCredential.js";
 import { decryptText } from "../utils/cryptoHelper.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
+const { v1: speechV1 } = speechPkg;
+
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
   "image/png",
   "image/jpeg",
   "image/jpg",
 ];
+
+const SUPPORTED_TRANSCRIPTION_LANGUAGES = new Set([
+  "en-US",
+  "ta-IN",
+  "ur-PK",
+  "ml-IN",
+  "te-IN",
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,6 +39,28 @@ const upload = multer({
 });
 
 export const uploadInspectionReportFiles = upload.array("attachments", 10);
+
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    const mime = String(file.mimetype || "").toLowerCase();
+    const ok = mime.startsWith("audio/webm") || mime.startsWith("audio/ogg");
+
+    cb(
+      ok
+        ? null
+        : new Error(
+            "Only supported voice audio formats are allowed. Please use latest Chrome or Edge."
+          ),
+      ok
+    );
+  },
+});
+
+export const uploadInspectionReportAudio = audioUpload.single("audio");
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -67,6 +100,83 @@ const buildRawOAuthClient = () =>
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI
   );
+
+let cachedSpeechClient = null;
+
+const buildSpeechClient = () => {
+  if (cachedSpeechClient) {
+    return cachedSpeechClient;
+  }
+
+  const serviceAccountJson = process.env.GOOGLE_STT_SERVICE_ACCOUNT_JSON;
+  const clientEmail = process.env.GOOGLE_STT_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_STT_PRIVATE_KEY;
+  const projectId = process.env.GOOGLE_STT_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+
+  if (serviceAccountJson) {
+    const parsed = JSON.parse(serviceAccountJson);
+
+    cachedSpeechClient = new speechV1.SpeechClient({
+      projectId: parsed.project_id || projectId,
+      credentials: {
+        client_email: parsed.client_email,
+        private_key: String(parsed.private_key || "").replace(/\\n/g, "\n"),
+      },
+    });
+
+    return cachedSpeechClient;
+  }
+
+  if (clientEmail && privateKey) {
+    cachedSpeechClient = new speechV1.SpeechClient({
+      projectId,
+      credentials: {
+        client_email: clientEmail,
+        private_key: String(privateKey).replace(/\\n/g, "\n"),
+      },
+    });
+
+    return cachedSpeechClient;
+  }
+
+  cachedSpeechClient = new speechV1.SpeechClient();
+  return cachedSpeechClient;
+};
+
+const normalizeAudioMimeType = (value = "") => {
+  const mime = String(value || "").toLowerCase();
+
+  if (mime.startsWith("audio/webm")) return "audio/webm";
+  if (mime.startsWith("audio/ogg")) return "audio/ogg";
+
+  return mime;
+};
+
+const getSpeechEncodingByMimeType = (mimeType = "") => {
+  const normalized = normalizeAudioMimeType(mimeType);
+
+  if (normalized === "audio/webm") return "WEBM_OPUS";
+  if (normalized === "audio/ogg") return "OGG_OPUS";
+
+  return "";
+};
+
+const buildSpeechConfig = ({ languageCode, mimeType }) => {
+  const encoding = getSpeechEncodingByMimeType(mimeType);
+
+  if (!encoding) {
+    throw new Error(
+      "Unsupported audio format. Please use latest Chrome or Edge and record again."
+    );
+  }
+
+  return {
+    encoding,
+    sampleRateHertz: 48000,
+    languageCode,
+    enableAutomaticPunctuation: languageCode === "en-US",
+  };
+};
 
 const buildDriveClient = async () => {
   const cred = await IntegrationCredential.findOne({ key: "google_drive" }).sort({
@@ -197,6 +307,103 @@ const uploadBufferToDrive = async (drive, folderId, file) => {
   };
 };
 
+export const transcribeInspectionReportAudio = async (req, res) => {
+  try {
+    const user = getUserMeta(req);
+
+    if (user.role !== "supervisor") {
+      return res.status(403).json({
+        success: false,
+        message: "Only supervisor can use voice transcription for inspection reports.",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Voice audio file is required.",
+      });
+    }
+
+    const languageCode = String(req.body.languageCode || "").trim();
+
+    if (!SUPPORTED_TRANSCRIPTION_LANGUAGES.has(languageCode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported transcription language selected.",
+      });
+    }
+
+    const mimeType = normalizeAudioMimeType(
+      req.body.audioMimeType || req.file.mimetype || ""
+    );
+
+    const client = buildSpeechClient();
+    const config = buildSpeechConfig({ languageCode, mimeType });
+
+    const [response] = await client.recognize({
+      config,
+      audio: {
+        content: req.file.buffer.toString("base64"),
+      },
+    });
+
+    const transcript = (response.results || [])
+      .map((result) => result?.alternatives?.[0]?.transcript || "")
+      .join(" ")
+      .trim();
+
+    return res.status(200).json({
+      success: true,
+      message: transcript
+        ? "Voice text inserted into report content."
+        : "No speech detected. Please try again more clearly.",
+      data: {
+        transcript,
+        languageCode,
+        mimeType,
+      },
+    });
+  } catch (error) {
+    console.log(
+      "[InspectionReport] transcribeInspectionReportAudio error:",
+      error?.message || error
+    );
+
+    const rawMessage =
+      error?.details || error?.message || "Failed to transcribe voice input.";
+
+    let message = rawMessage;
+    let statusCode = 500;
+
+    if (
+      /too long|Sync input too long|60 seconds/i.test(rawMessage)
+    ) {
+      message = "Recording is too long. Please keep each voice clip within 55 seconds.";
+      statusCode = 400;
+    } else if (
+      /10 MB|too large|payload/i.test(rawMessage)
+    ) {
+      message = "Recording file is too large. Please keep it under 10 MB.";
+      statusCode = 400;
+    } else if (
+      /credential|Could not load the default credentials|permission|auth/i.test(rawMessage)
+    ) {
+      message =
+        "Speech-to-text is not configured correctly on the server. Please contact administrator.";
+      statusCode = 500;
+    } else if (/unsupported audio format/i.test(rawMessage)) {
+      message = rawMessage;
+      statusCode = 400;
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      message,
+    });
+  }
+};
+
 export const addInspectionReport = async (req, res) => {
   try {
     const user = getUserMeta(req);
@@ -214,6 +421,13 @@ export const addInspectionReport = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Inspection report title is required.",
+      });
+    }
+
+    if (!schoolId?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Niswan is required.",
       });
     }
 
@@ -335,8 +549,8 @@ export const getInspectionReports = async (req, res) => {
 
     const supervisors = userIds.length
       ? await Supervisor.find({ userId: { $in: userIds } })
-        .select("userId supervisorId")
-        .lean()
+          .select("userId supervisorId")
+          .lean()
       : [];
 
     const supervisorIdMap = new Map(
@@ -352,7 +566,8 @@ export const getInspectionReports = async (req, res) => {
       const schoolName = school.nameEnglish || "-";
       const schoolNameArabic = school.nameArabic || "-";
       const schoolNameNative = school.nameNative || "-";
-      const districtState = school?.districtStateId?.district + ", " + school?.districtStateId?.state;
+      const districtState =
+        school?.districtStateId?.district + ", " + school?.districtStateId?.state;
 
       return {
         _id: report._id,
@@ -409,6 +624,7 @@ export const getMyInspectionReports = async (req, res) => {
     console.log("called : getMyInspectionReports");
     const user = getUserMeta(req);
     console.log(user);
+
     const inspectionReports = await InspectionReport.find({ userId: user.id })
       .sort({ reportDate: -1, createdAt: -1 })
       .lean();

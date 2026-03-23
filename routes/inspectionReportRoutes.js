@@ -1,13 +1,13 @@
 import express from "express";
 import {
-    addInspectionReport,
-    getInspectionReportById,
-    getInspectionReports,
-    getMyInspectionReports,
-    uploadInspectionReportFiles,
+  addInspectionReport,
+  getInspectionReportById,
+  getInspectionReports,
+  getMyInspectionReports,
+  uploadInspectionReportFiles,
 } from "../controllers/InspectionReportController.js";
 
-import authMiddleware from '../middleware/authMiddlware.js'
+import authMiddleware from "../middleware/authMiddlware.js";
 
 const router = express.Router();
 
