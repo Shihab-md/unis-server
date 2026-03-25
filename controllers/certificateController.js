@@ -557,7 +557,7 @@ const buildCertificateOverlayPng = async ({
 
   const positions = isMakthab
     ? hasNative
-      ? { arabic: 107, native: 137, english: 157, address: 172 }
+      ? { arabic: 122, native: 147, english: 164, address: 179 }
       : { arabic: 115, english: 143, address: 160 }
     : hasNative
       ? { arabic: 93, native: 116, english: 135, address: 150 }
@@ -596,11 +596,11 @@ const buildCertificateOverlayPng = async ({
     });
   };
 
-  const drawNative = (text, y) => {
+  const drawNative = (text, y, size) => {
     drawCenteredText({
       text,
       y,
-      size: 13,
+      size,
       fontFamily: "Nirmala",
       weight: "bold",
       color: "rgb(161, 14, 94)",
@@ -608,11 +608,11 @@ const buildCertificateOverlayPng = async ({
     });
   };
 
-  const drawEnglishFixed = (text, y) => {
+  const drawEnglishFixed = (text, y, size) => {
     drawCenteredText({
       text,
       y,
-      size: 12,
+      size,
       fontFamily: "Arial-bold",
       weight: "bold",
       color: "rgb(14, 84, 49)",
@@ -657,8 +657,14 @@ const buildCertificateOverlayPng = async ({
 
   if (hasNative) {
     drawArabic(nameArabic, positions.arabic, 19);
-    drawNative(nameNative, positions.native);
-    drawEnglishFixed(nameEnglish, positions.english);
+    if (isMakthab) {
+      drawNative(nameNative, positions.native, 12);
+      drawEnglishFixed(nameEnglish, positions.english, 11.5);
+    } else {
+      drawNative(nameNative, positions.native, 13);
+      drawEnglishFixed(nameEnglish, positions.english, 12);
+    }
+
     drawAddress(addressLine, positions.address, 9);
   } else {
     drawArabic(nameArabic, positions.arabic, 21);
@@ -724,17 +730,17 @@ const buildCertificateOverlayPng = async ({
   } else { // Makthab
     ctx.textAlign = "center";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 15, 367);
-    ctx.fillText(fatherName, centerX - 45, 389);
+    ctx.fillText(name, centerX - 15, 385);
+    ctx.fillText(fatherName, centerX - 45, 407);
 
     ctx.textAlign = "start";
     ctx.font = "10.5px Arial-Bold";
-    ctx.fillText(rollNumber, 480, 367);
+    ctx.fillText(rollNumber, 480, 385);
 
     ctx.font = "12px Arial-Bold";
     //ctx.fillText(grade, 540, 408);
 
-    ctx.fillText(String(new Date().getFullYear()), 235, 430);
+    ctx.fillText(String(new Date().getFullYear()), 235, 448);
 
     ctx.font = "10px Arial-Bold";
     ctx.fillText(issueDateText, 105, 616);
