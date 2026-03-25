@@ -405,153 +405,6 @@ const buildCertificateOverlayPng = async ({
     .filter(Boolean)
     .join(", ");
 
-  {/*}
-  if (tempType != 1) { // Not Makthab
-    if (nameNative) {
-      if (nameArabic) {
-        let arabicSize = 16;
-        ctx.font = `${arabicSize}px Amiri Bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(prepareArabicText(nameArabic), centerX, 93);
-      }
-
-      if (nameNative) {
-        let nativeSize = 14;
-        ctx.font = `bold ${nativeSize}px Nirmala`;
-        ctx.fillStyle = "rgb(161, 14, 94)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameNative, centerX, 115);
-        ctx.fillText(nameNative, centerX, 115);
-        ctx.fillText(nameNative, centerX, 115);
-      }
-
-      if (nameEnglish) {
-        let englishSize = 13
-        ctx.font = `bold ${englishSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameEnglish, centerX, 135);
-        ctx.fillText(nameEnglish, centerX, 135);
-      }
-
-      if (addressLine) {
-        let addrSize = 9;
-        ctx.font = `bold ${addrSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(4, 25, 93)";
-        ctx.textAlign = "center";
-        ctx.fillText(addressLine, centerX, 150);
-      }
-    } else {
-      console.log("No Native.")
-      if (nameArabic) {
-        let arabicSize = 19;
-        ctx.font = `${arabicSize}px Amiri Bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(prepareArabicText(nameArabic), centerX, 100);
-      }
-
-      if (nameEnglish) {
-        let englishSize = measureAndFit(
-          ctx,
-          nameEnglish,
-          "Arial",
-          15,
-          width * 0.78,
-          10,
-          "bold"
-        );
-        ctx.font = `bold ${englishSize}px Arial`;
-        ctx.fillStyle = "rgb(161, 14, 94)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameEnglish, centerX, 128);
-        ctx.fillText(nameEnglish, centerX, 128);
-      }
-
-      if (addressLine) {
-        let addrSize = 10;
-        ctx.font = `bold ${addrSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(4, 25, 93)";
-        ctx.textAlign = "center";
-        ctx.fillText(addressLine, centerX, 145);
-      }
-    }
-  } else {
-
-    if (nameNative) {
-      if (nameArabic) {
-        let arabicSize = 16;
-        ctx.font = `${arabicSize}px Amiri Bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(prepareArabicText(nameArabic), centerX, 106);
-      }
-
-      if (nameNative) {
-        let nativeSize = 14;
-        ctx.font = `bold ${nativeSize}px Nirmala`;
-        ctx.fillStyle = "rgb(161, 14, 94)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameNative, centerX, 131);
-        ctx.fillText(nameNative, centerX, 131);
-        ctx.fillText(nameNative, centerX, 131);
-      }
-
-      if (nameEnglish) {
-        let englishSize = 13
-        ctx.font = `bold ${englishSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameEnglish, centerX, 152);
-        ctx.fillText(nameEnglish, centerX, 152);
-      }
-
-      if (addressLine) {
-        let addrSize = 9;
-        ctx.font = `bold ${addrSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(4, 25, 93)";
-        ctx.textAlign = "center";
-        ctx.fillText(addressLine, centerX, 168);
-      }
-    } else {
-      console.log("No Native.")
-      if (nameArabic) {
-        let arabicSize = 19;
-        ctx.font = `${arabicSize}px Amiri Bold`;
-        ctx.fillStyle = "rgb(14, 84, 49)";
-        ctx.textAlign = "center";
-        ctx.fillText(prepareArabicText(nameArabic), centerX, 115);
-      }
-
-      if (nameEnglish) {
-        let englishSize = measureAndFit(
-          ctx,
-          nameEnglish,
-          "Arial",
-          15,
-          width * 0.78,
-          10,
-          "bold"
-        );
-        ctx.font = `bold ${englishSize}px Arial`;
-        ctx.fillStyle = "rgb(161, 14, 94)";
-        ctx.textAlign = "center";
-        ctx.fillText(nameEnglish, centerX, 143);
-        ctx.fillText(nameEnglish, centerX, 143);
-      }
-
-      if (addressLine) {
-        let addrSize = 10;
-        ctx.font = `bold ${addrSize}px Arial-bold`;
-        ctx.fillStyle = "rgb(4, 25, 93)";
-        ctx.textAlign = "center";
-        ctx.fillText(addressLine, centerX, 160);
-      }
-    }
-  }
-*/}
-
   const isMakthab = Number(tempType) === 1;
   const hasNative = Boolean(nameNative);
 
@@ -885,14 +738,83 @@ const addCertificate = async (req, res) => {
       else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
     }
 
-    const issueDateObj = new Date(issueDate);
-    if (Number.isNaN(issueDateObj.getTime())) {
+    // const issueDateObj = new Date(issueDate);
+    // if (Number.isNaN(issueDateObj.getTime())) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     error: "Invalid certificate issue date.",
+    //   });
+    // }
+    // const issueDateText = issueDateObj.toLocaleDateString("en-GB");
+
+    const parseCertificateIssueDate = (value) => {
+      if (!value) return null;
+
+      const raw = String(value).trim();
+
+      // Case 1: plain date string: YYYY-MM-DD
+      const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnlyMatch) {
+        const [, y, m, d] = dateOnlyMatch;
+        const date = new Date(Number(y), Number(m) - 1, Number(d));
+
+        if (
+          date.getFullYear() !== Number(y) ||
+          date.getMonth() !== Number(m) - 1 ||
+          date.getDate() !== Number(d)
+        ) {
+          return null;
+        }
+
+        return {
+          dateObj: date,
+          issueDateText: `${d}/${m}/${y}`,
+        };
+      }
+
+      // Case 2: ISO datetime string like 2026-03-24T15:00:00.000Z
+      const isoDate = new Date(raw);
+      if (Number.isNaN(isoDate.getTime())) {
+        return null;
+      }
+
+      // Format in Asia/Tokyo so 2026-03-24T15:00:00.000Z becomes 25/03/2026
+      const formatter = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Tokyo",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+
+      const parts = formatter.formatToParts(isoDate);
+      const day = parts.find((p) => p.type === "day")?.value;
+      const month = parts.find((p) => p.type === "month")?.value;
+      const year = parts.find((p) => p.type === "year")?.value;
+
+      if (!day || !month || !year) return null;
+
+      return {
+        dateObj: isoDate,
+        issueDateText: `${day}/${month}/${year}`,
+      };
+    };
+
+    console.log("issueDate : " + issueDate);
+
+    const parsedIssueDate = parseCertificateIssueDate(issueDate);
+
+    if (!parsedIssueDate) {
       return res.status(400).json({
         success: false,
         error: "Invalid certificate issue date.",
       });
     }
-    const issueDateText = issueDateObj.toLocaleDateString("en-GB");
+
+    const issueDateObj = parsedIssueDate.dateObj;
+    const issueDateText = parsedIssueDate.issueDateText;
+
+    console.log("issueDateObj : ", issueDateObj);
+    console.log("issueDateText : " + issueDateText);
 
     const dat = new Date().toLocaleDateString();
 
