@@ -405,7 +405,8 @@ const buildCertificateOverlayPng = async ({
     .filter(Boolean)
     .join(", ");
 
-  if (tempType != 1) {
+  {/*}
+  if (tempType != 1) { // Not Makthab
     if (nameNative) {
       if (nameArabic) {
         let arabicSize = 16;
@@ -549,6 +550,121 @@ const buildCertificateOverlayPng = async ({
       }
     }
   }
+*/}
+
+  const isMakthab = Number(tempType) === 1;
+  const hasNative = Boolean(nameNative);
+
+  const positions = isMakthab
+    ? hasNative
+      ? { arabic: 107, native: 137, english: 157, address: 172 }
+      : { arabic: 115, english: 143, address: 160 }
+    : hasNative
+      ? { arabic: 93, native: 116, english: 135, address: 150 }
+      : { arabic: 100, english: 128, address: 145 };
+
+  const drawCenteredText = ({
+    text,
+    y,
+    size,
+    fontFamily,
+    color,
+    repeat = 1,
+    weight = "",
+    transform = (value) => value,
+  }) => {
+    if (!text) return;
+
+    const finalText = transform(text);
+    ctx.font = `${weight ? `${weight} ` : ""}${size}px ${fontFamily}`;
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+
+    for (let i = 0; i < repeat; i += 1) {
+      ctx.fillText(finalText, centerX, y);
+    }
+  };
+
+  const drawArabic = (text, y, size) => {
+    drawCenteredText({
+      text,
+      y,
+      size,
+      fontFamily: "Amiri Bold",
+      color: "rgb(14, 84, 49)",
+      transform: prepareArabicText,
+    });
+  };
+
+  const drawNative = (text, y) => {
+    drawCenteredText({
+      text,
+      y,
+      size: 13,
+      fontFamily: "Nirmala",
+      weight: "bold",
+      color: "rgb(161, 14, 94)",
+      repeat: 3,
+    });
+  };
+
+  const drawEnglishFixed = (text, y) => {
+    drawCenteredText({
+      text,
+      y,
+      size: 12,
+      fontFamily: "Arial-bold",
+      weight: "bold",
+      color: "rgb(14, 84, 49)",
+      repeat: 2,
+    });
+  };
+
+  const drawEnglishFitted = (text, y) => {
+    if (!text) return;
+
+    const englishSize = measureAndFit(
+      ctx,
+      text,
+      "Arial",
+      15,
+      width * 0.78,
+      10,
+      "bold"
+    );
+
+    drawCenteredText({
+      text,
+      y,
+      size: englishSize,
+      fontFamily: "Arial",
+      weight: "bold",
+      color: "rgb(161, 14, 94)",
+      repeat: 2,
+    });
+  };
+
+  const drawAddress = (text, y, size) => {
+    drawCenteredText({
+      text,
+      y,
+      size,
+      fontFamily: "Arial-bold",
+      weight: "bold",
+      color: "rgb(4, 25, 93)",
+    });
+  };
+
+  if (hasNative) {
+    drawArabic(nameArabic, positions.arabic, 19);
+    drawNative(nameNative, positions.native);
+    drawEnglishFixed(nameEnglish, positions.english);
+    drawAddress(addressLine, positions.address, 9);
+  } else {
+    drawArabic(nameArabic, positions.arabic, 21);
+    drawEnglishFitted(nameEnglish, positions.english);
+    drawAddress(addressLine, positions.address, 10);
+  }
 
   // Body texts
   const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
@@ -566,19 +682,19 @@ const buildCertificateOverlayPng = async ({
   if (tempType == 3) { // Muballiga
     ctx.textAlign = "center";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 20, 346);
-    ctx.fillText(fatherName, centerX - 70, 367);
+    ctx.fillText(name, centerX - 20, 362);
+    ctx.fillText(fatherName, centerX - 70, 383);
 
     ctx.textAlign = "start";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(rollNumber, 475, 346);
+    ctx.fillText(rollNumber, 475, 362);
 
     ctx.font = "12px Arial-Bold";
-    ctx.fillText(grade, 221, 387);
+    ctx.fillText(grade, 221, 405);
 
     ctx.font = "11px Arial-Bold";
-    ctx.fillText("JUNE-" + startYear, 329, 387);
-    ctx.fillText("APRIL-" + endYear, 419, 387);
+    ctx.fillText("JUNE-" + startYear, 329, 404);
+    ctx.fillText("APRIL-" + endYear, 419, 404);
 
     ctx.font = "10px Arial-Bold";
     ctx.fillText(String(certificateNum), 105, 624);
@@ -587,19 +703,19 @@ const buildCertificateOverlayPng = async ({
   } else if (tempType == 2) { // Muallama
     ctx.textAlign = "center";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 20, 333);
-    ctx.fillText(fatherName, centerX - 70, 354);
+    ctx.fillText(name, centerX - 20, 346);
+    ctx.fillText(fatherName, centerX - 70, 367);
 
     ctx.textAlign = "start";
     ctx.font = "11px Arial-Bold";
-    ctx.fillText(rollNumber, 476, 334);
+    ctx.fillText(rollNumber, 476, 347);
 
     ctx.font = "12px Arial-Bold";
-    ctx.fillText(grade, 221, 374);
+    ctx.fillText(grade, 221, 387);
 
     ctx.font = "11px Arial-Bold";
-    ctx.fillText("JUNE-" + startYear, 329, 374);
-    ctx.fillText("APRIL-" + endYear, 419, 374);
+    ctx.fillText("JUNE-" + startYear, 329, 387);
+    ctx.fillText("APRIL-" + endYear, 419, 387);
 
     ctx.font = "10px Arial-Bold";
     ctx.fillText(String(certificateNum), 105, 624);
@@ -749,7 +865,7 @@ const addCertificate = async (req, res) => {
     }
 
     let certificateNum;
-    if (tempType != 1) {
+    if (tempType != 1) { // Not Makthab
       const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
       // if (cert) {
       //   return res.status(404).json({
