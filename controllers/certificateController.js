@@ -5,6 +5,7 @@ import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
 import Academic from "../models/Academic.js";
+import Numbering from "../models/Numbering.js";
 import { createCanvas, registerFont } from "canvas";
 
 import { google } from "googleapis";
@@ -246,6 +247,52 @@ const fetchBinary = async (url) => {
   return Buffer.from(arrayBuffer);
 };
 
+// Certificate number logic.
+const padSerialNumber = (value, length = 6) => {
+  return String(value || 0).padStart(length, "0");
+};
+
+const getCertificateNumberMeta = (tempType) => {
+  const type = Number(tempType);
+
+  if (type === 3) {
+    return { name: "Muballiga", prefix: "MB" };
+  }
+
+  if (type === 2) {
+    return { name: "Muallama", prefix: "MA" };
+  }
+
+  return { name: "Makthab", prefix: "MK" };
+};
+
+const getNextCertificateNumber = async (tempType) => {
+  const { name, prefix } = getCertificateNumberMeta(tempType);
+  const currentYear = new Date().getFullYear();
+
+  const numbering = await Numbering.findOneAndUpdate(
+    { name },
+    {
+      $inc: { currentNumber: 1 },
+      $set: { updatedAt: new Date() },
+      $setOnInsert: {
+        name,
+        createAt: new Date(),
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+
+  if (!numbering) {
+    throw new Error(`Unable to generate certificate number for ${name}.`);
+  }
+
+  return `${prefix}${currentYear}${padSerialNumber(numbering.currentNumber, 6)}`;
+};
+
 // ---------------- Font cache for complex-script overlay only ----------------
 const registeredFontFamilies = new Set();
 
@@ -392,15 +439,37 @@ const buildCertificateComplexHeaderOverlayPng = async ({
     });
   };
 
+  // const drawNative = (text, y, size) => {
+  //   drawCenteredText({
+  //     text,
+  //     y,
+  //     size,
+  //     fontFamily: "Nirmalab",
+  //     weight: "bold",
+  //     color: "rgb(161, 14, 94)",
+  //     repeat: 3,
+  //   });
+  // };
+
   const drawNative = (text, y, size) => {
-    drawCenteredText({
-      text,
-      y,
-      size,
-      fontFamily: "Nirmalab",
-      //weight: "bold",
-      color: "rgb(161, 14, 94)",
-      repeat: 3,
+    if (!text) return;
+
+    const finalText = String(text);
+    ctx.font = `${size}px Nirmalab`;
+    ctx.fillStyle = "rgb(161, 14, 94)";
+    ctx.textAlign = "center";
+
+    // draw multiple times with tiny offsets to make it look bolder
+    const offsets = [
+      [0, 0],
+      [-0.4, 0],
+      [0.4, 0],
+      [0, -0.25],
+      [0, 0.25],
+    ];
+
+    offsets.forEach(([dx, dy]) => {
+      ctx.fillText(finalText, centerX + dx, y + dy);
     });
   };
 
@@ -926,12 +995,14 @@ const addCertificate = async (req, res) => {
       tempType = 3; // Muballiga
     }
 
-    let certificateNum;
-    if (tempType != 1) {
-      const lastCertificate = await Certificate.findOne({}).sort({ _id: -1 }).limit(1);
-      if (lastCertificate) certificateNum = Number(lastCertificate.code) + 1;
-      else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
-    }
+    // let certificateNum;
+    // if (tempType != 1) {
+    //   const lastCertificate = await Certificate.findOne({}).sort({ _id: -1 }).limit(1);
+    //   if (lastCertificate) certificateNum = Number(lastCertificate.code) + 1;
+    //   else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
+    // }
+
+    const certificateNum = await getNextCertificateNumber(tempType);
 
     const parseCertificateIssueDate = (value) => {
       if (!value) return null;
@@ -985,10 +1056,7 @@ const addCertificate = async (req, res) => {
       };
     };
 
-    //console.log("issueDate : " + issueDate);
-
     const parsedIssueDate = parseCertificateIssueDate(issueDate);
-
     if (!parsedIssueDate) {
       return res.status(400).json({
         success: false,
@@ -999,13 +1067,10 @@ const addCertificate = async (req, res) => {
     const issueDateObj = parsedIssueDate.dateObj;
     const issueDateText = parsedIssueDate.issueDateText;
 
-    //console.log("issueDateObj : ", issueDateObj);
-    //console.log("issueDateText : " + issueDateText);
-
     const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
     const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
 
-    const baseFileName = `${template.courseId.name}_${rollNumber}_${name}_${new Date().getTime()}`
+    const baseFileName = `${certificateNum}_${rollNumber}_${name}_${new Date().getTime()}`
       .replace(/\s+/g, "_")
       .replace(/[^\w.-]/g, "");
 
