@@ -16,7 +16,7 @@ import * as fs from "fs";
 import * as path from "path";
 import getRedis from "../db/redis.js";
 
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const upload = multer({});
 
@@ -246,7 +246,7 @@ const fetchBinary = async (url) => {
   return Buffer.from(arrayBuffer);
 };
 
-// ---------------- Font cache for canvas overlay ----------------
+// ---------------- Font cache for complex-script overlay only ----------------
 const registeredFontFamilies = new Set();
 
 const ensureFontRegistered = async ({ url, fileName, family }) => {
@@ -276,23 +276,12 @@ const ensureFontRegistered = async ({ url, fileName, family }) => {
 
 const prepareCanvasFonts = async () => {
   try {
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/Nirmalab.ttc",
-      fileName: "Nirmalab.ttc",
-      family: "Nirmala",
-    });
-
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/DUBAI-REGULAR.TTF",
-      fileName: "DUBAI-REGULAR.TTF",
-      family: "DUBAI-REGULAR",
-    });
-
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/arial.ttf",
-      fileName: "Arial.ttf",
-      family: "Arial",
-    });
+    // Only fonts really used for complex-script header overlay
+    // await ensureFontRegistered({
+    //   url: "https://www.unis.org.in/Nirmalab.ttc",
+    //   fileName: "Nirmalab.ttc",
+    //   family: "Nirmala",
+    // });
 
     await ensureFontRegistered({
       url: "https://www.unis.org.in/arialbd.ttf",
@@ -301,33 +290,15 @@ const prepareCanvasFonts = async () => {
     });
 
     await ensureFontRegistered({
-      url: "https://www.unis.org.in/COMICZ.TTF",
-      fileName: "COMICZ.TTF",
-      family: "Comic",
-    });
-
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/Amiri-Regular.ttf",
-      fileName: "Amiri-Regular.ttf",
-      family: "Amiri",
+      url: "https://www.unis.org.in/Nirmalab.ttc",
+      fileName: "Nirmalab.ttc",
+      family: "Nirmalab",
     });
 
     await ensureFontRegistered({
       url: "https://www.unis.org.in/Amiri-Bold.ttf",
       fileName: "Amiri-Bold.ttf",
       family: "Amiri Bold",
-    });
-
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/NotoNaskhArabic-Regular.ttf",
-      fileName: "NotoNaskhArabic-Regular.ttf",
-      family: "Noto Naskh Arabic",
-    });
-
-    await ensureFontRegistered({
-      url: "https://www.unis.org.in/georgiab.ttf",
-      fileName: "georgiab.ttf",
-      family: "georgiab",
     });
   } catch (error) {
     throw new Error("Font setting Error. " + error.toString());
@@ -336,8 +307,6 @@ const prepareCanvasFonts = async () => {
 
 const formatArabicForCanvas = (text = "") => {
   const str = String(text).trim();
-
-  // Wrap with RTL embedding marks
   return `\u202B${str}\u202C`;
 };
 
@@ -351,35 +320,28 @@ const prepareArabicText = (text = "") => {
   return formatArabicForCanvas(fixArabicBrackets(text));
 };
 
-// ---------------- Canvas text helpers ----------------
-const measureAndFit = (ctx, text, family, startSize, maxWidth, minSize = 8, weight = "") => {
-  let size = startSize;
-  const value = String(text || "");
+const getCertificateHeaderPositions = (tempType, hasNative) => {
+  const isMakthab = Number(tempType) === 1;
 
-  while (size > minSize) {
-    ctx.font = `${weight ? weight + " " : ""}${size}px ${family}`;
-    const w = ctx.measureText(value).width;
-    if (w <= maxWidth) break;
-    size -= 1;
+  if (isMakthab) {
+    return hasNative
+      ? { arabic: 122, native: 147, english: 164, address: 179 }
+      : { arabic: 115, english: 143, address: 160 };
   }
 
-  return size;
+  return hasNative
+    ? { arabic: 95, native: 119, english: 135, address: 150 }
+    : { arabic: 100, english: 128, address: 145 };
 };
 
-// High-resolution transparent overlay for all dynamic text
-const buildCertificateOverlayPng = async ({
+// Only Arabic/native complex text is rendered as high-resolution overlay.
+// English/body text will be drawn directly on PDF as vector text.
+const buildCertificateComplexHeaderOverlayPng = async ({
   width,
   height,
   school,
-  student,
-  startYear,
-  endYear,
-  certificateNum,
-  dat,
-  issueDateText,
   tempType,
-  grade,
-  scale = 3,
+  scale = 5,
 }) => {
   const canvas = createCanvas(width * scale, height * scale);
   const ctx = canvas.getContext("2d");
@@ -391,30 +353,11 @@ const buildCertificateOverlayPng = async ({
 
   const centerX = width / 2;
 
-  // Header texts
   const nameArabic = school?.nameArabic ? String(school.nameArabic) : "";
   const nameNative = school?.nameNative ? String(school.nameNative) : "";
-  const nameEnglish = school?.nameEnglish ? String(school.nameEnglish).toUpperCase() : "";
-  const addressLine = [
-    school?.address,
-    school?.city,
-    school?.districtStateId?.district,
-    school?.districtStateId?.state,
-  ]
-    .map((v) => String(v || "").trim())
-    .filter(Boolean)
-    .join(", ");
-
-  const isMakthab = Number(tempType) === 1;
   const hasNative = Boolean(nameNative);
 
-  const positions = isMakthab
-    ? hasNative
-      ? { arabic: 122, native: 147, english: 164, address: 179 }
-      : { arabic: 115, english: 143, address: 160 }
-    : hasNative
-      ? { arabic: 93, native: 116, english: 135, address: 150 }
-      : { arabic: 100, english: 128, address: 145 };
+  const positions = getCertificateHeaderPositions(tempType, hasNative);
 
   const drawCenteredText = ({
     text,
@@ -454,78 +397,165 @@ const buildCertificateOverlayPng = async ({
       text,
       y,
       size,
-      fontFamily: "Nirmala",
-      weight: "bold",
+      fontFamily: "Nirmalab",
+      //weight: "bold",
       color: "rgb(161, 14, 94)",
       repeat: 3,
     });
   };
 
-  const drawEnglishFixed = (text, y, size) => {
-    drawCenteredText({
-      text,
-      y,
-      size,
-      fontFamily: "Arial-bold",
-      weight: "bold",
-      color: "rgb(14, 84, 49)",
-      repeat: 2,
-    });
-  };
-
-  const drawEnglishFitted = (text, y) => {
-    if (!text) return;
-
-    const englishSize = measureAndFit(
-      ctx,
-      text,
-      "Arial",
-      15,
-      width * 0.78,
-      10,
-      "bold"
-    );
-
-    drawCenteredText({
-      text,
-      y,
-      size: englishSize,
-      fontFamily: "Arial",
-      weight: "bold",
-      color: "rgb(161, 14, 94)",
-      repeat: 2,
-    });
-  };
-
-  const drawAddress = (text, y, size) => {
-    drawCenteredText({
-      text,
-      y,
-      size,
-      fontFamily: "Arial-bold",
-      weight: "bold",
-      color: "rgb(4, 25, 93)",
-    });
-  };
-
-  if (hasNative) {
-    drawArabic(nameArabic, positions.arabic, 19);
-    if (isMakthab) {
-      drawNative(nameNative, positions.native, 12);
-      drawEnglishFixed(nameEnglish, positions.english, 11.5);
-    } else {
-      drawNative(nameNative, positions.native, 13);
-      drawEnglishFixed(nameEnglish, positions.english, 12);
-    }
-
-    drawAddress(addressLine, positions.address, 9);
-  } else {
-    drawArabic(nameArabic, positions.arabic, 21);
-    drawEnglishFitted(nameEnglish, positions.english);
-    drawAddress(addressLine, positions.address, 10);
+  if (nameArabic) {
+    drawArabic(nameArabic, positions.arabic, hasNative ? 19 : 21);
   }
 
-  // Body texts
+  if (hasNative) {
+    drawNative(nameNative, positions.native, Number(tempType) === 1 ? 12 : 13);
+  }
+
+  return canvas.toBuffer("image/png");
+};
+
+// ---------------- Direct PDF text helpers ----------------
+const PDF_COLOR_GREEN = rgb(14 / 255, 84 / 255, 49 / 255);
+const PDF_COLOR_MAGENTA = rgb(161 / 255, 14 / 255, 94 / 255);
+const PDF_COLOR_DARK_BLUE = rgb(4 / 255, 25 / 255, 93 / 255);
+const PDF_COLOR_BODY_BLUE = rgb(14 / 255, 56 / 255, 194 / 255);
+
+const fitPdfFontSize = (font, text, startSize, maxWidth, minSize = 8) => {
+  const value = String(text || "");
+  let size = startSize;
+
+  while (size > minSize) {
+    const width = font.widthOfTextAtSize(value, size);
+    if (width <= maxWidth) break;
+    size -= 0.5;
+  }
+
+  return size;
+};
+
+// Canvas used top-left with alphabetic baseline.
+// This helper converts the same visual Y into PDF coordinate space.
+const pdfYFromCanvasBaseline = (pageHeight, yFromTop, fontSize) => {
+  return pageHeight - yFromTop - fontSize * 0.22;
+};
+
+const drawPdfText = ({
+  page,
+  text,
+  x,
+  yFromTop,
+  size,
+  font,
+  color,
+  align = "left",
+  maxWidth,
+}) => {
+  const value = String(text || "").trim();
+  if (!value) return;
+
+  const finalSize = maxWidth
+    ? fitPdfFontSize(font, value, size, maxWidth, 8)
+    : size;
+
+  const textWidth = font.widthOfTextAtSize(value, finalSize);
+
+  let drawX = x;
+  if (align === "center") drawX = x - textWidth / 2;
+  if (align === "right") drawX = x - textWidth;
+
+  const drawY = pdfYFromCanvasBaseline(page.getHeight(), yFromTop, finalSize);
+
+  page.drawText(value, {
+    x: drawX,
+    y: drawY,
+    size: finalSize,
+    font,
+    color,
+  });
+
+  return finalSize;
+};
+
+const drawCertificateVectorTexts = async ({
+  outputPdf,
+  page,
+  school,
+  student,
+  startYear,
+  endYear,
+  certificateNum,
+  issueDateText,
+  tempType,
+  grade,
+}) => {
+  const helveticaBold = await outputPdf.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = page.getWidth();
+  const centerX = pageWidth / 2;
+
+  // ---------- Header English / address ----------
+  const nameEnglish = school?.nameEnglish
+    ? String(school.nameEnglish).toUpperCase()
+    : "";
+
+  const addressLine = [
+    school?.address,
+    school?.city,
+    school?.districtStateId?.district,
+    school?.districtStateId?.state,
+  ]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+  const hasNative = Boolean(String(school?.nameNative || "").trim());
+  const positions = getCertificateHeaderPositions(tempType, hasNative);
+  const isMakthab = Number(tempType) === 1;
+
+  if (nameEnglish) {
+    if (hasNative) {
+      drawPdfText({
+        page,
+        text: nameEnglish,
+        x: centerX,
+        yFromTop: positions.english,
+        size: isMakthab ? 11.5 : 12,
+        font: helveticaBold,
+        color: PDF_COLOR_GREEN,
+        align: "center",
+        maxWidth: pageWidth * 0.86,
+      });
+    } else {
+      drawPdfText({
+        page,
+        text: nameEnglish,
+        x: centerX,
+        yFromTop: positions.english,
+        size: 15,
+        font: helveticaBold,
+        color: PDF_COLOR_MAGENTA,
+        align: "center",
+        maxWidth: pageWidth * 0.78,
+      });
+    }
+  }
+
+  if (addressLine) {
+    drawPdfText({
+      page,
+      text: addressLine,
+      x: centerX,
+      yFromTop: positions.address,
+      size: hasNative ? 9 : 10,
+      font: helveticaBold,
+      color: PDF_COLOR_DARK_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.84,
+    });
+  }
+
+  // ---------- Body ----------
   const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
   const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
   const fatherName = student?.fatherName
@@ -536,70 +566,247 @@ const buildCertificateOverlayPng = async ({
         ? String(student.guardianName).toUpperCase()
         : "";
 
-  ctx.fillStyle = "rgb(14, 56, 194)";
+  if (tempType == 3) {
+    // Muballiga
+    drawPdfText({
+      page,
+      text: name,
+      x: centerX - 20,
+      yFromTop: 360.5,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.55,
+    });
 
-  if (tempType == 3) { // Muballiga
-    ctx.textAlign = "center";
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 20, 362);
-    ctx.fillText(fatherName, centerX - 70, 383);
+    drawPdfText({
+      page,
+      text: fatherName,
+      x: centerX - 70,
+      yFromTop: 381.5,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.45,
+    });
 
-    ctx.textAlign = "start";
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText(rollNumber, 475, 362);
+    drawPdfText({
+      page,
+      text: rollNumber,
+      x: 477,
+      yFromTop: 361,
+      size: 12,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 104,
+    });
 
-    ctx.font = "12px Arial-Bold";
-    ctx.fillText(grade, 221, 405);
+    drawPdfText({
+      page,
+      text: grade,
+      x: 221,
+      yFromTop: 403.5,
+      size: 12,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 60,
+    });
 
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText("JUNE-" + startYear, 329, 404);
-    ctx.fillText("APRIL-" + endYear, 419, 404);
+    drawPdfText({
+      page,
+      text: `JUNE-${startYear}`,
+      x: 329,
+      yFromTop: 401.5,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 80,
+    });
 
-    ctx.font = "10px Arial-Bold";
-    ctx.fillText(String(certificateNum), 105, 624);
-    ctx.fillText(issueDateText, 105, 637);
+    drawPdfText({
+      page,
+      text: `APRIL-${endYear}`,
+      x: 419,
+      yFromTop: 401.5,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
 
-  } else if (tempType == 2) { // Muallama
-    ctx.textAlign = "center";
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 20, 346);
-    ctx.fillText(fatherName, centerX - 70, 367);
+    drawPdfText({
+      page,
+      text: String(certificateNum),
+      x: 105,
+      yFromTop: 622,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 80,
+    });
 
-    ctx.textAlign = "start";
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText(rollNumber, 476, 347);
+    drawPdfText({
+      page,
+      text: issueDateText,
+      x: 105,
+      yFromTop: 635,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
+  } else if (tempType == 2) {
+    // Muallama
+    drawPdfText({
+      page,
+      text: name,
+      x: centerX - 20,
+      yFromTop: 346,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.55,
+    });
 
-    ctx.font = "12px Arial-Bold";
-    ctx.fillText(grade, 221, 387);
+    drawPdfText({
+      page,
+      text: fatherName,
+      x: centerX - 70,
+      yFromTop: 367,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.45,
+    });
 
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText("JUNE-" + startYear, 329, 387);
-    ctx.fillText("APRIL-" + endYear, 419, 387);
+    drawPdfText({
+      page,
+      text: rollNumber,
+      x: 476,
+      yFromTop: 347,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
 
-    ctx.font = "10px Arial-Bold";
-    ctx.fillText(String(certificateNum), 105, 624);
-    ctx.fillText(issueDateText, 105, 637);
+    drawPdfText({
+      page,
+      text: grade,
+      x: 221,
+      yFromTop: 387,
+      size: 12,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 60,
+    });
 
-  } else { // Makthab
-    ctx.textAlign = "center";
-    ctx.font = "11px Arial-Bold";
-    ctx.fillText(name, centerX - 15, 385);
-    ctx.fillText(fatherName, centerX - 45, 407);
+    drawPdfText({
+      page,
+      text: `JUNE-${startYear}`,
+      x: 329,
+      yFromTop: 387,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 80,
+    });
 
-    ctx.textAlign = "start";
-    ctx.font = "10.5px Arial-Bold";
-    ctx.fillText(rollNumber, 480, 385);
+    drawPdfText({
+      page,
+      text: `APRIL-${endYear}`,
+      x: 419,
+      yFromTop: 387,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
 
-    ctx.font = "12px Arial-Bold";
-    //ctx.fillText(grade, 540, 408);
+    drawPdfText({
+      page,
+      text: String(certificateNum),
+      x: 105,
+      yFromTop: 624,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 80,
+    });
 
-    ctx.fillText(String(new Date().getFullYear()), 235, 448);
+    drawPdfText({
+      page,
+      text: issueDateText,
+      x: 105,
+      yFromTop: 637,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
+  } else {
+    // Makthab
+    drawPdfText({
+      page,
+      text: name,
+      x: centerX - 15,
+      yFromTop: 385,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.58,
+    });
 
-    ctx.font = "10px Arial-Bold";
-    ctx.fillText(issueDateText, 105, 616);
+    drawPdfText({
+      page,
+      text: fatherName,
+      x: centerX - 45,
+      yFromTop: 407,
+      size: 11,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      align: "center",
+      maxWidth: pageWidth * 0.48,
+    });
+
+    drawPdfText({
+      page,
+      text: rollNumber,
+      x: 480,
+      yFromTop: 385,
+      size: 10.5,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
+
+    drawPdfText({
+      page,
+      text: String(new Date().getFullYear()),
+      x: 235,
+      yFromTop: 448,
+      size: 12,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 60,
+    });
+
+    drawPdfText({
+      page,
+      text: issueDateText,
+      x: 105,
+      yFromTop: 616,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 90,
+    });
   }
-
-  return canvas.toBuffer("image/png");
 };
 
 // ---------------- PDF template loader ----------------
@@ -614,11 +821,10 @@ const addCertificate = async (req, res) => {
   try {
     const { templateId, schoolId, studentId, issueDate } = req.body;
 
-    const template = await Template.findById({ _id: templateId })
-      .populate({
-        path: "courseId",
-        select: "_id name",
-      });
+    const template = await Template.findById({ _id: templateId }).populate({
+      path: "courseId",
+      select: "_id name",
+    });
 
     if (!template) {
       return res.status(404).json({ success: false, error: "Template not found." });
@@ -631,20 +837,19 @@ const addCertificate = async (req, res) => {
       });
     }
 
-    const school = await School.findById({ _id: schoolId })
-      .populate({
-        path: "districtStateId",
-        select: "district state",
-      });
+    const school = await School.findById({ _id: schoolId }).populate({
+      path: "districtStateId",
+      select: "district state",
+    });
+
     if (!school) {
       return res.status(404).json({ success: false, error: "School not found." });
     }
 
-    const student = await Student.findById({ _id: studentId })
-      .populate("userId", {
-        password: 0,
-        profileImage: 0,
-      });
+    const student = await Student.findById({ _id: studentId }).populate("userId", {
+      password: 0,
+      profileImage: 0,
+    });
 
     if (!student) {
       return res.status(404).json({ success: false, error: "Student not found." });
@@ -665,7 +870,10 @@ const addCertificate = async (req, res) => {
       .populate({ path: "acYear", select: "acYear" });
 
     if (!academicStart || !academicStart.acYear || !academicStart.acYear.acYear) {
-      return res.status(404).json({ success: false, error: "Academics not found for the Student." });
+      return res.status(404).json({
+        success: false,
+        error: "Academics not found for the Student.",
+      });
     }
 
     const academicEnd = await Academic.findOne({
@@ -686,7 +894,6 @@ const addCertificate = async (req, res) => {
       return res.status(404).json({ success: false, error: "Academic end year not found." });
     }
 
-    //console.log("Grade : " + academicEnd)
     const getIdValue = (value) => {
       if (!value) return "";
       if (typeof value === "string") return value;
@@ -709,43 +916,22 @@ const addCertificate = async (req, res) => {
       }
     }
 
-    //console.log("targetCourseId:", targetCourseId);
-    //console.log("matchedIndex:", matchedIndex);
-    //console.log("Grade:", grade);
-
     const startYear = academicStart.acYear.acYear.substr(0, 4);
     const endYear = academicEnd.acYear.acYear.substr(5, 4);
 
-    let tempType = 1; //Makthab
+    let tempType = 1; // Makthab
     if (template.courseId.name.includes("Muallama")) {
-      tempType = 2; //Muallama
+      tempType = 2; // Muallama
     } else if (template.courseId.name.includes("Muballiga")) {
-      tempType = 3; //Muballiga
+      tempType = 3; // Muballiga
     }
 
     let certificateNum;
-    if (tempType != 1) { // Not Makthab
-      const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-      // if (cert) {
-      //   return res.status(404).json({
-      //     success: false,
-      //     error: "Certificate Already Found. No : " + cert.code,
-      //   });
-      // }
-
+    if (tempType != 1) {
       const lastCertificate = await Certificate.findOne({}).sort({ _id: -1 }).limit(1);
       if (lastCertificate) certificateNum = Number(lastCertificate.code) + 1;
       else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
     }
-
-    // const issueDateObj = new Date(issueDate);
-    // if (Number.isNaN(issueDateObj.getTime())) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     error: "Invalid certificate issue date.",
-    //   });
-    // }
-    // const issueDateText = issueDateObj.toLocaleDateString("en-GB");
 
     const parseCertificateIssueDate = (value) => {
       if (!value) return null;
@@ -799,7 +985,7 @@ const addCertificate = async (req, res) => {
       };
     };
 
-    console.log("issueDate : " + issueDate);
+    //console.log("issueDate : " + issueDate);
 
     const parsedIssueDate = parseCertificateIssueDate(issueDate);
 
@@ -813,22 +999,17 @@ const addCertificate = async (req, res) => {
     const issueDateObj = parsedIssueDate.dateObj;
     const issueDateText = parsedIssueDate.issueDateText;
 
-    console.log("issueDateObj : ", issueDateObj);
-    console.log("issueDateText : " + issueDateText);
+    //console.log("issueDateObj : ", issueDateObj);
+    //console.log("issueDateText : " + issueDateText);
 
-    const dat = new Date().toLocaleDateString();
+    const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
+    const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
 
-    const name = student?.userId?.name ? student.userId.name.toUpperCase() : "";
-    const rollNumber = student?.rollNumber ? student.rollNumber.toUpperCase() : "";
-
-    const baseFileName =
-      `${template.courseId.name}_${rollNumber}_${name}_${new Date().getTime()}`
-        .replace(/\s+/g, "_")
-        .replace(/[^\w.-]/g, "");
+    const baseFileName = `${template.courseId.name}_${rollNumber}_${name}_${new Date().getTime()}`
+      .replace(/\s+/g, "_")
+      .replace(/[^\w.-]/g, "");
 
     const fileName = `${baseFileName}.pdf`;
-
-    await prepareCanvasFonts();
 
     // Load PDF template as base
     const templatePdf = await loadTemplatePdf(template.template);
@@ -841,33 +1022,49 @@ const addCertificate = async (req, res) => {
     const pageWidth = Math.round(page.getWidth());
     const pageHeight = Math.round(page.getHeight());
 
-    // Build sharp transparent overlay
-    const overlayPngBuffer = await buildCertificateOverlayPng({
-      width: pageWidth,
-      height: pageHeight,
+    // 1) Complex-script header overlay only (Arabic / native)
+    //    Keep this as high-resolution PNG to avoid shaping issues.
+    const hasComplexHeaderText =
+      Boolean(String(school?.nameArabic || "").trim()) ||
+      Boolean(String(school?.nameNative || "").trim());
+
+    if (hasComplexHeaderText) {
+      await prepareCanvasFonts();
+
+      const overlayPngBuffer = await buildCertificateComplexHeaderOverlayPng({
+        width: pageWidth,
+        height: pageHeight,
+        school,
+        tempType,
+        scale: 5,
+      });
+
+      const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
+      page.drawImage(overlayImage, {
+        x: 0,
+        y: 0,
+        width: pageWidth,
+        height: pageHeight,
+      });
+    }
+
+    // 2) Draw English/body text directly on PDF as vector text
+    await drawCertificateVectorTexts({
+      outputPdf,
+      page,
       school,
       student,
       startYear,
       endYear,
       certificateNum,
-      dat,
       issueDateText,
       tempType,
       grade,
-      scale: 3,
-    });
-
-    const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
-    page.drawImage(overlayImage, {
-      x: 0,
-      y: 0,
-      width: pageWidth,
-      height: pageHeight,
     });
 
     const pdfBytes = Buffer.from(await outputPdf.save());
 
-    if (tempType != 1) { // != Makthab
+    if (tempType != 1) {
       const outName = buildTimestampedName(fileName);
 
       const uploaded = await runWithDriveRetry(async (drive) => {
@@ -887,7 +1084,7 @@ const addCertificate = async (req, res) => {
         courseId: template.courseId._id,
         studentId: studentId,
         schoolId: schoolId,
-        userId: student.userId,
+        userId: student?.userId?._id || student?.userId,
         certificate: uploaded.previewUrl,
         certificateDriveFileId: uploaded.fileId,
         certificateDriveViewUrl: uploaded.viewUrl,
@@ -971,17 +1168,32 @@ const getByCertFilter = async (req, res) => {
   try {
     let filterQuery = Certificate.find().select("code issueDate");
 
-    if (certSchoolId && certSchoolId?.length > 0 && certSchoolId !== "null" && certSchoolId !== "undefined") {
+    if (
+      certSchoolId &&
+      certSchoolId?.length > 0 &&
+      certSchoolId !== "null" &&
+      certSchoolId !== "undefined"
+    ) {
       console.log("School Id Added : " + certSchoolId);
       filterQuery = filterQuery.where("schoolId").in(certSchoolId);
     }
 
-    if (certCourseId && certCourseId?.length > 0 && certCourseId !== "null" && certCourseId !== "undefined") {
+    if (
+      certCourseId &&
+      certCourseId?.length > 0 &&
+      certCourseId !== "null" &&
+      certCourseId !== "undefined"
+    ) {
       console.log("Course Id Added : " + certCourseId);
       filterQuery = filterQuery.where("courseId").in(certCourseId);
     }
 
-    if (certACYearId && certACYearId?.length > 0 && certACYearId !== "null" && certACYearId !== "undefined") {
+    if (
+      certACYearId &&
+      certACYearId?.length > 0 &&
+      certACYearId !== "null" &&
+      certACYearId !== "undefined"
+    ) {
       console.log("acYear Added : " + certACYearId);
 
       const academics = await Academic.find({ acYear: certACYearId });
@@ -1005,7 +1217,10 @@ const getByCertFilter = async (req, res) => {
     return res.status(200).json({ success: true, certificates });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({ success: false, error: "get Certificates by FILTER server error" });
+    return res.status(500).json({
+      success: false,
+      error: "get Certificates by FILTER server error",
+    });
   }
 };
 
@@ -1013,7 +1228,9 @@ const getCertificate = async (req, res) => {
   const { id } = req.params;
   try {
     const certificate = await Certificate.findById({ _id: id })
-      .select("code issueDate certificate certificateDriveFileId certificateDriveViewUrl certificateDriveDownloadUrl certificateDrivePreviewUrl certificateFileName")
+      .select(
+        "code issueDate certificate certificateDriveFileId certificateDriveViewUrl certificateDriveDownloadUrl certificateDrivePreviewUrl certificateFileName"
+      )
       .populate({ path: "templateId", select: "code" })
       .populate({ path: "courseId", select: "name" })
       .populate({ path: "studentId", select: "rollNumber fatherName motherName guardianName" })
