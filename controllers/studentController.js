@@ -195,78 +195,6 @@ const createFeesInvoiceSafe = async ({
     return inv?.[0] || null;
   }
 };
-{/*const createFeesInvoiceSafe = async ({
-  schoolId,
-  studentId,
-  userId,
-  acYear,
-  academicId,
-  courseId,
-  totalFees,
-  source = "ADMISSION",
-  createdBy,
-  session,
-}) => {
-  const fees = Number(totalFees || 0);
-  if (!Number.isFinite(fees) || fees <= 0) return null;
-
-  try {
-    // Preferred: uses FeeStructure + proper heads + numbering service
-    const inv = await createInvoiceFromStructure({
-      schoolId,
-      studentId,
-      userId,
-      acYear,
-      academicId,
-      courseId,
-      source,
-      createdBy,
-      session,
-    });
-    return inv;
-  } catch (e) {
-    // Fallback: create a simple invoice with 1 head (TOTAL)
-    const invoiceNo = await getNextNumber({ name: "Invoice", prefix: "INV", pad: 7 });
-
-    const items = [
-      {
-        headCode: "TOTAL",
-        headName: "Course Fees",
-        amount: fees,
-        discount: 0,
-        fine: 0,
-        netAmount: fees,
-        paidAmount: 0,
-      },
-    ];
-
-    const inv = await FeeInvoice.create(
-      [
-        {
-          invoiceNo,
-          schoolId,
-          studentId,
-          userId,
-          acYear,
-          academicId,
-          courseId,
-          source,
-          items,
-          total: fees,
-          paidTotal: 0,
-          balance: fees,
-          status: "ISSUED",
-          createdBy,
-          notes: e?.message ? `Fallback invoice: ${e.message}` : "Fallback invoice",
-        },
-      ],
-      { session }
-    );
-
-    return inv?.[0] || null;
-  }
-};
-*/}
 
 /* ----------------------- Fees helpers for multi-course slots ----------------------- */
 // ✅ MODIFIED: support 1..5 course slots in update/promote flows
@@ -650,6 +578,574 @@ const addStudent = async (req, res) => {
 
 const activeStudentImports = new Set();
 
+const importStudentsData = async (req, res) => {
+  const NL = "\r\n"; // Notepad-friendly new line (Windows)
+
+  let importedCount = 0;
+  let duplicateCount = 0;
+  let invalidCount = 0;
+  let failedCount = 0;
+  let finalResultData = "";
+
+  let totalStudentsBefore = 0;
+  let totalStudentsAfter = 0;
+  let matchedAfterImport = 0;
+  let existingStudentsMatchedBefore = 0;
+
+  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
+  const VALID_COURSE_NAMES = new Set([
+    "Muballiga",
+    "Muallama",
+    "Makthab_Level1",
+    "Makthab_Level2",
+    "Makthab_Level3",
+  ]);
+
+  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
+
+  const normalizeHeaderKey = (key) =>
+    String(key || "")
+      .trim()
+      .replace(/[\s_]+/g, "")
+      .toLowerCase();
+
+  const getRowValue = (row, candidateKeys = []) => {
+    if (!row || typeof row !== "object") return "";
+
+    const normalizedRow = new Map(
+      Object.keys(row).map((key) => [normalizeHeaderKey(key), row[key]])
+    );
+
+    for (const candidateKey of candidateKeys) {
+      const value = normalizedRow.get(normalizeHeaderKey(candidateKey));
+
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        return value;
+      }
+    }
+
+    return "";
+  };
+
+  const getMakthabCourseNameByYear = (yearCount) => {
+    const year = Number(yearCount);
+
+    if (year >= 1 && year <= 3) return "Makthab_Level1";
+    if (year >= 4 && year <= 6) return "Makthab_Level2";
+    if (year >= 7 && year <= 9) return "Makthab_Level3";
+
+    return "";
+  };
+
+  const normalizeRoll = (v) => safeStr(v).toUpperCase();
+
+  const parseNumber = (v, def = 0) => {
+    const s = safeStr(v);
+    if (!s) return def;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : def;
+  };
+
+  const isDuplicateKeyError = (err) => {
+    return (
+      err?.code === 11000 ||
+      String(err?.message || "").toLowerCase().includes("duplicate key error")
+    );
+  };
+
+  const extractCourseYearFromRow = (row) => {
+    const mak = parseNumber(getRowValue(row, ["Makthab"]), 0) === 1;
+    const mua = parseNumber(getRowValue(row, ["Muallama"]), 0) === 1;
+    const mub = parseNumber(getRowValue(row, ["Muballiga"]), 0) === 1;
+
+    const selected = [mak, mua, mub].filter(Boolean).length;
+
+    if (selected === 0) {
+      return {
+        error: "Course not selected (Makthab/Muallama/Muballiga should be 1)",
+      };
+    }
+
+    if (selected > 1) {
+      return {
+        error: "Multiple courses selected. Only one course should be 1 per row.",
+      };
+    }
+
+    if (mak) {
+      const rawMakthabYear = getRowValue(row, [
+        "MakthabYear",
+        "Makthab Year",
+        "makthab_year",
+        "makthabyear",
+      ]);
+
+      const y = parseNumber(rawMakthabYear, 0);
+
+      if (y <= 0) {
+        return { error: "MakthabYear not given/invalid" };
+      }
+
+      const makthabCourseName = getMakthabCourseNameByYear(y);
+
+      if (!makthabCourseName) {
+        return { error: "MakthabYear should be between 1 and 9" };
+      }
+
+      return {
+        courseName: makthabCourseName,
+        yearCount: y,
+      };
+    }
+
+    if (mua) {
+      const rawMuallamaYear = getRowValue(row, [
+        "MuallamaYear",
+        "Muallama Year",
+        "muallama_year",
+        "muallamayear",
+      ]);
+
+      const y = parseNumber(rawMuallamaYear, 0);
+
+      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
+
+      return { courseName: "Muallama", yearCount: y };
+    }
+
+    const rawMuballigaYear = getRowValue(row, [
+      "MuballigaYear",
+      "Muballiga Year",
+      "muballiga_year",
+      "muballigayear",
+    ]);
+
+    const y = parseNumber(rawMuballigaYear, 0);
+
+    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
+
+    return { courseName: "Muballiga", yearCount: y };
+  };
+
+  const requestId = `IMP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const importLockKey = `student-import-${req.user?._id || req.user?.id || "anonymous"}`;
+
+  if (activeStudentImports.has(importLockKey)) {
+    return res.status(409).json({
+      success: false,
+      error: "Student import is already running. Please wait until current import completes.",
+    });
+  }
+
+  activeStudentImports.add(importLockKey);
+
+  try {
+    const studentsDataList = Array.isArray(req.body)
+      ? req.body
+      : typeof req.body === "string"
+        ? JSON.parse(req.body)
+        : [];
+
+    if (!studentsDataList || studentsDataList.length <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Please check the document. Students data not received.",
+      });
+    }
+
+    // ---------- Redis ----------
+    let redis = null;
+    try {
+      redis = await getRedis();
+    } catch (e) {
+      console.log(`[${requestId}] Redis unavailable, continuing without cache`);
+    }
+
+    // ---------- Courses ----------
+    let courses = [];
+    if (redis) {
+      try {
+        const coursesCache = await redis.get("courses");
+        courses = coursesCache ? JSON.parse(coursesCache) : [];
+      } catch (_) {
+        courses = [];
+      }
+    }
+
+    if (!Array.isArray(courses) || courses.length === 0) {
+      courses = await Course.find().select("_id name").lean();
+    }
+
+    const courseMap = new Map();
+    for (const c of courses) {
+      if (c?.name && c?._id) {
+        courseMap.set(String(c.name), String(c._id));
+      }
+    }
+
+    // ---------- Prefetch schools ----------
+    const niswanCodes = [
+      ...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean)),
+    ];
+
+    const schools = await School.find({ code: { $in: niswanCodes } })
+      .select("_id code districtStateId")
+      .lean();
+
+    const schoolMap = new Map();
+    for (const s of schools) {
+      schoolMap.set(String(s.code), s);
+    }
+
+    // ---------- Prefetch existing old roll numbers ----------
+    const oldRollNumbers = [
+      ...new Set(studentsDataList.map((r) => normalizeRoll(r.rollNumber)).filter(Boolean)),
+    ];
+
+    totalStudentsBefore = await Student.countDocuments();
+
+    const importSchoolIds = schools.map((s) => s._id);
+
+    const existingStudents =
+      oldRollNumbers.length > 0 && schools.length > 0
+        ? await Student.find({
+          schoolId: { $in: importSchoolIds },
+          oldRollNumber: { $in: oldRollNumbers },
+        })
+          .select("oldRollNumber schoolId")
+          .lean()
+        : [];
+
+    existingStudentsMatchedBefore = existingStudents.length;
+
+    console.log(
+      `[${requestId}] existingStudentsMatchedBefore =`,
+      existingStudentsMatchedBefore
+    );
+
+    if (existingStudents.length > 0) {
+      console.log(
+        `[${requestId}] existingStudents sample =`,
+        existingStudents.slice(0, 10).map((s) => ({
+          schoolId: String(s.schoolId),
+          oldRollNumber: s.oldRollNumber,
+        }))
+      );
+    }
+
+    const existingOldRollSet = new Set();
+    for (const s of existingStudents) {
+      const dbOldRoll = normalizeRoll(s?.oldRollNumber);
+      if (s?.schoolId && dbOldRoll) {
+        existingOldRollSet.add(`${String(s.schoolId)}__${dbOldRoll}`);
+      }
+    }
+
+    // ---------- Academic year ----------
+    const AC_YEAR_ID = await getActiveAcademicYearIdFromCache();
+
+    if (!isObjectId(AC_YEAR_ID)) {
+      return res.status(400).json({
+        success: false,
+        error: "Active academic year not found",
+      });
+    }
+
+    // ---------- Main loop ----------
+    let row = 1;
+
+    for (const studentData of studentsDataList) {
+      const errors = [];
+
+      const name = safeStr(studentData.name);
+      const oldRollNumber = normalizeRoll(studentData.rollNumber);
+      const niswanCode = safeStr(studentData.niswanCode);
+      const feesVal = safeStr(studentData.fees);
+
+      if (!name) errors.push("Name not given");
+      if (!oldRollNumber) errors.push("Old RollNumber not given (rollNumber column)");
+      if (!niswanCode) errors.push("NiswanCode not given");
+
+      const school = niswanCode ? schoolMap.get(niswanCode) : null;
+      if (!school) {
+        errors.push(`NiswanCode not available : ${niswanCode}`);
+      }
+
+      const duplicateKey =
+        school && oldRollNumber ? `${String(school._id)}__${oldRollNumber}` : "";
+
+      if (duplicateKey && existingOldRollSet.has(duplicateKey)) {
+        duplicateCount++;
+        console.log(
+          `[${requestId}] DUPLICATE row=${row} schoolId=${String(
+            school._id
+          )} oldRoll=${oldRollNumber}`
+        );
+        finalResultData += `Row : ${row}, Already imported (old roll found): ${oldRollNumber}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
+      if (courseErr) errors.push(courseErr);
+
+      if (!feesVal) errors.push("Fees not given");
+      if (courseName && !VALID_COURSE_NAMES.has(courseName)) {
+        errors.push(`Course not valid: ${courseName}`);
+      }
+
+      if (errors.length > 0) {
+        invalidCount++;
+        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const foundCourseId = courseMap.get(courseName);
+      if (!foundCourseId) {
+        invalidCount++;
+        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const courseId = foundCourseId;
+      const fees = parseNumber(feesVal, 0);
+
+      if (fees <= 0) {
+        invalidCount++;
+        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
+        row++;
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+
+      try {
+        await session.withTransaction(async () => {
+          const numbering = await Numbering.findOneAndUpdate(
+            { name: "Roll" },
+            { $inc: { currentNumber: 1 } },
+            { new: true, upsert: true, session }
+          );
+
+          const schoolCode = String(school.code || "");
+          const newRollNumber =
+            schoolCode.replaceAll("-", "") +
+            String(numbering.currentNumber).padStart(7, "0");
+
+          const hashPassword = await bcrypt.hash(newRollNumber, 10);
+
+          const savedUser = await User.create(
+            [
+              {
+                name: toCamelCase(name),
+                email: newRollNumber,
+                password: hashPassword,
+                role: "student",
+                profileImage: "",
+              },
+            ],
+            { session }
+          );
+
+          const userId = savedUser[0]._id;
+
+          const dobDate = parseDate(studentData.dob);
+
+          const savedStudent = await Student.create(
+            [
+              {
+                userId,
+                schoolId: school._id,
+                rollNumber: newRollNumber,
+                oldRollNumber: oldRollNumber,
+                doa: new Date(),
+                dob: dobDate,
+                gender: "Female",
+                maritalStatus: "Single",
+                idMark1: "-",
+                fatherName: toCamelCase(safeStr(studentData.fatherName)),
+                fatherNumber: safeStr(studentData.fatherNumber),
+                motherName: toCamelCase(safeStr(studentData.motherName)),
+                motherNumber: safeStr(studentData.motherNumber),
+                guardianName: toCamelCase(safeStr(studentData.guardianName)),
+                guardianNumber: safeStr(studentData.guardianNumber),
+                guardianRelation: toCamelCase(safeStr(studentData.guardianRelation)),
+                address: toCamelCase(safeStr(studentData.address)),
+                pincode: 0,
+                city: toCamelCase(safeStr(studentData.city)),
+                districtStateId: school.districtStateId,
+                hostel: "No",
+                active: "Active",
+                feesPaid: 0,
+                courses: [courseId],
+                about: `Old Roll Number : ${oldRollNumber}`,
+              },
+            ],
+            { session }
+          );
+
+          const studentId = savedStudent[0]._id;
+
+          const savedAcademic = await Academic.create(
+            [
+              {
+                studentId,
+                acYear: AC_YEAR_ID,
+                instituteId1: INSTITUTE_ID,
+                courseId1: courseId,
+                refNumber1: newRollNumber,
+                year1: yearCount,
+                fees1: fees,
+                finalFees1: fees,
+                status1: "Admission",
+              },
+            ],
+            { session }
+          );
+
+          const currentAcademicId = savedAcademic[0]._id;
+
+          await upsertFeesDueAccount({
+            userId,
+            acYear: AC_YEAR_ID,
+            academicId: currentAcademicId,
+            fees,
+            receiptLabel: "Admission",
+            remarks: "Admission",
+            session,
+          });
+
+          await createFeesInvoiceSafe({
+            schoolId: school._id,
+            studentId,
+            userId,
+            acYear: AC_YEAR_ID,
+            academicId: currentAcademicId,
+            courseId,
+            totalFees: fees,
+            source: "ADMISSION",
+            createdBy: userId,
+            session,
+          });
+        });
+
+        if (duplicateKey) {
+          existingOldRollSet.add(duplicateKey);
+        }
+
+        importedCount++;
+        console.log(
+          `[${requestId}] IMPORTED row=${row} schoolId=${String(
+            school._id
+          )} oldRoll=${oldRollNumber}`
+        );
+        finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
+      } catch (txErr) {
+        console.log(
+          `[${requestId}] TX ERROR row=${row} oldRoll=${oldRollNumber}`,
+          txErr?.message || txErr
+        );
+
+        if (isDuplicateKeyError(txErr)) {
+          let studentAlreadyExistsNow = false;
+
+          if (school?._id && oldRollNumber) {
+            const existingNow = await Student.findOne({
+              schoolId: school._id,
+              oldRollNumber,
+            })
+              .select("_id")
+              .lean();
+
+            studentAlreadyExistsNow = !!existingNow;
+          }
+
+          if (studentAlreadyExistsNow) {
+            duplicateCount++;
+            if (duplicateKey) {
+              existingOldRollSet.add(duplicateKey);
+            }
+            console.log(
+              `[${requestId}] DUPLICATE-IN-TX row=${row} schoolId=${String(
+                school._id
+              )} oldRoll=${oldRollNumber}`
+            );
+            finalResultData += `Row : ${row}, Already imported (old roll found): ${oldRollNumber}.${NL}`;
+          } else {
+            failedCount++;
+            finalResultData += `Row : ${row}, Import failed (duplicate key but not student old roll): ${txErr?.message || "Unknown duplicate error"}${NL}`;
+          }
+        } else {
+          failedCount++;
+          finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
+        }
+      } finally {
+        await session.endSession();
+      }
+
+      row++;
+    }
+
+    // ---------- Refresh total students cache safely ----------
+    totalStudentsAfter = await Student.countDocuments();
+
+    matchedAfterImport =
+      oldRollNumbers.length > 0 && importSchoolIds.length > 0
+        ? await Student.countDocuments({
+          schoolId: { $in: importSchoolIds },
+          oldRollNumber: { $in: oldRollNumbers },
+        })
+        : 0;
+
+    if (redis) {
+      try {
+        await redis.set("totalStudents", String(totalStudentsAfter), { EX: 60 });
+      } catch (_) {
+        try {
+          await redis.set("totalStudents", String(totalStudentsAfter));
+        } catch (__) { }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      requestId,
+      message: `Imported: ${importedCount}, Duplicates: ${duplicateCount}, Invalid: ${invalidCount}, Failed: ${failedCount}, Total: ${studentsDataList.length}`,
+      importedCount,
+      duplicateCount,
+      invalidCount,
+      failedCount,
+      totalCount: studentsDataList.length,
+      totalStudentsBefore,
+      totalStudentsAfter,
+      existingStudentsMatchedBefore,
+      matchedAfterImport,
+      finalResultData,
+    });
+  } catch (error) {
+    console.log(`[${requestId}] OUTER ERROR`, error);
+    return res.status(500).json({
+      success: false,
+      requestId,
+      error: "Server error in importing students data",
+      importedCount,
+      duplicateCount,
+      invalidCount,
+      failedCount,
+      totalStudentsBefore,
+      totalStudentsAfter,
+      existingStudentsMatchedBefore,
+      matchedAfterImport,
+      finalResultData,
+    });
+  } finally {
+    activeStudentImports.delete(importLockKey);
+  }
+};
+
+{/*
 const importStudentsData = async (req, res) => {
   const NL = "\r\n"; // Notepad-friendly new line (Windows)
 
@@ -1155,729 +1651,6 @@ const importStudentsData = async (req, res) => {
     });
   } finally {
     activeStudentImports.delete(importLockKey);
-  }
-};
-
-{/*
-const importStudentsData = async (req, res) => {
-  const NL = "\r\n"; // Notepad-friendly new line (Windows)
-
-  let importedCount = 0;
-  let duplicateCount = 0;
-  let invalidCount = 0;
-  let failedCount = 0;
-  let finalResultData = "";
-
-  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
-  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
-
-  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
-
-  const normalizeRoll = (v) => safeStr(v).toUpperCase();
-
-  const parseNumber = (v, def = 0) => {
-    const s = safeStr(v);
-    if (!s) return def;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : def;
-  };
-
-  const isDuplicateKeyError = (err) => {
-    return (
-      err?.code === 11000 ||
-      String(err?.message || "").toLowerCase().includes("duplicate key error")
-    );
-  };
-
-  // determine course + year from template flags
-  const extractCourseYearFromRow = (row) => {
-    const mak = parseNumber(row.Makthab, 0) === 1;
-    const mua = parseNumber(row.Muallama, 0) === 1;
-    const mub = parseNumber(row.Muballiga, 0) === 1;
-
-    const selected = [mak, mua, mub].filter(Boolean).length;
-    if (selected === 0) {
-      return {
-        error: "Course not selected (Makthab/Muallama/Muballiga should be 1)",
-      };
-    }
-    if (selected > 1) {
-      return {
-        error: "Multiple courses selected. Only one course should be 1 per row.",
-      };
-    }
-
-    if (mak) {
-      const y = parseNumber(row.MakthabYear, 0);
-      if (y < 0) return { error: "MakthabYear not given/invalid" };
-      return { courseName: "Makthab", yearCount: y };
-    }
-
-    if (mua) {
-      const y = parseNumber(row.MuallamaYear, 0);
-      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
-      return { courseName: "Muallama", yearCount: y };
-    }
-
-    const y = parseNumber(row.MuballigaYear, 0);
-    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
-    return { courseName: "Muballiga", yearCount: y };
-  };
-
-  try {
-    const studentsDataList = Array.isArray(req.body)
-      ? req.body
-      : typeof req.body === "string"
-        ? JSON.parse(req.body)
-        : [];
-
-    if (!studentsDataList || studentsDataList.length <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please check the document. Students data not received.",
-      });
-    }
-
-    // ---------- Redis ----------
-    let redis = null;
-    try {
-      redis = await getRedis();
-    } catch (e) {
-      console.log("Redis unavailable, continuing without cache");
-    }
-
-    // ---------- Courses ----------
-    let courses = [];
-    if (redis) {
-      try {
-        const coursesCache = await redis.get("courses");
-        courses = coursesCache ? JSON.parse(coursesCache) : [];
-      } catch (_) {
-        courses = [];
-      }
-    }
-
-    if (!Array.isArray(courses) || courses.length === 0) {
-      courses = await Course.find().select("_id name").lean();
-    }
-
-    const courseMap = new Map(); // name -> _id
-    for (const c of courses) {
-      if (c?.name && c?._id) {
-        courseMap.set(String(c.name), String(c._id));
-      }
-    }
-
-    // ---------- Prefetch schools ----------
-    const niswanCodes = [
-      ...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean)),
-    ];
-
-    const schools = await School.find({ code: { $in: niswanCodes } })
-      .select("_id code districtStateId")
-      .lean();
-
-    const schoolMap = new Map();
-    for (const s of schools) {
-      schoolMap.set(String(s.code), s);
-    }
-
-    // ---------- Prefetch existing old roll numbers ----------
-    const oldRollNumbers = [
-      ...new Set(studentsDataList.map((r) => normalizeRoll(r.rollNumber)).filter(Boolean)),
-    ];
-
-    const existingStudents =
-      oldRollNumbers.length > 0 && schools.length > 0
-        ? await Student.find({
-          schoolId: { $in: schools.map((s) => s._id) },
-          oldRollNumber: { $in: oldRollNumbers },
-        })
-          .select("oldRollNumber schoolId")
-          .lean()
-        : [];
-
-    const existingOldRollSet = new Set();
-    for (const s of existingStudents) {
-      const dbOldRoll = normalizeRoll(s?.oldRollNumber);
-      if (s?.schoolId && dbOldRoll) {
-        existingOldRollSet.add(`${String(s.schoolId)}__${dbOldRoll}`);
-      }
-    }
-
-    // ---------- Academic year ----------
-    const AC_YEAR_ID = await getActiveAcademicYearIdFromCache();
-
-    if (!isObjectId(AC_YEAR_ID)) {
-      return res.status(400).json({
-        success: false,
-        error: "Active academic year not found",
-      });
-    }
-
-    // ---------- Main loop ----------
-    let row = 1;
-
-    for (const studentData of studentsDataList) {
-      const errors = [];
-
-      const name = safeStr(studentData.name);
-      const oldRollNumber = normalizeRoll(studentData.rollNumber);
-      const niswanCode = safeStr(studentData.niswanCode);
-      const feesVal = safeStr(studentData.fees);
-
-      if (!name) errors.push("Name not given");
-      if (!oldRollNumber) errors.push("Old RollNumber not given (rollNumber column)");
-      if (!niswanCode) errors.push("NiswanCode not given");
-
-      const school = niswanCode ? schoolMap.get(niswanCode) : null;
-      if (!school) {
-        errors.push(`NiswanCode not available : ${niswanCode}`);
-      }
-
-      const duplicateKey =
-        school && oldRollNumber ? `${String(school._id)}__${oldRollNumber}` : "";
-
-      // duplicate check first
-      if (duplicateKey && existingOldRollSet.has(duplicateKey)) {
-        duplicateCount++;
-        finalResultData += `Row : ${row}, Already imported (old roll found): ${oldRollNumber}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
-      if (courseErr) errors.push(courseErr);
-
-      if (!feesVal) errors.push("Fees not given");
-      if (courseName && !VALID_COURSE_NAMES.has(courseName)) {
-        errors.push(`Course not valid: ${courseName}`);
-      }
-
-      if (errors.length > 0) {
-        invalidCount++;
-        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const foundCourseId = courseMap.get(courseName);
-      if (!foundCourseId) {
-        invalidCount++;
-        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const courseId = foundCourseId;
-      const fees = parseNumber(feesVal, 0);
-
-      if (fees <= 0) {
-        invalidCount++;
-        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const session = await mongoose.startSession();
-
-      try {
-        await session.withTransaction(async () => {
-          // Generate NEW roll number (atomic sequence)
-          const numbering = await Numbering.findOneAndUpdate(
-            { name: "Roll" },
-            { $inc: { currentNumber: 1 } },
-            { new: true, upsert: true, session }
-          );
-
-          const schoolCode = String(school.code || "");
-          const newRollNumber =
-            schoolCode.replaceAll("-", "") +
-            String(numbering.currentNumber).padStart(7, "0");
-
-          // Create User
-          const hashPassword = await bcrypt.hash(newRollNumber, 10);
-
-          const savedUser = await User.create(
-            [
-              {
-                name: toCamelCase(name),
-                email: newRollNumber,
-                password: hashPassword,
-                role: "student",
-                profileImage: "",
-              },
-            ],
-            { session }
-          );
-
-          const userId = savedUser[0]._id;
-
-          // Create Student
-          const dobDate = parseDate(studentData.dob);
-
-          const savedStudent = await Student.create(
-            [
-              {
-                userId,
-                schoolId: school._id,
-                rollNumber: newRollNumber,
-                oldRollNumber: oldRollNumber, // normalized
-                doa: new Date(),
-                dob: dobDate,
-                gender: "Female",
-                maritalStatus: "Single",
-                idMark1: "-",
-                fatherName: toCamelCase(safeStr(studentData.fatherName)),
-                fatherNumber: safeStr(studentData.fatherNumber),
-                motherName: toCamelCase(safeStr(studentData.motherName)),
-                motherNumber: safeStr(studentData.motherNumber),
-                guardianName: toCamelCase(safeStr(studentData.guardianName)),
-                guardianNumber: safeStr(studentData.guardianNumber),
-                guardianRelation: toCamelCase(safeStr(studentData.guardianRelation)),
-                address: toCamelCase(safeStr(studentData.address)),
-                pincode: 0,
-                city: toCamelCase(safeStr(studentData.city)),
-                districtStateId: school.districtStateId,
-                hostel: "No",
-                active: "Active",
-                feesPaid: 0,
-                courses: [courseId],
-                about: `Old Roll Number : ${oldRollNumber}`,
-              },
-            ],
-            { session }
-          );
-
-          const studentId = savedStudent[0]._id;
-
-          // Create Academic
-          const savedAcademic = await Academic.create(
-            [
-              {
-                studentId,
-                acYear: AC_YEAR_ID,
-                instituteId1: INSTITUTE_ID,
-                courseId1: courseId,
-                refNumber1: newRollNumber,
-                year1: yearCount,
-                fees1: fees,
-                finalFees1: fees,
-                status1: "Admission",
-              },
-            ],
-            { session }
-          );
-
-          const currentAcademicId = savedAcademic[0]._id;
-
-          // Fees Due account
-          await upsertFeesDueAccount({
-            userId,
-            acYear: AC_YEAR_ID,
-            academicId: currentAcademicId,
-            fees,
-            receiptLabel: "Admission",
-            remarks: "Admission",
-            session,
-          });
-
-          // Fees Invoice
-          await createFeesInvoiceSafe({
-            schoolId: school._id,
-            studentId,
-            userId,
-            acYear: AC_YEAR_ID,
-            academicId: currentAcademicId,
-            courseId,
-            totalFees: fees,
-            source: "ADMISSION",
-            createdBy: userId,
-            session,
-          });
-        });
-
-        // Mark this old roll as already imported for same request too
-        if (duplicateKey) {
-          existingOldRollSet.add(duplicateKey);
-        }
-
-        importedCount++;
-        finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
-      } catch (txErr) {
-        if (isDuplicateKeyError(txErr)) {
-          duplicateCount++;
-          if (duplicateKey) {
-            existingOldRollSet.add(duplicateKey);
-          }
-          finalResultData += `Row : ${row}, Already imported (old roll found): ${oldRollNumber}.${NL}`;
-        } else {
-          failedCount++;
-          finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
-        }
-      } finally {
-        await session.endSession();
-      }
-
-      row++;
-    }
-
-    // ---------- Refresh total students cache safely ----------
-    const totalStudents = await Student.countDocuments();
-
-    if (redis) {
-      try {
-        await redis.set("totalStudents", String(totalStudents), { EX: 60 });
-      } catch (_) {
-        try {
-          await redis.set("totalStudents", String(totalStudents));
-        } catch (__) { }
-      }
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `Imported: ${importedCount}, Duplicates: ${duplicateCount}, Invalid: ${invalidCount}, Failed: ${failedCount}, Total: ${studentsDataList.length}`,
-      importedCount,
-      duplicateCount,
-      invalidCount,
-      failedCount,
-      totalCount: studentsDataList.length,
-      finalResultData,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      error: "Server error in importing students data",
-      importedCount,
-      duplicateCount,
-      invalidCount,
-      failedCount,
-      finalResultData,
-    });
-  }
-};
-*/}
-{/*
-const importStudentsData = async (req, res) => {
-  const NL = "\r\n"; // ✅ Notepad-friendly new line (Windows)
-
-  let successCount = 0;
-  let finalResultData = "";
-
-  const INSTITUTE_ID = "67fbba7bcd590bacd4badef0";
-  const VALID_COURSE_NAMES = new Set(["Muballiga", "Muallama", "Makthab"]);
-
-  const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
-
-  const parseNumber = (v, def = 0) => {
-    const s = safeStr(v);
-    if (!s) return def;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : def;
-  };
-
-  // ✅ New template: determine course + year using flags
-  const extractCourseYearFromRow = (row) => {
-    const mak = parseNumber(row.Makthab, 0) === 1;
-    const mua = parseNumber(row.Muallama, 0) === 1;
-    const mub = parseNumber(row.Muballiga, 0) === 1;
-
-    const selected = [mak, mua, mub].filter(Boolean).length;
-    if (selected === 0) return { error: "Course not selected (Makthab/Muallama/Muballiga should be 1)" };
-    if (selected > 1) return { error: "Multiple courses selected. Only one course should be 1 per row." };
-
-    if (mak) {
-      const y = parseNumber(row.MakthabYear, 0);
-      if (y < 0) return { error: "MakthabYear not given/invalid" };
-      return { courseName: "Makthab", yearCount: y };
-    }
-    if (mua) {
-      const y = parseNumber(row.MuallamaYear, 0);
-      if (y <= 0) return { error: "MuallamaYear not given/invalid" };
-      return { courseName: "Muallama", yearCount: y };
-    }
-
-    const y = parseNumber(row.MuballigaYear, 0);
-    if (y <= 0) return { error: "MuballigaYear not given/invalid" };
-    return { courseName: "Muballiga", yearCount: y };
-  };
-
-  try {
-    const studentsDataList = Array.isArray(req.body)
-      ? req.body
-      : (typeof req.body === "string" ? JSON.parse(req.body) : []);
-
-    if (!studentsDataList || studentsDataList.length <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please check the document. Students data not received.",
-      });
-    }
-
-    // ---------- Load Redis + courses map ----------
-    let redis = null;
-    try {
-      redis = await getRedis();
-    } catch (e) {
-      console.log("Redis unavailable, continuing without cache");
-    }
-
-    let courses = [];
-    try {
-      const coursesCache = await redis.get("courses");
-      courses = coursesCache ? JSON.parse(coursesCache) : [];
-    } catch {
-      courses = [];
-    }
-
-    if (!Array.isArray(courses) || courses.length === 0) {
-      courses = await Course.find().select("_id name").lean();
-    }
-
-    const courseMap = new Map(); // name -> _id
-    for (const c of courses) {
-      if (c?.name && c?._id) courseMap.set(String(c.name), String(c._id));
-    }
-
-    // ---------- Prefetch schools by niswanCode ----------
-    const niswanCodes = [...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean))];
-    const schools = await School.find({ code: { $in: niswanCodes } })
-      .select("_id code districtStateId")
-      .lean();
-
-    const schoolMap = new Map();
-    for (const s of schools) schoolMap.set(String(s.code), s);
-
-    const oldRollNumbers = [...new Set(studentsDataList.map((r) => safeStr(r.rollNumber)).filter(Boolean))];
-
-    const existingStudents = oldRollNumbers.length
-      ? await Student.find({
-        schoolId: { $in: schools.map((s) => s._id) },
-        oldRollNumber: { $in: oldRollNumbers },
-      })
-        .select("oldRollNumber schoolId")
-        .lean()
-      : [];
-
-    const existingOldRollSet = new Set();
-    for (const s of existingStudents) {
-      if (s?.oldRollNumber) {
-        existingOldRollSet.add(`${String(s.schoolId)}__${String(s.oldRollNumber).trim()}`);
-      }
-    }
-
-    const AC_YEAR_ID = await getActiveAcademicYearIdFromCache(); // "68612e92eeebf699b9d34a21" // 2025-2026 "680485d9361ed06368c57f7c"; // 2024-2025 
-
-    if (!isObjectId(AC_YEAR_ID)) {
-      return res.status(400).json({
-        success: false,
-        error: "Active academic year not found",
-      });
-    }
-
-    // ---------- Main loop ----------
-    let row = 1;
-    for (const studentData of studentsDataList) {
-      const errors = [];
-
-      const name = safeStr(studentData.name);
-      const oldRollNumber = safeStr(studentData.rollNumber); // ✅ OLD roll number from excel
-      const niswanCode = safeStr(studentData.niswanCode);
-      const feesVal = safeStr(studentData.fees);
-
-      if (!name) errors.push("Name not given");
-      if (!oldRollNumber) errors.push("Old RollNumber not given (rollNumber column)");
-      if (!niswanCode) errors.push("NiswanCode not given");
-
-      const school = niswanCode ? schoolMap.get(niswanCode) : null;
-      if (!school) errors.push(`NiswanCode not available : ${niswanCode}`);
-
-      const duplicateKey =
-        school && oldRollNumber ? `${String(school._id)}__${oldRollNumber}` : "";
-
-      if (duplicateKey && existingOldRollSet.has(duplicateKey)) {
-        errors.push(`Already imported (old roll found): ${oldRollNumber}`);
-      }
-
-      const { courseName, yearCount, error: courseErr } = extractCourseYearFromRow(studentData);
-      if (courseErr) errors.push(courseErr);
-
-      if (!feesVal) errors.push("Fees not given");
-      if (courseName && !VALID_COURSE_NAMES.has(courseName)) errors.push(`Course not valid: ${courseName}`);
-
-      if (errors.length > 0) {
-        finalResultData += `Row : ${row}, ${errors.join(", ")}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const foundCourseId = courseMap.get(courseName);
-      if (!foundCourseId) {
-        finalResultData += `Row : ${row}, Course not found. Course Name : ${courseName}.${NL}`;
-        row++;
-        continue;
-      }
-      const courseId = foundCourseId;
-
-      const fees = parseNumber(feesVal, 0);
-      if (fees <= 0) {
-        finalResultData += `Row : ${row}, Invalid Fees value: ${feesVal}.${NL}`;
-        row++;
-        continue;
-      }
-
-      const session = await mongoose.startSession();
-      try {
-        await session.withTransaction(async () => {
-          // ✅ Generate NEW roll number (atomic sequence)
-          const numbering = await Numbering.findOneAndUpdate(
-            { name: "Roll" },
-            { $inc: { currentNumber: 1 } },
-            { new: true, upsert: true, session }
-          );
-
-          const schoolCode = String(school.code || "");
-          const newRollNumber =
-            schoolCode.replaceAll("-", "") +
-            String(numbering.currentNumber).padStart(7, "0");
-
-          // Create User (login uses new rollNumber)
-          const hashPassword = await bcrypt.hash(newRollNumber, 10);
-
-          const savedUser = await User.create(
-            [
-              {
-                name: toCamelCase(name),
-                email: newRollNumber,
-                password: hashPassword,
-                role: "student",
-                profileImage: "",
-              },
-            ],
-            { session }
-          );
-
-          const userId = savedUser[0]._id;
-
-          // Create Student (store new rollNumber; keep old in remarks)
-          const dobDate = parseDate(studentData.dob);
-          const savedStudent = await Student.create(
-            [
-              {
-                userId,
-                schoolId: school._id,
-                rollNumber: newRollNumber, // ✅ NEW roll number
-                oldRollNumber: oldRollNumber,
-                doa: new Date(),
-                dob: dobDate,
-                gender: "Female",
-                maritalStatus: "Single",
-                idMark1: "-",
-                fatherName: toCamelCase(safeStr(studentData.fatherName)),
-                fatherNumber: safeStr(studentData.fatherNumber),
-                motherName: toCamelCase(safeStr(studentData.motherName)),
-                motherNumber: safeStr(studentData.motherNumber),
-                guardianName: toCamelCase(safeStr(studentData.guardianName)),
-                guardianNumber: safeStr(studentData.guardianNumber),
-                guardianRelation: toCamelCase(safeStr(studentData.guardianRelation)),
-                address: toCamelCase(safeStr(studentData.address)),
-                pincode: 0,
-                city: toCamelCase(safeStr(studentData.city)),
-                districtStateId: school.districtStateId,
-                hostel: "No",
-                active: "Active",
-                feesPaid: 0,
-                courses: [courseId],
-                about: `Old Roll Number : ${oldRollNumber}`, // ✅ store OLD
-              },
-            ],
-            { session }
-          );
-
-          const studentId = savedStudent[0]._id;
-
-          // Create Academics
-          let currentAcademicId = null;
-          const savedAcademic = await Academic.create(
-            [
-              {
-                studentId,
-                acYear: AC_YEAR_ID,
-                instituteId1: INSTITUTE_ID,
-                courseId1: courseId,
-                refNumber1: newRollNumber, // ✅ NEW roll number
-                year1: yearCount, //i + 1,
-                fees1: fees,
-                finalFees1: fees,
-                status1: "Admission",
-              },
-            ],
-            { session }
-          );
-
-          currentAcademicId = savedAcademic[0]._id;
-
-          // ✅ Fees Due: create/update Account (payment will be done via Batch + HQ approval)
-          await upsertFeesDueAccount({
-            userId,
-            acYear: AC_YEAR_ID,
-            academicId: currentAcademicId,
-            fees: fees,
-            receiptLabel: "Admission",
-            remarks: "Admission",
-            session,
-          });
-
-          // ✅ Create Fees Invoice (preferred FeeStructure, fallback to single-head)
-          await createFeesInvoiceSafe({
-            schoolId: school._id,
-            studentId,
-            userId,
-            acYear: AC_YEAR_ID,
-            academicId: currentAcademicId,
-            courseId,
-            totalFees: fees,
-            source: "ADMISSION",
-            createdBy: userId,
-            session,
-          });
-        });
-
-        // mark old roll as imported (avoid duplicates in same file too)
-        existingOldRollSet.add(`${String(school._id)}__${oldRollNumber}`);
-
-        finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
-        successCount++;
-      } catch (txErr) {
-        finalResultData += `Row : ${row}, Import failed: ${txErr?.message || "Unknown error"}${NL}`;
-      } finally {
-        await session.endSession();
-      }
-
-      row++;
-    }
-
-    const totalStudents = await Student.countDocuments();
-    try {
-      await redis.set("totalStudents", String(totalStudents), { EX: 60 });
-    } catch {
-      await redis.set("totalStudents", String(totalStudents));
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: ` [${successCount}] Students data Imported Successfully!`,
-      finalResultData,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      success: false,
-      error: "server error in adding student",
-      finalResultData,
-    });
   }
 };
 */}
@@ -2475,53 +2248,6 @@ const getByFilter = async (req, res) => {
   }
 };
 
-{/*
-const getStudent = async (req, res) => {
-  const { id } = req.params;
-
-  console.log("getStudent : " + id);
-
-  try {
-    let student = await Student.findById(id)
-      .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" })
-      .populate({ path: "courses", select: "name type fees years code" })
-      .populate({ path: "districtStateId", select: "district state" })
-      .lean();
-
-    if (!student) {
-      return res.status(404).json({ success: false, error: "Student data not found." });
-    }
-
-    const academics = await Academic.find({ studentId: student._id })
-      .populate({ path: "acYear", select: "_id acYear" })
-      .populate({ path: "instituteId1", select: "_id code name" })
-      .populate({ path: "courseId1", select: "_id iCode name" })
-      .populate({ path: "instituteId2", select: "_id code name" })
-      .populate({ path: "courseId2", select: "_id iCode name" })
-      .populate({ path: "instituteId3", select: "_id code name" })
-      .populate({ path: "courseId3", select: "_id iCode name" })
-      .populate({ path: "instituteId4", select: "_id code name" })
-      .populate({ path: "courseId4", select: "_id iCode name" })
-      .populate({ path: "instituteId5", select: "_id code name" })
-      .populate({ path: "courseId5", select: "_id iCode name" })
-      .lean(); // ✅ keep lean for academics too (faster)
-
-    // ✅ attach academics
-    student._academics = academics || [];
-
-    // ✅ hide rollNumber if not paid
-    if (Number(student?.feesPaid) === 0) {
-      student.rollNumber = "-";
-    }
-
-    return res.status(200).json({ success: true, student });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ success: false, error: "get student by ID server error" });
-  }
-};
-*/}
 const getStudent = async (req, res) => {
   const { id } = req.params;
 
