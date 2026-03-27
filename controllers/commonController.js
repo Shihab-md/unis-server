@@ -7,8 +7,31 @@ export function toCamelCase(inputString) {
 
   const original = inputString.trim().replace(/\s+/g, " ");
 
+  const titleCaseUnderscorePart = (part) => {
+    if (!part) return part;
+
+    // Keep acronyms like UNIS, API, HR as-is
+    if (/^[A-Z]{2,}$/.test(part)) return part;
+
+    // For underscore parts like "level1" => "Level1"
+    const lower = part.toLowerCase();
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  };
+
   // Helper: title-case a single token, but keep all-caps acronyms as-is
   const titleCaseToken = (token) => {
+    if (!token) return token;
+
+    // ✅ Handle underscore names separately:
+    // "makthab_level1" => "Makthab_Level1"
+    // "Makthab_Level1" => "Makthab_Level1"
+    if (token.includes("_")) {
+      return token
+        .split("_")
+        .map(titleCaseUnderscorePart)
+        .join("_");
+    }
+
     // Keep acronyms like UNIS, API, HR (2+ letters, all caps)
     if (/^[A-Z]{2,}$/.test(token)) return token;
 
@@ -47,7 +70,7 @@ export function toCamelCase(inputString) {
     // Also keep initials like "R.M." as-is
     if (/^(?:[A-Z]\.)+$/.test(tok)) return tok;
 
-    // Title/case (includes code rule now)
+    // Title/case
     return titleCaseToken(tok);
   });
 
