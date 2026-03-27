@@ -25,7 +25,7 @@ const verifyUser = async (req, res, next) => {
         next()
     } catch (error) {
         console.log("Error from authMiddleware : " + error.message)
-        return res.status(500).json({ success: false, error: "server error" + error })
+        return res.status(500).json({ success: false, error: "Login failed / expired - Please login again." })
     }
 }
 
