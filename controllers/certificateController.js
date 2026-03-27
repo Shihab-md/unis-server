@@ -823,7 +823,7 @@ const drawCertificateVectorTexts = async ({
       page,
       text: name,
       x: centerX - 15,
-      yFromTop: 385,
+      yFromTop: 384,
       size: 11,
       font: helveticaBold,
       color: PDF_COLOR_BODY_BLUE,
@@ -835,7 +835,7 @@ const drawCertificateVectorTexts = async ({
       page,
       text: fatherName,
       x: centerX - 45,
-      yFromTop: 407,
+      yFromTop: 405,
       size: 11,
       font: helveticaBold,
       color: PDF_COLOR_BODY_BLUE,
@@ -847,18 +847,18 @@ const drawCertificateVectorTexts = async ({
       page,
       text: rollNumber,
       x: 480,
-      yFromTop: 385,
+      yFromTop: 384.5,
       size: 10.5,
       font: helveticaBold,
       color: PDF_COLOR_BODY_BLUE,
-      maxWidth: 90,
+      maxWidth: 100,
     });
 
     drawPdfText({
       page,
       text: String(new Date().getFullYear()),
-      x: 235,
-      yFromTop: 448,
+      x: 255,
+      yFromTop: 447.5,
       size: 12,
       font: helveticaBold,
       color: PDF_COLOR_BODY_BLUE,
@@ -867,9 +867,20 @@ const drawCertificateVectorTexts = async ({
 
     drawPdfText({
       page,
+      text: String(certificateNum),
+      x: 111,
+      yFromTop: 613.5,
+      size: 10,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 80,
+    });
+
+    drawPdfText({
+      page,
       text: issueDateText,
-      x: 105,
-      yFromTop: 616,
+      x: 111,
+      yFromTop: 626.5,
       size: 10,
       font: helveticaBold,
       color: PDF_COLOR_BODY_BLUE,
