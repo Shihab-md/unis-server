@@ -503,6 +503,10 @@ const fitPdfFontSize = (font, text, startSize, maxWidth, minSize = 8) => {
   return size;
 };
 
+const isMakthabLevelCourse = (courseName = "") => {
+  return /^Makthab_Level[123]$/i.test(String(courseName || "").trim());
+};
+
 // Canvas used top-left with alphabetic baseline.
 // This helper converts the same visual Y into PDF coordinate space.
 const pdfYFromCanvasBaseline = (pageHeight, yFromTop, fontSize) => {
@@ -856,6 +860,17 @@ const drawCertificateVectorTexts = async ({
 
     drawPdfText({
       page,
+      text: grade,
+      x: 540,
+      yFromTop: 424,
+      size: 12,
+      font: helveticaBold,
+      color: PDF_COLOR_BODY_BLUE,
+      maxWidth: 40,
+    });
+
+    drawPdfText({
+      page,
       text: String(endYear),
       x: 255,
       yFromTop: 447.5,
@@ -991,7 +1006,13 @@ const addCertificate = async (req, res) => {
 
       if (courseIdValue === targetCourseId) {
         matchedIndex = i;
-        grade = academicEnd[`grade${i}`] || "";
+
+        if (isMakthabLevelCourse(template?.courseId?.name)) {
+          grade = String(academicEnd[`year${i}`] || "");
+        } else {
+          grade = String(academicEnd[`grade${i}`] || "");
+        }
+
         break;
       }
     }
@@ -1011,13 +1032,6 @@ const addCertificate = async (req, res) => {
     } else if (template.courseId.name.includes("Muballiga")) {
       tempType = 3; // Muballiga
     }
-
-    // let certificateNum;
-    // if (tempType != 1) {
-    //   const lastCertificate = await Certificate.findOne({}).sort({ _id: -1 }).limit(1);
-    //   if (lastCertificate) certificateNum = Number(lastCertificate.code) + 1;
-    //   else certificateNum = Number(new Date().getFullYear() + "00000") + 1;
-    // }
 
     const certificateNum = await getNextCertificateNumber(tempType);
 
@@ -1149,52 +1163,52 @@ const addCertificate = async (req, res) => {
 
     const pdfBytes = Buffer.from(await outputPdf.save());
 
-    if (tempType != 1) {
-      const outName = buildTimestampedName(fileName);
+    //if (tempType != 1) {
+    const outName = buildTimestampedName(fileName);
 
-      const uploaded = await runWithDriveRetry(async (drive) => {
-        const folderId = await ensureFolderPath(drive, ["UNIS", "Certificates"]);
-        return await uploadBufferToDrive(
-          drive,
-          folderId,
-          outName,
-          pdfBytes,
-          "application/pdf"
-        );
-      });
+    const uploaded = await runWithDriveRetry(async (drive) => {
+      const folderId = await ensureFolderPath(drive, ["UNIS", "Certificates"]);
+      return await uploadBufferToDrive(
+        drive,
+        folderId,
+        outName,
+        pdfBytes,
+        "application/pdf"
+      );
+    });
 
-      const newCertificate = new Certificate({
-        code: certificateNum,
-        templateId: templateId,
-        courseId: template.courseId._id,
-        studentId: studentId,
-        schoolId: schoolId,
-        userId: student?.userId?._id || student?.userId,
-        certificate: uploaded.previewUrl,
-        certificateDriveFileId: uploaded.fileId,
-        certificateDriveViewUrl: uploaded.viewUrl,
-        certificateDriveDownloadUrl: uploaded.downloadUrl,
-        certificateDrivePreviewUrl: uploaded.previewUrl,
-        certificateFileName: uploaded.fileName,
-        issueDate: issueDateObj,
-      });
+    const newCertificate = new Certificate({
+      code: certificateNum,
+      templateId: templateId,
+      courseId: template.courseId._id,
+      studentId: studentId,
+      schoolId: schoolId,
+      userId: student?.userId?._id || student?.userId,
+      certificate: uploaded.previewUrl,
+      certificateDriveFileId: uploaded.fileId,
+      certificateDriveViewUrl: uploaded.viewUrl,
+      certificateDriveDownloadUrl: uploaded.downloadUrl,
+      certificateDrivePreviewUrl: uploaded.previewUrl,
+      certificateFileName: uploaded.fileName,
+      issueDate: issueDateObj,
+    });
 
-      await newCertificate.save();
+    await newCertificate.save();
 
-      const redis = await getRedis();
-      await redis.set("totalCertificates", await Certificate.countDocuments());
+    const redis = await getRedis();
+    await redis.set("totalCertificates", await Certificate.countDocuments());
 
-      return res.status(200).json({
-        success: true,
-        message: "Certificate Created Successfully.",
-        file: uploaded.downloadUrl,
-        downloadUrl: uploaded.downloadUrl,
-        viewUrl: uploaded.previewUrl,
-        fileName: uploaded.fileName,
-        mimeType: "application/pdf",
-        type: "url",
-      });
-    }
+    return res.status(200).json({
+      success: true,
+      message: "Certificate Created Successfully.",
+      file: uploaded.downloadUrl,
+      downloadUrl: uploaded.downloadUrl,
+      viewUrl: uploaded.previewUrl,
+      fileName: uploaded.fileName,
+      mimeType: "application/pdf",
+      type: "url",
+    });
+    //}
 
     const base64String = pdfBytes.toString("base64");
 

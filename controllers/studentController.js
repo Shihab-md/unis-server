@@ -876,11 +876,6 @@ const importStudentsData = async (req, res) => {
 
       if (duplicateKey && existingOldRollSet.has(duplicateKey)) {
         duplicateCount++;
-        console.log(
-          `[${requestId}] DUPLICATE row=${row} schoolId=${String(
-            school._id
-          )} oldRoll=${oldRollNumber}`
-        );
         finalResultData += `Row : ${row}, Already imported (old roll found): ${oldRollNumber}.${NL}`;
         row++;
         continue;
@@ -1036,11 +1031,6 @@ const importStudentsData = async (req, res) => {
         }
 
         importedCount++;
-        console.log(
-          `[${requestId}] IMPORTED row=${row} schoolId=${String(
-            school._id
-          )} oldRoll=${oldRollNumber}`
-        );
         finalResultData += `Row : ${row}, OldRoll: ${oldRollNumber}, Imported Successfully!${NL}`;
       } catch (txErr) {
         console.log(
