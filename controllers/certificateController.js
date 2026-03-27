@@ -856,7 +856,7 @@ const drawCertificateVectorTexts = async ({
 
     drawPdfText({
       page,
-      text: String(new Date().getFullYear()),
+      text: String(endYear),
       x: 255,
       yFromTop: 447.5,
       size: 12,
@@ -903,7 +903,7 @@ const addCertificate = async (req, res) => {
 
     const template = await Template.findById({ _id: templateId }).populate({
       path: "courseId",
-      select: "_id name",
+      select: "_id name years",
     });
 
     if (!template) {
@@ -996,8 +996,14 @@ const addCertificate = async (req, res) => {
       }
     }
 
-    const startYear = academicStart.acYear.acYear.substr(0, 4);
-    const endYear = academicEnd.acYear.acYear.substr(5, 4);
+    // Course start and end year logic.
+    const courseYears = Number(template?.courseId?.years || 0);
+    if (!courseYears || courseYears <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid course duration. Please set Course.years properly.",
+      });
+    }
 
     let tempType = 1; // Makthab
     if (template.courseId.name.includes("Muallama")) {
@@ -1077,6 +1083,9 @@ const addCertificate = async (req, res) => {
 
     const issueDateObj = parsedIssueDate.dateObj;
     const issueDateText = parsedIssueDate.issueDateText;
+
+    const endYear = String(issueDateObj.getFullYear());
+    const startYear = String(endYear - courseYears);
 
     const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
     const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
