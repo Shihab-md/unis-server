@@ -3263,6 +3263,17 @@ const computeTotalFeesFromAcademic = (acad) => {
   return sum;
 };
 
+const getMakthabFinalYear = (courseName = "") => {
+  const name = String(courseName || "").trim();
+
+  if (name.includes("Makthab_Level1")) return 3;
+  if (name.includes("Makthab_Level2")) return 6;
+  if (name.includes("Makthab_Level3")) return 9;
+  if (name.includes("Makthab_Level4")) return 12;
+
+  return null;
+};
+
 export const listPromoteCandidates = async (req, res) => {
   try {
     console.log("listPromoteCandidates");
@@ -3758,9 +3769,15 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
                 targetCourse = nextSchoolCourse;
               }
             } else {
-              isFinalYear =
-                Number(sourceCourse?.years || 0) > 0 &&
-                effectiveSrcYear >= Number(sourceCourse?.years || 0);
+              const makthabFinalYear = getMakthabFinalYear(sourceCourse?.name);
+
+              if (makthabFinalYear !== null) {
+                isFinalYear = effectiveSrcYear >= makthabFinalYear;
+              } else {
+                isFinalYear =
+                  Number(sourceCourse?.years || 0) > 0 &&
+                  effectiveSrcYear >= Number(sourceCourse?.years || 0);
+              }
             }
 
             if (normalizedPolicy === "PROMOTE" && isFinalYear) {

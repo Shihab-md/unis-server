@@ -187,59 +187,6 @@ export const getBatchDetails = async (req, res) => {
   }
 };
 
-{/*
-export const getBatchDetails = async (req, res) => {
-  try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
-
-    console.log("Called - getBatchDetails");
-
-    const { batchId } = req.params;
-
-    // ✅ include drive proof fields + populate school for Niswan display in UI
-    const batch = await PaymentBatch.findById(batchId)
-      .select(
-        "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo " +
-        "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
-        "paidDate status createdBy createdAt"
-      )
-      .populate({
-        path: "schoolId",
-        select: "code nameEnglish districtStateId",
-        populate: { path: "districtStateId", select: "district state" },
-      })
-      .populate({ path: "acYear", select: "acYear" })
-      .lean();
-
-    if (!batch) return res.status(404).json({ success: false, error: "Batch not found" });
-
-    const items = await PaymentBatchItem.find({ batchId })
-      .select("batchId invoiceId studentId amount status allocations createdAt")
-      .populate([
-        {
-          path: "studentId",
-          select: "rollNumber userId",
-          populate: { path: "userId", select: "name" },
-        },
-        {
-          path: "invoiceId",
-          select: "invoiceNo courseId acYear total status source balance",
-          populate: [
-            { path: "courseId", select: "name type" },
-            { path: "acYear", select: "acYear" },
-          ],
-        },
-      ])
-      .lean();
-
-    return res.status(200).json({ success: true, batch, items });
-  } catch (e) {
-    console.log(e);
-    return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
-  }
-};
-*/}
-
 export const approveBatch = async (req, res) => {
   requireRole(req.user?.role, ["superadmin", "hquser"]);
 
