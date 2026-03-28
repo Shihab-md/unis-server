@@ -3432,12 +3432,14 @@ export const listPromoteCandidates = async (req, res) => {
       let fromYear;
       let isFinalYear;
 
+      const courseName = String(course?.name || "").trim();
+
       if (isSchoolEducation) {
         // School Education is course-based progression
         fromYear = Number(sourcePromotionOrder || 0);
         isFinalYear = !nextSchoolCourse?._id;
       } else {
-        // ✅ fallback for 1-year non-school courses
+        // fallback for 1-year non-school courses
         fromYear =
           rawFromYear > 0
             ? rawFromYear
@@ -3445,7 +3447,23 @@ export const listPromoteCandidates = async (req, res) => {
               ? 1
               : 0;
 
-        isFinalYear = totalCourseYears > 0 && fromYear >= totalCourseYears;
+        let makthabFinalYear = null;
+
+        if (courseName.includes("Makthab_Level1")) {
+          makthabFinalYear = 3;
+        } else if (courseName.includes("Makthab_Level2")) {
+          makthabFinalYear = 6;
+        } else if (courseName.includes("Makthab_Level3")) {
+          makthabFinalYear = 9;
+        } else if (courseName.includes("Makthab_Level4")) {
+          makthabFinalYear = 12;
+        }
+
+        if (makthabFinalYear !== null) {
+          isFinalYear = fromYear >= makthabFinalYear;
+        } else {
+          isFinalYear = totalCourseYears > 0 && fromYear >= totalCourseYears;
+        }
       }
 
       const hasPendingFees = pendingFeeStudentSet.has(String(s._id));
