@@ -29,6 +29,9 @@ const feeInvoiceSchema = new Schema(
 
     courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true, index: true },
 
+    // ✅ NEW: snapshot of all course names at invoice creation time
+    courseNamesText: { type: String, default: "" },
+
     source: { type: String, enum: ["ADMISSION", "COURSE_CHANGE", "MANUAL", "CERTIFICATE", "PROMOTE"], default: "ADMISSION", index: true },
     dueDate: { type: Date, index: true },
 

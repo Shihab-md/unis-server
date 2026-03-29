@@ -78,12 +78,12 @@ export const getBatchDetails = async (req, res) => {
       .populate([
         {
           path: "studentId",
-          select: "rollNumber userId",
+          select: "rollNumber feesPaid userId",
           populate: { path: "userId", select: "name" },
         },
         {
           path: "invoiceId",
-          select: "invoiceNo courseId acYear total status source balance",
+          select: "invoiceNo courseId courseNamesText acYear total status source balance",
           populate: [
             { path: "courseId", select: "name type" },
             { path: "acYear", select: "acYear" },
@@ -101,12 +101,14 @@ export const getBatchDetails = async (req, res) => {
       const feeType = String(item.invoiceId?.source || "").trim();
       const invoiceNo = item.invoiceId?.invoiceNo || "";
       const amount = Number(item.amount || 0);
+      const courseNamesText = item.invoiceId?.courseNamesText || "";
+      const feesPaid = Number(item.studentId?.feesPaid || 0);
 
       if (!groupedMap.has(studentId)) {
         groupedMap.set(studentId, {
           studentId: item.studentId?._id || item.studentId,
           studentName: item.studentId?.userId?.name || "-",
-          rollNumber: item.studentId?.rollNumber || "-",
+          rollNumber: feesPaid === 0 ? "" : (item.studentId?.rollNumber || "-"),
 
           amount: 0,
           status: item.status || "PENDING_APPROVAL",
@@ -137,7 +139,7 @@ export const getBatchDetails = async (req, res) => {
         invoiceId: item.invoiceId?._id || null,
         invoiceNo: invoiceNo,
         feeType: feeType,
-        courseName: item.invoiceId?.courseId?.name || "",
+        courseName: courseNamesText || item.invoiceId?.courseId?.name || "",
         courseType: item.invoiceId?.courseId?.type || "",
         acYear: item.invoiceId?.acYear?.acYear || "",
         total: Number(item.invoiceId?.total || 0),
@@ -186,6 +188,149 @@ export const getBatchDetails = async (req, res) => {
     });
   }
 };
+
+{/*
+export const getBatchDetails = async (req, res) => {
+  try {
+    requireRole(req.user?.role, ["superadmin", "hquser"]);
+
+    console.log("Called - getBatchDetails");
+
+    const { batchId } = req.params;
+
+    const batch = await PaymentBatch.findById(batchId)
+      .select(
+        "batchNo receiptNumber schoolId acYear totalAmount itemCount mode referenceNo " +
+        "proofUrl proofDriveFileId proofDriveViewUrl proofDriveDownloadUrl proofFileName " +
+        "paidDate status createdBy createdAt"
+      )
+      .populate({
+        path: "schoolId",
+        select: "code nameEnglish districtStateId",
+        populate: { path: "districtStateId", select: "district state" },
+      })
+      .populate({ path: "acYear", select: "acYear" })
+      .lean();
+
+    if (!batch) {
+      return res.status(404).json({ success: false, error: "Batch not found" });
+    }
+
+    const rawItems = await PaymentBatchItem.find({ batchId })
+      .select("batchId invoiceId studentId amount status allocations createdAt")
+      .populate([
+        {
+          path: "studentId",
+          select: "rollNumber userId",
+          populate: { path: "userId", select: "name" },
+        },
+        {
+          path: "invoiceId",
+          select: "invoiceNo courseId courseNamesText acYear total status source balance",
+          populate: [
+            { path: "courseId", select: "name type" },
+            { path: "acYear", select: "acYear" },
+          ],
+        },
+      ])
+      .lean();
+
+    const groupedMap = new Map();
+
+    for (const item of rawItems) {
+      const studentId = String(item.studentId?._id || item.studentId || "");
+      if (!studentId) continue;
+
+      const feeType = String(item.invoiceId?.source || "").trim();
+      const invoiceNo = item.invoiceId?.invoiceNo || "";
+      const amount = Number(item.amount || 0);
+      const courseNamesText = item.invoiceId?.courseNamesText || "";
+
+      if (!groupedMap.has(studentId)) {
+        groupedMap.set(studentId, {
+          studentId: item.studentId?._id || item.studentId,
+          studentName: item.studentId?.userId?.name || "-",
+          rollNumber: item.studentId?.rollNumber || "-",
+
+          amount: 0,
+          status: item.status || "PENDING_APPROVAL",
+          createdAt: item.createdAt,
+
+          feeTypes: [],
+          invoiceNos: [],
+          invoices: [],
+          allocations: [],
+          items: [],
+        });
+      }
+
+      const grouped = groupedMap.get(studentId);
+
+      grouped.amount += amount;
+
+      if (feeType && !grouped.feeTypes.includes(feeType)) {
+        grouped.feeTypes.push(feeType);
+      }
+
+      if (invoiceNo && !grouped.invoiceNos.includes(invoiceNo)) {
+        grouped.invoiceNos.push(invoiceNo);
+      }
+
+      grouped.invoices.push({
+        batchItemId: item._id,
+        invoiceId: item.invoiceId?._id || null,
+        invoiceNo: invoiceNo,
+        feeType: feeType,
+        courseName: courseNamesText || "",
+        courseType: item.invoiceId?.courseId?.type || "",
+        acYear: item.invoiceId?.acYear?.acYear || "",
+        total: Number(item.invoiceId?.total || 0),
+        balance: Number(item.invoiceId?.balance || 0),
+        amount: amount,
+        status: item.invoiceId?.status || "",
+        allocations: Array.isArray(item.allocations) ? item.allocations : [],
+      });
+
+      if (Array.isArray(item.allocations) && item.allocations.length > 0) {
+        grouped.allocations.push(...item.allocations);
+      }
+
+      grouped.items.push(item);
+    }
+
+    const items = Array.from(groupedMap.values()).map((grouped, index) => ({
+      slNo: index + 1,
+      studentId: grouped.studentId,
+      studentName: grouped.studentName,
+      rollNumber: grouped.rollNumber,
+      amount: grouped.amount,
+      status: grouped.status,
+      createdAt: grouped.createdAt,
+
+      feeTypes: grouped.feeTypes,
+      feeTypesText: grouped.feeTypes.join(", "),
+      invoiceNos: grouped.invoiceNos,
+      invoiceNosText: grouped.invoiceNos.join(", "),
+
+      invoices: grouped.invoices,
+      allocations: grouped.allocations,
+      rawItems: grouped.items,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      batch,
+      items,
+    });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
+  }
+};
+*/}
 
 export const approveBatch = async (req, res) => {
   requireRole(req.user?.role, ["superadmin", "hquser"]);
@@ -455,7 +600,7 @@ export const listPendingInvoicesHQ_NotSent = async (req, res) => {
     }
 
     const invoices = await FeeInvoice.find(invoiceQuery)
-      .select("invoiceNo schoolId studentId acYear courseId total paidTotal balance status createdAt source")
+      .select("invoiceNo schoolId studentId acYear courseId courseNamesText total paidTotal balance status createdAt source")
       .sort({ createdAt: -1 })
       .populate({
         path: "schoolId",

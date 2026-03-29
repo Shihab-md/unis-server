@@ -44,7 +44,7 @@ export const listDueInvoicesForSchool = async (req, res) => {
     }
 
     const invoicesRaw = await FeeInvoice.find(q)
-      .select("invoiceNo schoolId studentId userId acYear courseId total paidTotal balance status createdAt source")
+      .select("invoiceNo schoolId studentId userId acYear courseId courseNamesText total paidTotal balance status createdAt source")
       .sort({ createdAt: -1 })
       .populate({ path: "userId", select: "name email" })
       .populate({ path: "studentId", select: "rollNumber feesPaid" })
@@ -191,7 +191,7 @@ export const createPaymentBatch = async (req, res) => {
     }
 
     const invoices = await FeeInvoice.find({ _id: { $in: invoiceIds } })
-      .select("_id schoolId acYear studentId balance status")
+      .select("_id schoolId acYear studentId balance status courseNamesText")
       .lean();
 
     const invMap = new Map(invoices.map((x) => [String(x._id), x]));
@@ -429,7 +429,7 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       })
       .populate({
         path: "invoiceId",
-        select: "invoiceNo total paidTotal balance acYear status courseId source",
+        select: "invoiceNo total paidTotal balance acYear status courseId courseNamesText source",
         populate: [
           { path: "courseId", select: "name type" },
           { path: "acYear", select: "acYear" },
