@@ -464,14 +464,28 @@ export const listPendingInvoicesHQ_NotSent = async (req, res) => {
       })
       .populate({
         path: "studentId",
-        select: "rollNumber userId",
+        select: "rollNumber feesPaid userId",
         populate: { path: "userId", select: "name" },
       })
       .populate({ path: "courseId", select: "name type" })
       .populate({ path: "acYear", select: "acYear" })
       .lean();
 
-    return res.status(200).json({ success: true, invoices });
+    const normalizedInvoices = invoices.map((inv) => {
+      const feesPaid = Number(inv?.studentId?.feesPaid || 0);
+
+      return {
+        ...inv,
+        studentId: inv?.studentId
+          ? {
+            ...inv.studentId,
+            rollNumber: feesPaid === 0 ? "-" : inv.studentId.rollNumber,
+          }
+          : inv.studentId,
+      };
+    });
+
+    return res.status(200).json({ success: true, invoices: normalizedInvoices });
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
