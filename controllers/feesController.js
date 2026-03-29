@@ -424,7 +424,7 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       .select("batchId invoiceId studentId amount status error createdAt")
       .populate({
         path: "studentId",
-        select: "rollNumber userId",
+        select: "rollNumber feesPaid userId",
         populate: { path: "userId", select: "name" },
       })
       .populate({
@@ -438,8 +438,22 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const normalizedItems = items.map((it) => {
+      const feesPaid = Number(it?.studentId?.feesPaid || 0);
+
+      return {
+        ...it,
+        studentId: it?.studentId
+          ? {
+            ...it.studentId,
+            rollNumber: feesPaid === 0 ? "-" : it.studentId.rollNumber,
+          }
+          : it.studentId,
+      };
+    });
+
     const map = new Map();
-    for (const it of items) {
+    for (const it of normalizedItems) {
       const k = String(it.batchId);
       if (!map.has(k)) map.set(k, []);
       map.get(k).push(it);
