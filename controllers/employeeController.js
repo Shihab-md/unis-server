@@ -645,7 +645,7 @@ const getEmployee = async (req, res) => {
     let employee;
     employee = await Employee.findById({ _id: id })
       .populate({ path: "schoolId", select: "_id code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" }) // ✅ no password
+      .populate({ path: "userId", select: "name email role profileImage" }) // ✅ no password
       .lean();
  
     if (!employee) {
