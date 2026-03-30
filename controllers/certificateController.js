@@ -950,6 +950,13 @@ const addCertificate = async (req, res) => {
       return res.status(404).json({ success: false, error: "Student not found." });
     }
 
+    const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
+    if (cert) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Certificate Already Found. No : " + cert.code });
+    }
+
     const academicStart = await Academic.findOne({
       $or: [
         { courseId1: template.courseId },

@@ -24,5 +24,7 @@ const certificateSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+certificateSchema.index({ templateId: 1, studentId: 1 });
+
 const Certificate = mongoose.model("Certificate", certificateSchema);
 export default Certificate;
