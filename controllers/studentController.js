@@ -472,6 +472,7 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Error: Student NOT added." });
     }
 
+    console.log("AC Year : " + acYear)
     const academicYearById = await AcademicYear.findById({ _id: acYear });
     if (academicYearById == null) {
       return res
@@ -1262,7 +1263,7 @@ const getStudentsBySchool = async (req, res) => {
     }
 
     const activeAcYearId = await getActiveAcademicYearIdFromCache();
-
+    console.log("AC Year " + activeAcYearId)
     const studentsList = await Student.find({
       schoolId,
       active: "Active",
@@ -2168,6 +2169,7 @@ const updateStudent = async (req, res) => {
         const school = await School.findById(schoolId).select("_id").session(session);
         if (!school) throw new Error("Niswan not found");
 
+        console.log("AC Year : " + acYear);
         const academicYearById = await AcademicYear.findById(acYear).select("_id").session(session);
         if (!academicYearById) throw new Error("Academic Year Not exists");
 
