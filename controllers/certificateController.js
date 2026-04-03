@@ -17,7 +17,7 @@ import * as fs from "fs";
 import * as path from "path";
 import getRedis from "../db/redis.js";
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
 const upload = multer({});
 
@@ -1349,4 +1349,455 @@ const getCertificate = async (req, res) => {
   }
 };
 
-export { addCertificate, upload, getCertificates, getCertificate, getByCertFilter };
+const getIssueDateMetaFromStoredValue = (value) => {
+  const dateObj = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(dateObj.getTime())) {
+    throw new Error("Invalid certificate issue date.");
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tokyo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  const parts = formatter.formatToParts(dateObj);
+  const day = parts.find((p) => p.type === "day")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const year = parts.find((p) => p.type === "year")?.value;
+
+  if (!day || !month || !year) {
+    throw new Error("Invalid certificate issue date.");
+  }
+
+  return {
+    dateObj,
+    issueDateText: `${day}/${month}/${year}`,
+    endYear: String(year),
+  };
+};
+
+const overwriteBufferInDrive = async (drive, fileId, fileName, buffer, mimeType) => {
+  const stream = Readable.from(buffer);
+
+  const res = await drive.files.update({
+    fileId,
+    requestBody: {
+      name: fileName,
+    },
+    media: {
+      mimeType,
+      body: stream,
+    },
+    fields: "id,name,webViewLink",
+  });
+
+  const updatedFileId = res?.data?.id || fileId;
+
+  return {
+    fileId: updatedFileId,
+    fileName: res?.data?.name || fileName,
+    viewUrl: res?.data?.webViewLink || `https://drive.google.com/file/d/${updatedFileId}/view`,
+    previewUrl: drivePreviewUrl(updatedFileId),
+    downloadUrl: driveDownloadUrl(updatedFileId),
+  };
+};
+
+const downloadDriveFileBuffer = async (drive, fileId) => {
+  const res = await drive.files.get(
+    {
+      fileId,
+      alt: "media",
+    },
+    {
+      responseType: "arraybuffer",
+    }
+  );
+
+  return Buffer.from(res.data);
+};
+
+const getIdValueForCertificate = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value._id) return String(value._id);
+  return String(value);
+};
+
+const resolveCertificateRenderContext = async (certificateId) => {
+  const certificate = await Certificate.findById({ _id: certificateId });
+
+  if (!certificate) {
+    throw new Error("Certificate not found.");
+  }
+
+  const template = await Template.findById({ _id: certificate.templateId }).populate({
+    path: "courseId",
+    select: "_id name years",
+  });
+
+  if (!template) {
+    throw new Error("Template not found.");
+  }
+
+  const school = await School.findById({ _id: certificate.schoolId }).populate({
+    path: "districtStateId",
+    select: "district state",
+  });
+
+  if (!school) {
+    throw new Error("School not found.");
+  }
+
+  const student = await Student.findById({ _id: certificate.studentId }).populate("userId", {
+    password: 0,
+    profileImage: 0,
+  });
+
+  if (!student) {
+    throw new Error("Student not found.");
+  }
+
+  const targetCourseId = getIdValueForCertificate(template?.courseId);
+
+  const academicStart = await Academic.findOne({
+    studentId: certificate.studentId,
+    $or: [
+      { courseId1: template.courseId },
+      { courseId2: template.courseId },
+      { courseId3: template.courseId },
+      { courseId4: template.courseId },
+      { courseId5: template.courseId },
+    ],
+  })
+    .sort({ createdAt: 1 })
+    .populate({ path: "acYear", select: "acYear" });
+
+  if (!academicStart || !academicStart.acYear || !academicStart.acYear.acYear) {
+    throw new Error("Academics not found for the Student.");
+  }
+
+  const academicEnd = await Academic.findOne({
+    studentId: certificate.studentId,
+    $or: [
+      { courseId1: template.courseId },
+      { courseId2: template.courseId },
+      { courseId3: template.courseId },
+      { courseId4: template.courseId },
+      { courseId5: template.courseId },
+    ],
+  })
+    .sort({ createdAt: -1 })
+    .populate({ path: "acYear", select: "acYear" });
+
+  if (!academicEnd || !academicEnd.acYear || !academicEnd.acYear.acYear) {
+    throw new Error("Academic end year not found.");
+  }
+
+  let grade = "";
+
+  for (let i = 1; i <= 5; i++) {
+    const courseIdValue = getIdValueForCertificate(academicEnd[`courseId${i}`]);
+
+    if (courseIdValue === targetCourseId) {
+      if (isMakthabLevelCourse(template?.courseId?.name)) {
+        grade = String(academicEnd[`year${i}`] ?? "");
+      } else {
+        grade = String(academicEnd[`grade${i}`] ?? "");
+      }
+      break;
+    }
+  }
+
+  const courseYears = Number(template?.courseId?.years || 0);
+  if (!courseYears || courseYears <= 0) {
+    throw new Error("Invalid course duration. Please set Course.years properly.");
+  }
+
+  let tempType = 1;
+  const courseName = String(template?.courseId?.name || "");
+
+  if (courseName.includes("Muallama")) {
+    tempType = 2;
+  } else if (courseName.includes("Muballiga")) {
+    tempType = 3;
+  }
+
+  const issueMeta = getIssueDateMetaFromStoredValue(certificate.issueDate);
+  const startYear = String(Number(issueMeta.endYear) - courseYears);
+
+  return {
+    certificate,
+    template,
+    school,
+    student,
+    grade,
+    tempType,
+    issueDateText: issueMeta.issueDateText,
+    startYear,
+    endYear: issueMeta.endYear,
+  };
+};
+
+const buildCertificatePdfBufferForExistingCertificate = async (certificateId) => {
+  const {
+    certificate,
+    template,
+    school,
+    student,
+    grade,
+    tempType,
+    issueDateText,
+    startYear,
+    endYear,
+  } = await resolveCertificateRenderContext(certificateId);
+
+  const templatePdf = await loadTemplatePdf(template.template);
+  const outputPdf = await PDFDocument.create();
+
+  const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
+  outputPdf.addPage(basePage);
+
+  const page = outputPdf.getPage(0);
+  const pageWidth = Math.round(page.getWidth());
+  const pageHeight = Math.round(page.getHeight());
+
+  const hasComplexHeaderText =
+    Boolean(String(school?.nameArabic || "").trim()) ||
+    Boolean(String(school?.nameNative || "").trim());
+
+  if (hasComplexHeaderText) {
+    await prepareCanvasFonts();
+
+    const overlayPngBuffer = await buildCertificateComplexHeaderOverlayPng({
+      width: pageWidth,
+      height: pageHeight,
+      school,
+      tempType,
+      scale: 5,
+    });
+
+    const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
+    page.drawImage(overlayImage, {
+      x: 0,
+      y: 0,
+      width: pageWidth,
+      height: pageHeight,
+    });
+  }
+
+  await drawCertificateVectorTexts({
+    outputPdf,
+    page,
+    school,
+    student,
+    startYear,
+    endYear,
+    certificateNum: certificate.code,
+    issueDateText,
+    tempType,
+    grade,
+  });
+
+  const pdfBytes = Buffer.from(await outputPdf.save());
+
+  return {
+    certificate,
+    pdfBytes,
+  };
+};
+
+const addDuplicateWatermarkToPdf = async (pdfBuffer) => {
+  const pdfDoc = await PDFDocument.load(pdfBuffer);
+  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  for (const page of pdfDoc.getPages()) {
+    const { width, height } = page.getSize();
+
+    page.drawText("DUPLICATE", {
+      x: width * 0.18,
+      y: height * 0.42,
+      size: 56,
+      font,
+      color: rgb(0.85, 0, 0),
+      opacity: 0.18,
+      rotate: degrees(45),
+    });
+  }
+
+  return Buffer.from(await pdfDoc.save());
+};
+
+const reprintCertificate = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existingCertificate = await Certificate.findById({ _id: id });
+    if (!existingCertificate) {
+      return res.status(404).json({
+        success: false,
+        error: "Certificate not found.",
+      });
+    }
+
+    if (!existingCertificate.certificateDriveFileId) {
+      return res.status(400).json({
+        success: false,
+        error: "Certificate Drive file not found.",
+      });
+    }
+
+    const { certificate, pdfBytes } = await buildCertificatePdfBufferForExistingCertificate(id);
+
+    const overwriteFileName =
+      certificate.certificateFileName ||
+      `${String(certificate.code || "certificate").replace(/[^\w.-]/g, "_")}.pdf`;
+
+    const updated = await runWithDriveRetry(async (drive) => {
+      return await overwriteBufferInDrive(
+        drive,
+        certificate.certificateDriveFileId,
+        overwriteFileName,
+        pdfBytes,
+        "application/pdf"
+      );
+    });
+
+    await Certificate.findByIdAndUpdate(
+      { _id: certificate._id },
+      {
+        certificate: updated.previewUrl,
+        certificateDriveFileId: updated.fileId,
+        certificateDriveViewUrl: updated.viewUrl,
+        certificateDriveDownloadUrl: updated.downloadUrl,
+        certificateDrivePreviewUrl: updated.previewUrl,
+        certificateFileName: updated.fileName,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Certificate Reprint Successful.",
+      file: updated.downloadUrl,
+      downloadUrl: updated.downloadUrl,
+      viewUrl: updated.previewUrl,
+      fileName: updated.fileName,
+      mimeType: "application/pdf",
+      type: "url",
+    });
+  } catch (error) {
+    console.log(error);
+
+    if (
+      String(error?.message || "").includes("Google Drive connection expired") ||
+      String(error?.message || "").includes("Google OAuth configuration changed") ||
+      String(error?.message || "").includes("Stored Google Drive token is invalid")
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    if (
+      String(error?.message || "").includes("Certificate not found") ||
+      String(error?.message || "").includes("Template not found") ||
+      String(error?.message || "").includes("School not found") ||
+      String(error?.message || "").includes("Student not found") ||
+      String(error?.message || "").includes("Academics not found") ||
+      String(error?.message || "").includes("Academic end year not found") ||
+      String(error?.message || "").includes("Invalid course duration")
+    ) {
+      return res.status(404).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "server error in reprint certificate.",
+    });
+  }
+};
+
+const duplicatePrintCertificate = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const certificate = await Certificate.findById({ _id: id }).select(
+      "code certificate certificateDriveFileId certificateFileName"
+    );
+
+    if (!certificate) {
+      return res.status(404).json({
+        success: false,
+        error: "Certificate not found.",
+      });
+    }
+
+    let originalPdfBuffer = null;
+
+    if (certificate.certificateDriveFileId) {
+      originalPdfBuffer = await runWithDriveRetry(async (drive) => {
+        return await downloadDriveFileBuffer(drive, certificate.certificateDriveFileId);
+      });
+    } else if (certificate.certificate) {
+      originalPdfBuffer = await fetchBinary(String(certificate.certificate).replace("?download=1", ""));
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Certificate file not found.",
+      });
+    }
+
+    const duplicatePdfBytes = await addDuplicateWatermarkToPdf(originalPdfBuffer);
+
+    const originalBaseName = String(
+      certificate.certificateFileName ||
+      certificate.code ||
+      "certificate"
+    ).replace(/\.pdf$/i, "");
+
+    const duplicateFileName = `${originalBaseName}_DUPLICATE.pdf`;
+
+    return res.status(200).json({
+      success: true,
+      message: "Duplicate Certificate Ready.",
+      file: duplicatePdfBytes.toString("base64"),
+      fileName: duplicateFileName,
+      mimeType: "application/pdf",
+      type: "base64pdf",
+    });
+  } catch (error) {
+    console.log(error);
+
+    if (
+      String(error?.message || "").includes("Google Drive connection expired") ||
+      String(error?.message || "").includes("Google OAuth configuration changed") ||
+      String(error?.message || "").includes("Stored Google Drive token is invalid")
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "server error in duplicate print certificate.",
+    });
+  }
+};
+
+export {
+  addCertificate,
+  upload,
+  getCertificates,
+  getCertificate,
+  getByCertFilter,
+  reprintCertificate,
+  duplicatePrintCertificate,
+};
