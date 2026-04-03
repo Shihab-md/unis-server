@@ -20,7 +20,7 @@ import getRedis from "../db/redis.js";
 import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
 const upload = multer({});
-
+   
 // ---------------- Google Drive helpers (Certificates) ----------------
 const buildGoogleOauthFingerprint = () => {
   const raw = [
