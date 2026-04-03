@@ -680,7 +680,7 @@ const importStudentsData = async (req, res) => {
   const getMakthabCourseNameByYear = (yearCount) => {
     const year = Number(yearCount);
 
-    if (year >= 1 && year <= 3) return "Makthab_Level1";
+    if (year >= 0 && year <= 3) return "Makthab_Level1";
     if (year >= 4 && year <= 6) return "Makthab_Level2";
     if (year >= 7 && year <= 9) return "Makthab_Level3";
 
@@ -732,14 +732,14 @@ const importStudentsData = async (req, res) => {
 
       const y = parseNumber(rawMakthabYear, 0);
 
-      if (y <= 0) {
+      if (y < 0) {
         return { error: "MakthabYear not given/invalid" };
       }
 
       const makthabCourseName = getMakthabCourseNameByYear(y);
 
       if (!makthabCourseName) {
-        return { error: "MakthabYear should be between 1 and 9" };
+        return { error: "MakthabYear should be between 0 and 9" };
       }
 
       return {
