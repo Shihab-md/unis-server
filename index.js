@@ -15,6 +15,7 @@ import districtStateRouter from './routes/districtState.js'
 import settingRouter from './routes/setting.js'
 import dashboardRouter from './routes/dashboard.js'
 import profileRouter from './routes/profile.js'
+import resetPassRouter from './routes/resetPass.js'
 
 import connectToDatabase from './db/db.js'
 import loadCache from './db/loadCache.js'
@@ -57,6 +58,7 @@ app.use('/api/districtState', districtStateRouter)
 app.use('/api/setting', settingRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/profile', profileRouter)
+app.use('/api/resetPass', resetPassRouter)
 
 app.use('/api/report', reportRouter)
 
