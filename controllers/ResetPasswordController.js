@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Supervisor from "../models/Supervisor.js";
 import Employee from "../models/Employee.js";
 import Student from "../models/Student.js";
+import { toCamelCase } from "./commonController.js";
 
 const cleanValue = (value) => String(value || "").trim();
 
@@ -43,7 +44,7 @@ const findUserByLoginId = async (loginId) => {
 
     if (employee?.userId?._id) {
         return normalizeFoundUser({
-            roleLabel: "Employee",
+            roleLabel: "Employee : " + toCamelCase(String(employee?.userId?.role || "").trim()) || "Employee",
             entity: employee,
             loginIdField: "employeeId",
         });
