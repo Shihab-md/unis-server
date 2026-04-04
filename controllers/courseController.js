@@ -41,6 +41,7 @@ const addCourse = async (req, res) => {
       subject10,
       subject10MaxMark,
       subject10PassMark,
+      promotionOrder,
     } = req.body;
 
     const courseByCode = await Course.findOne({ code: code });
@@ -87,6 +88,7 @@ const addCourse = async (req, res) => {
       subject10: toCamelCase(subject10),
       subject10MaxMark,
       subject10PassMark,
+      promotionOrder,
     });
 
     await newCourse.save();
@@ -198,19 +200,6 @@ const getCoursesFromCache = async (req, res) => {
   }
 };
 
-{/*
-const getCoursesFromCache = async (req, res) => {
-  try {
-    const redis = await getRedis();
-    const courses = JSON.parse(await redis.get('courses'));
-    return res.status(200).json({ success: true, courses });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get courses server error" });
-  }
-};
-*/}
 const getCourse = async (req, res) => {
   const { id } = req.params;
   try {
@@ -261,7 +250,9 @@ const updateCourse = async (req, res) => {
       subject9PassMark,
       subject10,
       subject10MaxMark,
-      subject10PassMark, } = req.body;
+      subject10PassMark,
+      promotionOrder,
+    } = req.body;
 
     const course = await Course.findById({ _id: id });
     if (!course) {
@@ -306,6 +297,7 @@ const updateCourse = async (req, res) => {
       subject10: toCamelCase(subject10),
       subject10MaxMark,
       subject10PassMark,
+      promotionOrder,
     })
 
     if (!updateCourse) {

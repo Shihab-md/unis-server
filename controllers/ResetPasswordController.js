@@ -44,7 +44,7 @@ const findUserByLoginId = async (loginId) => {
 
     if (employee?.userId?._id) {
         return normalizeFoundUser({
-            roleLabel: "Employee : " + toCamelCase(String(employee?.userId?.role || "").trim()) || "Employee",
+            roleLabel: toCamelCase(String(employee?.userId?.role || "").trim()) || "-",
             entity: employee,
             loginIdField: "employeeId",
         });
