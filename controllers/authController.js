@@ -181,7 +181,6 @@ const login = async (req, res) => {
     if (role === "supervisor") tokenPayload.schoolIds = schoolIds;
 
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: "30m" });
-
     return res.status(200).json({
       success: true,
       token,
