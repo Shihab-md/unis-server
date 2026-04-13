@@ -1798,6 +1798,13 @@ const getStudent = async (req, res) => {
       return res.status(404).json({ success: false, error: "Student data not found." });
     }
 
+    // ✅ Fees check (safe numeric)
+    if (Number(student?.feesPaid) === 0) {
+      return res
+        .status(403)
+        .json({ success: false, error: "Sorry. Could not View. (Fees not Paid)" });
+    }
+
     const academics = await Academic.find({ studentId: student._id })
       .populate({ path: "acYear", select: "_id acYear" })
       .populate({ path: "instituteId1", select: "_id code name" })
