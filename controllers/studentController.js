@@ -1859,7 +1859,7 @@ const getStudent = async (req, res) => {
     return res.status(500).json({ success: false, error: "get student by ID server error" });
   }
 };
-
+{/*}
 const getStudentForEdit = async (req, res) => {
   const { id } = req.params;
 
@@ -1934,6 +1934,187 @@ const getStudentForEdit = async (req, res) => {
     }
 
     // ✅ attach as array (same shape as your frontend expects)
+    student._academics = academic ? [academic] : [];
+
+    return res.status(200).json({ success: true, student });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get student by ID server error" });
+  }
+};
+*/}
+
+const getStudentForEdit = async (req, res) => {
+  const { id } = req.params;
+
+  console.log("getStudentForEdit : " + id);
+
+  try {
+    const student = await Student.findById(id)
+      .populate({ path: "schoolId", select: "code nameEnglish" })
+      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "districtStateId", select: "district state" })
+      .populate({ path: "courses", select: "name type fees years code" })
+      .lean();
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: "Student data not found." });
+    }
+
+    // ✅ Fees check
+    if (Number(student?.feesPaid) === 0) {
+      return res
+        .status(403)
+        .json({ success: false, error: "Sorry. Could not Update. (Fees not Paid)" });
+    }
+
+    const academicPopulate = [
+      { path: "acYear", select: "_id acYear active" },
+
+      { path: "instituteId1", select: "_id code name" },
+      { path: "courseId1", select: "_id iCode code name fees years type" },
+
+      { path: "instituteId2", select: "_id code name" },
+      { path: "courseId2", select: "_id iCode code name fees years type" },
+
+      { path: "instituteId3", select: "_id code name" },
+      { path: "courseId3", select: "_id iCode code name fees years type" },
+
+      { path: "instituteId4", select: "_id code name" },
+      { path: "courseId4", select: "_id iCode code name fees years type" },
+
+      { path: "instituteId5", select: "_id code name" },
+      { path: "courseId5", select: "_id iCode code name fees years type" },
+    ];
+
+    const hasPositiveFees = (academic) => {
+      for (let i = 1; i <= 5; i++) {
+        if (Number(academic?.[`fees${i}`] || 0) > 0) return true;
+        if (Number(academic?.[`finalFees${i}`] || 0) > 0) return true;
+      }
+      return false;
+    };
+
+    const hasAdmissionStatus = (academic) => {
+      for (let i = 1; i <= 5; i++) {
+        if (String(academic?.[`status${i}`] || "").trim() === "Admission") return true;
+      }
+      return false;
+    };
+
+    const normalizeAcademicFees = (academic) => {
+      if (!academic) return academic;
+
+      for (let i = 1; i <= 5; i++) {
+        const feeKey = `fees${i}`;
+        const finalFeeKey = `finalFees${i}`;
+        const courseKey = `courseId${i}`;
+
+        const currentFee = academic?.[feeKey];
+        const currentFinalFee = academic?.[finalFeeKey];
+        const courseFee = academic?.[courseKey]?.fees;
+
+        if (
+          (currentFee === null || currentFee === undefined || currentFee === "") &&
+          courseFee !== null &&
+          courseFee !== undefined &&
+          courseFee !== ""
+        ) {
+          academic[feeKey] = Number(courseFee);
+        }
+
+        if (
+          (currentFinalFee === null || currentFinalFee === undefined || currentFinalFee === "") &&
+          courseFee !== null &&
+          courseFee !== undefined &&
+          courseFee !== ""
+        ) {
+          academic[finalFeeKey] = Number(courseFee);
+        }
+      }
+
+      return academic;
+    };
+
+    const pickBestAcademicForEdit = (academicList = []) => {
+      if (!Array.isArray(academicList) || academicList.length === 0) return null;
+
+      const normalized = academicList.map((item) => normalizeAcademicFees(item));
+
+      const withPositiveFees = normalized.filter((item) => hasPositiveFees(item));
+      if (withPositiveFees.length > 0) {
+        const withAdmission = withPositiveFees.filter((item) => hasAdmissionStatus(item));
+        if (withAdmission.length > 0) {
+          return withAdmission.sort(
+            (a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+          )[0];
+        }
+
+        return withPositiveFees.sort(
+          (a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+        )[0];
+      }
+
+      const withAdmissionOnly = normalized.filter((item) => hasAdmissionStatus(item));
+      if (withAdmissionOnly.length > 0) {
+        return withAdmissionOnly.sort(
+          (a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+        )[0];
+      }
+
+      return normalized.sort(
+        (a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+      )[0];
+    };
+
+    // ✅ Prefer Active academic year from DB
+    let acadYear = await AcademicYear.findOne({ active: "Active" })
+      .select("_id acYear active")
+      .lean();
+
+    // ✅ Fallback to current-year string if Active not found
+    if (!acadYear?._id) {
+      const now = new Date();
+      const yearNow = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      let accYear = `${yearNow - 1}-${yearNow}`;
+      if (month >= 4) accYear = `${yearNow}-${yearNow + 1}`;
+
+      acadYear = await AcademicYear.findOne({ acYear: accYear })
+        .select("_id acYear active")
+        .lean();
+
+      if (!acadYear?._id) {
+        return res.status(404).json({
+          success: false,
+          error: "Academic Year not found.",
+        });
+      }
+    }
+
+    console.log("Student : " + student._id + ", AC Year : " + acadYear._id);
+
+    // ✅ Get all academic records for selected year
+    let academics = await Academic.find({
+      studentId: student._id,
+      acYear: acadYear._id,
+    })
+      .sort({ updatedAt: -1 })
+      .populate(academicPopulate)
+      .lean();
+
+    // ✅ Fallback to all academics if selected-year not found
+    if (!academics || academics.length === 0) {
+      academics = await Academic.find({ studentId: student._id })
+        .sort({ updatedAt: -1 })
+        .populate(academicPopulate)
+        .lean();
+    }
+
+    const academic = pickBestAcademicForEdit(academics);
+
+    // ✅ attach as array (same shape frontend expects)
     student._academics = academic ? [academic] : [];
 
     return res.status(200).json({ success: true, student });

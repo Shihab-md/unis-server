@@ -20,7 +20,7 @@ import getRedis from "../db/redis.js";
 import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
 const upload = multer({});
-   
+
 // ---------------- Google Drive helpers (Certificates) ----------------
 const buildGoogleOauthFingerprint = () => {
   const raw = [
@@ -252,8 +252,32 @@ const padSerialNumber = (value, length = 6) => {
   return String(value || 0).padStart(length, "0");
 };
 
+const getCertificateTempType = (courseName = "") => {
+  const name = String(courseName || "").trim();
+
+  if (name.includes("Fundamentals Of Food")
+    || name.includes("Psychology And Health")
+    || name.includes("Human Resource")) {
+    return 4;
+  }
+
+  if (name.includes("Muballiga")) {
+    return 3;
+  }
+
+  if (name.includes("Muallama")) {
+    return 2;
+  }
+
+  return 1;
+};
+
 const getCertificateNumberMeta = (tempType) => {
   const type = Number(tempType);
+
+  if (type === 4) {
+    return { name: "IHS", prefix: "IHS" };
+  }
 
   if (type === 3) {
     return { name: "Muballiga", prefix: "MB" };
@@ -323,13 +347,6 @@ const ensureFontRegistered = async ({ url, fileName, family }) => {
 
 const prepareCanvasFonts = async () => {
   try {
-    // Only fonts really used for complex-script header overlay
-    // await ensureFontRegistered({
-    //   url: "https://www.unis.org.in/Nirmalab.ttc",
-    //   fileName: "Nirmalab.ttc",
-    //   family: "Nirmala",
-    // });
-
     await ensureFontRegistered({
       url: "https://www.unis.org.in/arialbd.ttf",
       fileName: "Arial-Bold.ttf",
@@ -439,18 +456,6 @@ const buildCertificateComplexHeaderOverlayPng = async ({
     });
   };
 
-  // const drawNative = (text, y, size) => {
-  //   drawCenteredText({
-  //     text,
-  //     y,
-  //     size,
-  //     fontFamily: "Nirmalab",
-  //     weight: "bold",
-  //     color: "rgb(161, 14, 94)",
-  //     repeat: 3,
-  //   });
-  // };
-
   const drawNative = (text, y, size) => {
     if (!text) return;
 
@@ -459,7 +464,6 @@ const buildCertificateComplexHeaderOverlayPng = async ({
     ctx.fillStyle = "rgb(161, 14, 94)";
     ctx.textAlign = "center";
 
-    // draw multiple times with tiny offsets to make it look bolder
     const offsets = [
       [0, 0],
       [-0.4, 0],
@@ -904,6 +908,151 @@ const drawCertificateVectorTexts = async ({
   }
 };
 
+// IMPORTANT:
+// Replace only these coordinates with your measured values.
+const SPECIAL_CERTIFICATE_LAYOUT = {
+  studentName: {
+    x: 400,
+    yFromTop: 273,
+    size: 11,
+    align: "center",
+    maxWidth: 320,
+  },
+  fatherOrGuardianName: {
+    x: 340,
+    yFromTop: 298,
+    size: 11,
+    align: "center",
+    maxWidth: 280,
+  },
+  rollNumber: {
+    x: 660,
+    yFromTop: 273,
+    size: 11,
+    align: "left",
+    maxWidth: 100,
+  },
+  certificateNum: {
+    x: 170,
+    yFromTop: 416,
+    size: 10,
+    align: "left",
+    maxWidth: 90,
+  },
+  issueDate: {
+    x: 170,
+    yFromTop: 430,
+    size: 10,
+    align: "left",
+    maxWidth: 90,
+  },
+};
+
+const drawSpecialCertificateVectorTexts = async ({
+  outputPdf,
+  page,
+  student,
+  certificateNum,
+  issueDateText,
+}) => {
+  const helveticaBold = await outputPdf.embedFont(StandardFonts.HelveticaBold);
+
+  const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
+  const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
+  const fatherOrGuardianName = student?.fatherName
+    ? String(student.fatherName).toUpperCase()
+    : student?.guardianName
+      ? String(student.guardianName).toUpperCase()
+      : student?.motherName
+        ? String(student.motherName).toUpperCase()
+        : "";
+
+  drawPdfText({
+    page,
+    text: name,
+    x: SPECIAL_CERTIFICATE_LAYOUT.studentName.x,
+    yFromTop: SPECIAL_CERTIFICATE_LAYOUT.studentName.yFromTop,
+    size: SPECIAL_CERTIFICATE_LAYOUT.studentName.size,
+    font: helveticaBold,
+    color: PDF_COLOR_BODY_BLUE,
+    align: SPECIAL_CERTIFICATE_LAYOUT.studentName.align,
+    maxWidth: SPECIAL_CERTIFICATE_LAYOUT.studentName.maxWidth,
+  });
+
+  drawPdfText({
+    page,
+    text: fatherOrGuardianName,
+    x: SPECIAL_CERTIFICATE_LAYOUT.fatherOrGuardianName.x,
+    yFromTop: SPECIAL_CERTIFICATE_LAYOUT.fatherOrGuardianName.yFromTop,
+    size: SPECIAL_CERTIFICATE_LAYOUT.fatherOrGuardianName.size,
+    font: helveticaBold,
+    color: PDF_COLOR_BODY_BLUE,
+    align: SPECIAL_CERTIFICATE_LAYOUT.fatherOrGuardianName.align,
+    maxWidth: SPECIAL_CERTIFICATE_LAYOUT.fatherOrGuardianName.maxWidth,
+  });
+
+  drawPdfText({
+    page,
+    text: rollNumber,
+    x: SPECIAL_CERTIFICATE_LAYOUT.rollNumber.x,
+    yFromTop: SPECIAL_CERTIFICATE_LAYOUT.rollNumber.yFromTop,
+    size: SPECIAL_CERTIFICATE_LAYOUT.rollNumber.size,
+    font: helveticaBold,
+    color: PDF_COLOR_BODY_BLUE,
+    align: SPECIAL_CERTIFICATE_LAYOUT.rollNumber.align,
+    maxWidth: SPECIAL_CERTIFICATE_LAYOUT.rollNumber.maxWidth,
+  });
+
+  drawPdfText({
+    page,
+    text: String(certificateNum),
+    x: SPECIAL_CERTIFICATE_LAYOUT.certificateNum.x,
+    yFromTop: SPECIAL_CERTIFICATE_LAYOUT.certificateNum.yFromTop,
+    size: SPECIAL_CERTIFICATE_LAYOUT.certificateNum.size,
+    font: helveticaBold,
+    color: PDF_COLOR_BODY_BLUE,
+    align: SPECIAL_CERTIFICATE_LAYOUT.certificateNum.align,
+    maxWidth: SPECIAL_CERTIFICATE_LAYOUT.certificateNum.maxWidth,
+  });
+
+  drawPdfText({
+    page,
+    text: issueDateText,
+    x: SPECIAL_CERTIFICATE_LAYOUT.issueDate.x,
+    yFromTop: SPECIAL_CERTIFICATE_LAYOUT.issueDate.yFromTop,
+    size: SPECIAL_CERTIFICATE_LAYOUT.issueDate.size,
+    font: helveticaBold,
+    color: PDF_COLOR_BODY_BLUE,
+    align: SPECIAL_CERTIFICATE_LAYOUT.issueDate.align,
+    maxWidth: SPECIAL_CERTIFICATE_LAYOUT.issueDate.maxWidth,
+  });
+};
+
+const buildSpecialCertificatePdfBuffer = async ({
+  template,
+  student,
+  certificateNum,
+  issueDateText,
+}) => {
+  const templatePdf = await loadTemplatePdf(template.template);
+  const outputPdf = await PDFDocument.create();
+
+  const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
+  outputPdf.addPage(basePage);
+
+  const page = outputPdf.getPage(0);
+
+  await drawSpecialCertificateVectorTexts({
+    outputPdf,
+    page,
+    student,
+    certificateNum,
+    issueDateText,
+  });
+
+  return Buffer.from(await outputPdf.save());
+};
+
 // ---------------- PDF template loader ----------------
 const loadTemplatePdf = async (templateUrl) => {
   const cleanUrl = String(templateUrl || "").replace("?download=1", "");
@@ -924,6 +1073,8 @@ const addCertificate = async (req, res) => {
     if (!template) {
       return res.status(404).json({ success: false, error: "Template not found." });
     }
+
+    const tempType = getCertificateTempType(template?.courseId?.name);
 
     if (!issueDate) {
       return res.status(400).json({
@@ -950,51 +1101,12 @@ const addCertificate = async (req, res) => {
       return res.status(404).json({ success: false, error: "Student not found." });
     }
 
-    const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
-    if (cert) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Certificate Already Found. No : " + cert.code });
-    }
-
-    const academicStart = await Academic.findOne({
-      $or: [
-        { courseId1: template.courseId },
-        { courseId2: template.courseId },
-        { courseId3: template.courseId },
-        { courseId4: template.courseId },
-        { courseId5: template.courseId },
-      ],
-      $and: [{ studentId: studentId }],
-    })
-      .sort({ createdAt: 1 })
-      .limit(1)
-      .populate({ path: "acYear", select: "acYear" });
-
-    if (!academicStart || !academicStart.acYear || !academicStart.acYear.acYear) {
-      return res.status(404).json({
-        success: false,
-        error: "Academics not found for the Student.",
-      });
-    }
-
-    const academicEnd = await Academic.findOne({
-      $or: [
-        { courseId1: template.courseId },
-        { courseId2: template.courseId },
-        { courseId3: template.courseId },
-        { courseId4: template.courseId },
-        { courseId5: template.courseId },
-      ],
-      $and: [{ studentId: studentId }],
-    })
-      .sort({ createdAt: -1 })
-      .limit(1)
-      .populate({ path: "acYear", select: "acYear" });
-
-    if (!academicEnd || !academicEnd.acYear || !academicEnd.acYear.acYear) {
-      return res.status(404).json({ success: false, error: "Academic end year not found." });
-    }
+    // const cert = await Certificate.findOne({ templateId: templateId, studentId: studentId });
+    // if (cert) {
+    //   return res
+    //     .status(404)
+    //     .json({ success: false, error: "Certificate Already Found. No : " + cert.code });
+    // }
 
     const getIdValue = (value) => {
       if (!value) return "";
@@ -1003,41 +1115,71 @@ const addCertificate = async (req, res) => {
       return String(value);
     };
 
-    const targetCourseId = getIdValue(template.courseId);
-
-    let matchedIndex = null;
     let grade = "";
+    let courseYears = 0;
 
-    for (let i = 1; i <= 5; i++) {
-      const courseIdValue = getIdValue(academicEnd[`courseId${i}`]);
+    if (tempType !== 4) {
+      const academicStart = await Academic.findOne({
+        $or: [
+          { courseId1: template.courseId },
+          { courseId2: template.courseId },
+          { courseId3: template.courseId },
+          { courseId4: template.courseId },
+          { courseId5: template.courseId },
+        ],
+        $and: [{ studentId: studentId }],
+      })
+        .sort({ createdAt: 1 })
+        .limit(1)
+        .populate({ path: "acYear", select: "acYear" });
 
-      if (courseIdValue === targetCourseId) {
-        matchedIndex = i;
-
-        if (isMakthabLevelCourse(template?.courseId?.name)) {
-          grade = String(academicEnd[`year${i}`] || "");
-        } else {
-          grade = String(academicEnd[`grade${i}`] || "");
-        }
-
-        break;
+      if (!academicStart || !academicStart.acYear || !academicStart.acYear.acYear) {
+        return res.status(404).json({
+          success: false,
+          error: "Academics not found for the Student.",
+        });
       }
-    }
 
-    // Course start and end year logic.
-    const courseYears = Number(template?.courseId?.years || 0);
-    if (!courseYears || courseYears <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid course duration. Please set Course.years properly.",
-      });
-    }
+      const academicEnd = await Academic.findOne({
+        $or: [
+          { courseId1: template.courseId },
+          { courseId2: template.courseId },
+          { courseId3: template.courseId },
+          { courseId4: template.courseId },
+          { courseId5: template.courseId },
+        ],
+        $and: [{ studentId: studentId }],
+      })
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .populate({ path: "acYear", select: "acYear" });
 
-    let tempType = 1; // Makthab
-    if (template.courseId.name.includes("Muallama")) {
-      tempType = 2; // Muallama
-    } else if (template.courseId.name.includes("Muballiga")) {
-      tempType = 3; // Muballiga
+      if (!academicEnd || !academicEnd.acYear || !academicEnd.acYear.acYear) {
+        return res.status(404).json({ success: false, error: "Academic end year not found." });
+      }
+
+      const targetCourseId = getIdValue(template.courseId);
+
+      for (let i = 1; i <= 5; i++) {
+        const courseIdValue = getIdValue(academicEnd[`courseId${i}`]);
+
+        if (courseIdValue === targetCourseId) {
+          if (isMakthabLevelCourse(template?.courseId?.name)) {
+            grade = String(academicEnd[`year${i}`] || "");
+          } else {
+            grade = String(academicEnd[`grade${i}`] || "");
+          }
+          break;
+        }
+      }
+
+      courseYears = Number(template?.courseId?.years || 0);
+      if (!courseYears || courseYears <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid course duration. Please set Course.years properly.",
+        });
+      }
     }
 
     const certificateNum = await getNextCertificateNumber(tempType);
@@ -1047,7 +1189,6 @@ const addCertificate = async (req, res) => {
 
       const raw = String(value).trim();
 
-      // Case 1: plain date string: YYYY-MM-DD
       const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (dateOnlyMatch) {
         const [, y, m, d] = dateOnlyMatch;
@@ -1067,13 +1208,11 @@ const addCertificate = async (req, res) => {
         };
       }
 
-      // Case 2: ISO datetime string like 2026-03-24T15:00:00.000Z
       const isoDate = new Date(raw);
       if (Number.isNaN(isoDate.getTime())) {
         return null;
       }
 
-      // Format in Asia/Tokyo so 2026-03-24T15:00:00.000Z becomes 25/03/2026
       const formatter = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Asia/Tokyo",
         day: "2-digit",
@@ -1105,8 +1244,13 @@ const addCertificate = async (req, res) => {
     const issueDateObj = parsedIssueDate.dateObj;
     const issueDateText = parsedIssueDate.issueDateText;
 
-    const endYear = String(issueDateObj.getFullYear());
-    const startYear = String(endYear - courseYears);
+    let endYear = "";
+    let startYear = "";
+
+    if (tempType !== 4) {
+      endYear = String(issueDateObj.getFullYear());
+      startYear = String(Number(endYear) - courseYears);
+    }
 
     const name = student?.userId?.name ? String(student.userId.name).toUpperCase() : "";
     const rollNumber = student?.rollNumber ? String(student.rollNumber).toUpperCase() : "";
@@ -1117,60 +1261,66 @@ const addCertificate = async (req, res) => {
 
     const fileName = `${baseFileName}.pdf`;
 
-    // Load PDF template as base
-    const templatePdf = await loadTemplatePdf(template.template);
-    const outputPdf = await PDFDocument.create();
+    let pdfBytes;
 
-    const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
-    outputPdf.addPage(basePage);
+    if (tempType === 4) {
+      pdfBytes = await buildSpecialCertificatePdfBuffer({
+        template,
+        student,
+        certificateNum,
+        issueDateText,
+      });
+    } else {
+      const templatePdf = await loadTemplatePdf(template.template);
+      const outputPdf = await PDFDocument.create();
 
-    const page = outputPdf.getPage(0);
-    const pageWidth = Math.round(page.getWidth());
-    const pageHeight = Math.round(page.getHeight());
+      const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
+      outputPdf.addPage(basePage);
 
-    // 1) Complex-script header overlay only (Arabic / native)
-    //    Keep this as high-resolution PNG to avoid shaping issues.
-    const hasComplexHeaderText =
-      Boolean(String(school?.nameArabic || "").trim()) ||
-      Boolean(String(school?.nameNative || "").trim());
+      const page = outputPdf.getPage(0);
+      const pageWidth = Math.round(page.getWidth());
+      const pageHeight = Math.round(page.getHeight());
 
-    if (hasComplexHeaderText) {
-      await prepareCanvasFonts();
+      const hasComplexHeaderText =
+        Boolean(String(school?.nameArabic || "").trim()) ||
+        Boolean(String(school?.nameNative || "").trim());
 
-      const overlayPngBuffer = await buildCertificateComplexHeaderOverlayPng({
-        width: pageWidth,
-        height: pageHeight,
+      if (hasComplexHeaderText) {
+        await prepareCanvasFonts();
+
+        const overlayPngBuffer = await buildCertificateComplexHeaderOverlayPng({
+          width: pageWidth,
+          height: pageHeight,
+          school,
+          tempType,
+          scale: 5,
+        });
+
+        const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
+        page.drawImage(overlayImage, {
+          x: 0,
+          y: 0,
+          width: pageWidth,
+          height: pageHeight,
+        });
+      }
+
+      await drawCertificateVectorTexts({
+        outputPdf,
+        page,
         school,
+        student,
+        startYear,
+        endYear,
+        certificateNum,
+        issueDateText,
         tempType,
-        scale: 5,
+        grade,
       });
 
-      const overlayImage = await outputPdf.embedPng(overlayPngBuffer);
-      page.drawImage(overlayImage, {
-        x: 0,
-        y: 0,
-        width: pageWidth,
-        height: pageHeight,
-      });
+      pdfBytes = Buffer.from(await outputPdf.save());
     }
 
-    // 2) Draw English/body text directly on PDF as vector text
-    await drawCertificateVectorTexts({
-      outputPdf,
-      page,
-      school,
-      student,
-      startYear,
-      endYear,
-      certificateNum,
-      issueDateText,
-      tempType,
-      grade,
-    });
-
-    const pdfBytes = Buffer.from(await outputPdf.save());
-
-    //if (tempType != 1) {
     const outName = buildTimestampedName(fileName);
 
     const uploaded = await runWithDriveRetry(async (drive) => {
@@ -1214,18 +1364,6 @@ const addCertificate = async (req, res) => {
       fileName: uploaded.fileName,
       mimeType: "application/pdf",
       type: "url",
-    });
-    //}
-
-    const base64String = pdfBytes.toString("base64");
-
-    return res.status(200).json({
-      success: true,
-      message: "Certificate Created Successfully.",
-      file: base64String,
-      fileName,
-      mimeType: "application/pdf",
-      type: "base64pdf",
     });
   } catch (error) {
     console.log(error);
@@ -1460,6 +1598,23 @@ const resolveCertificateRenderContext = async (certificateId) => {
     throw new Error("Student not found.");
   }
 
+  const tempType = getCertificateTempType(template?.courseId?.name);
+  const issueMeta = getIssueDateMetaFromStoredValue(certificate.issueDate);
+
+  if (tempType === 4) {
+    return {
+      certificate,
+      template,
+      school,
+      student,
+      grade: "",
+      tempType,
+      issueDateText: issueMeta.issueDateText,
+      startYear: "",
+      endYear: issueMeta.endYear,
+    };
+  }
+
   const targetCourseId = getIdValueForCertificate(template?.courseId);
 
   const academicStart = await Academic.findOne({
@@ -1516,16 +1671,6 @@ const resolveCertificateRenderContext = async (certificateId) => {
     throw new Error("Invalid course duration. Please set Course.years properly.");
   }
 
-  let tempType = 1;
-  const courseName = String(template?.courseId?.name || "");
-
-  if (courseName.includes("Muallama")) {
-    tempType = 2;
-  } else if (courseName.includes("Muballiga")) {
-    tempType = 3;
-  }
-
-  const issueMeta = getIssueDateMetaFromStoredValue(certificate.issueDate);
   const startYear = String(Number(issueMeta.endYear) - courseYears);
 
   return {
@@ -1553,6 +1698,20 @@ const buildCertificatePdfBufferForExistingCertificate = async (certificateId) =>
     startYear,
     endYear,
   } = await resolveCertificateRenderContext(certificateId);
+
+  if (tempType === 4) {
+    const pdfBytes = await buildSpecialCertificatePdfBuffer({
+      template,
+      student,
+      certificateNum: certificate.code,
+      issueDateText,
+    });
+
+    return {
+      certificate,
+      pdfBytes,
+    };
+  }
 
   const templatePdf = await loadTemplatePdf(template.template);
   const outputPdf = await PDFDocument.create();
