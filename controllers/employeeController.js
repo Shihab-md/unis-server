@@ -469,6 +469,104 @@ const getEmployees = async (req, res) => {
     const schoolId = decoded.schoolId;
     const loginUserId = decoded.id || decoded._id || decoded.userId; // adjust based on your token payload
 
+    const schoolPopulate = {
+      path: "schoolId",
+      select: "code nameEnglish address city districtStateId",
+      populate: {
+        path: "districtStateId",
+        select: "district state",
+      },
+    };
+
+    // ------------------------------------------------------------
+    // ✅ SUPERVISOR: return only Admin employees under supervisor schools
+    // ------------------------------------------------------------
+    if (userRole === "supervisor") {
+      if (!loginUserId) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+      }
+
+      // 1) Resolve supervisor id
+      // If your School.supervisorId points to Supervisor model, find Supervisor by userId:
+      const supervisorDoc = await Supervisor.findOne({ userId: loginUserId })
+        .select("_id userId")
+        .lean();
+
+      // possible ids to try
+      const possibleSupervisorIds = [];
+      if (supervisorDoc?._id) possibleSupervisorIds.push(supervisorDoc._id); // Supervisor _id
+      possibleSupervisorIds.push(loginUserId); // fallback: if School.supervisorId stores User._id
+
+      // 2) Find schools under supervisor
+      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } })
+        .select("_id code nameEnglish supervisorId")
+        .lean();
+
+      const schoolIds = schools.map((s) => s._id);
+
+      if (schoolIds.length === 0) {
+        return res.status(200).json({ success: true, employees: [] });
+      }
+
+      // 3) Fetch employees for those schools
+      const employeesAll = await Employee.find({
+        schoolId: { $in: schoolIds },
+        active: "Active",
+      })
+        .select("_id employeeId schoolId userId contactNumber designation active dob doj")
+        .populate(schoolPopulate)
+        .populate({ path: "userId", select: "_id name email role" })
+        .sort({ employeeId: 1 })
+        .lean();
+
+      // 4) Filter only admin users
+      const employees = employeesAll.filter(
+        (e) => String(e?.userId?.role || "").toLowerCase() === "admin"
+      );
+
+      return res.status(200).json({ success: true, employees });
+    }
+
+    // ------------------------------------------------------------
+    // ✅ OTHER ROLES
+    // ------------------------------------------------------------
+    const filter =
+      userRole === "superadmin" || userRole === "hquser"
+        ? { active: "Active" }
+        : { schoolId, active: "Active" };
+
+    const employees = await Employee.find(filter)
+      .select("_id employeeId contactNumber designation active userId schoolId dob doj")
+      .sort({ employeeId: 1 })
+      .populate({ path: "userId", select: "_id name email role" })
+      .populate(schoolPopulate)
+      .lean();
+
+    return res.status(200).json({ success: true, employees });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, error: "get employees server error" });
+  }
+};
+
+{/*
+const getEmployees = async (req, res) => {
+  try {
+    console.log("Get Employees called.");
+
+    // ✅ Use token decode ONCE (or better: use req.user from authMiddleware)
+    const usertoken = req.headers.authorization || "";
+    const parts = usertoken.split(" ");
+    if (parts.length !== 2) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
+
+    const userRole = decoded.role;
+    const schoolId = decoded.schoolId;
+    const loginUserId = decoded.id || decoded._id || decoded.userId; // adjust based on your token payload
+
     // ------------------------------------------------------------
     // ✅ SUPERVISOR: return only Admin employees under supervisor schools
     // ------------------------------------------------------------
@@ -539,6 +637,7 @@ const getEmployees = async (req, res) => {
     return res.status(500).json({ success: false, error: "get employees server error" });
   }
 };
+*/}
 
 const getByEmpFilter = async (req, res) => {
   const { empSchoolId, empRole, empStatus } = req.params;
@@ -647,7 +746,7 @@ const getEmployee = async (req, res) => {
       .populate({ path: "schoolId", select: "_id code nameEnglish" })
       .populate({ path: "userId", select: "name email role profileImage" }) // ✅ no password
       .lean();
- 
+
     if (!employee) {
       return res
         .status(400)
