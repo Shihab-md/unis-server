@@ -169,6 +169,184 @@ const addSchool = async (req, res) => {
   }
 };
 
+const normalizeEmployeeRoles = (schools = []) => {
+  return schools.map((school) => ({
+    ...school,
+    employeeCountsByRole: Array.isArray(school.employeeCountsByRole)
+      ? school.employeeCountsByRole.map((item) => ({
+        ...item,
+        role: item?.role ? toCamelCase(item.role) : "",
+      }))
+      : [],
+  }));
+};
+
+const buildSchoolCountsPipeline = () => {
+  return [
+    // ✅ Active student count + breakdown by course NAME
+    {
+      $lookup: {
+        from: "students",
+        let: { sid: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$schoolId", "$$sid"] },
+              active: "Active",
+            },
+          },
+          { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+          {
+            $group: {
+              _id: "$courseId",
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $lookup: {
+              from: "courses",
+              localField: "_id",
+              foreignField: "_id",
+              as: "course",
+            },
+          },
+          { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              _id: 0,
+              courseId: "$_id",
+              courseName: "$course.name",
+              count: 1,
+            },
+          },
+          { $sort: { courseName: 1 } },
+        ],
+        as: "studentCountsByCourse",
+      },
+    },
+
+    // ✅ Active employee count + breakdown by user.role
+    {
+      $lookup: {
+        from: "employees",
+        let: { sid: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$schoolId", "$$sid"] },
+              active: "Active",
+            },
+          },
+          {
+            $lookup: {
+              from: "users",
+              localField: "userId",
+              foreignField: "_id",
+              as: "user",
+            },
+          },
+          { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+          {
+            $group: {
+              _id: "$user.role",
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              role: "$_id",
+              count: 1,
+            },
+          },
+          { $sort: { role: 1 } },
+        ],
+        as: "employeeCountsByRole",
+      },
+    },
+
+    // ✅ totals
+    {
+      $addFields: {
+        studentCount: { $sum: "$studentCountsByCourse.count" },
+        employeeCount: { $sum: "$employeeCountsByRole.count" },
+      },
+    },
+  ];
+};
+
+const buildSchoolPopulatePipeline = () => {
+  return [
+    // districtStateId populate
+    {
+      $lookup: {
+        from: "districtstates",
+        localField: "districtStateId",
+        foreignField: "_id",
+        as: "districtStateId",
+      },
+    },
+    { $unwind: { path: "$districtStateId", preserveNullAndEmptyArrays: true } },
+
+    // supervisorId -> supervisor doc
+    {
+      $lookup: {
+        from: "supervisors",
+        localField: "supervisorId",
+        foreignField: "_id",
+        as: "supervisorId",
+      },
+    },
+    { $unwind: { path: "$supervisorId", preserveNullAndEmptyArrays: true } },
+
+    // supervisorId.userId -> user name
+    {
+      $lookup: {
+        from: "users",
+        localField: "supervisorId.userId",
+        foreignField: "_id",
+        as: "supervisorUser",
+      },
+    },
+    { $unwind: { path: "$supervisorUser", preserveNullAndEmptyArrays: true } },
+
+    // shape supervisor like populate
+    {
+      $addFields: {
+        "supervisorId.userId": {
+          _id: "$supervisorUser._id",
+          name: "$supervisorUser.name",
+        },
+      },
+    },
+    { $project: { supervisorUser: 0 } },
+  ];
+};
+
+const buildSchoolFinalProjectStage = () => {
+  return {
+    $project: {
+      code: 1,
+      nameEnglish: 1,
+      nameArabic: 1,
+      nameNative: 1,
+      address: 1,
+      city: 1,
+      contactNumber: 1,
+      incharge1: 1,
+      incharge1Number: 1,
+      active: 1,
+      supervisorId: 1,
+      districtStateId: { district: 1, state: 1 },
+
+      studentCount: 1,
+      studentCountsByCourse: 1,
+      employeeCount: 1,
+      employeeCountsByRole: 1,
+    },
+  };
+};
+
 const getSchools = async (req, res) => {
   try {
     const auth = req.headers.authorization || "";
@@ -206,140 +384,18 @@ const getSchools = async (req, res) => {
 
     const pipeline = [
       { $match: filter },
-
-      // ✅ Active student count + breakdown by course NAME
-      {
-        $lookup: {
-          from: "students",
-          let: { sid: "$_id" },
-          pipeline: [
-            // only Active students of this school
-            {
-              $match: {
-                $expr: { $eq: ["$schoolId", "$$sid"] },
-                active: "Active",
-              },
-            },
-
-            // take first courseId (if each student has one course)
-            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
-
-            // group by courseId
-            {
-              $group: {
-                _id: "$courseId",
-                count: { $sum: 1 },
-              },
-            },
-
-            // lookup course name
-            {
-              $lookup: {
-                from: "courses",
-                localField: "_id",
-                foreignField: "_id",
-                as: "course",
-              },
-            },
-            { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
-
-            // shape output
-            {
-              $project: {
-                _id: 0,
-                courseId: "$_id",
-                courseName: "$course.name",
-                count: 1,
-              },
-            },
-
-            // sort by courseName (optional)
-            { $sort: { courseName: 1 } },
-          ],
-          as: "studentCountsByCourse",
-        },
-      },
-
-      // total active students = sum counts
-      {
-        $addFields: {
-          studentCount: { $sum: "$studentCountsByCourse.count" },
-        },
-      },
-
-      // districtStateId populate
-      {
-        $lookup: {
-          from: "districtstates",
-          localField: "districtStateId",
-          foreignField: "_id",
-          as: "districtStateId",
-        },
-      },
-      { $unwind: { path: "$districtStateId", preserveNullAndEmptyArrays: true } },
-
-      // supervisorId -> supervisor doc
-      {
-        $lookup: {
-          from: "supervisors",
-          localField: "supervisorId",
-          foreignField: "_id",
-          as: "supervisorId",
-        },
-      },
-      { $unwind: { path: "$supervisorId", preserveNullAndEmptyArrays: true } },
-
-      // supervisorId.userId -> user name
-      {
-        $lookup: {
-          from: "users",
-          localField: "supervisorId.userId",
-          foreignField: "_id",
-          as: "supervisorUser",
-        },
-      },
-      { $unwind: { path: "$supervisorUser", preserveNullAndEmptyArrays: true } },
-
-      // shape supervisor like populate
-      {
-        $addFields: {
-          "supervisorId.userId": {
-            _id: "$supervisorUser._id",
-            name: "$supervisorUser.name",
-          },
-        },
-      },
-      { $project: { supervisorUser: 0 } },
-
-      // final fields
-      {
-        $project: {
-          code: 1,
-          nameEnglish: 1,
-          nameArabic: 1,
-          nameNative: 1,
-          address: 1,
-          city: 1,
-          contactNumber: 1,
-          incharge1: 1,
-          incharge1Number: 1,
-          active: 1,
-          supervisorId: 1,
-          districtStateId: { district: 1, state: 1 },
-
-          // ✅ counts
-          studentCount: 1,
-          studentCountsByCourse: 1, // [{ courseId, courseName, count }]
-        },
-      },
-
+      ...buildSchoolCountsPipeline(),
+      ...buildSchoolPopulatePipeline(),
+      buildSchoolFinalProjectStage(),
       { $sort: { code: 1 } },
     ];
 
     if (hasPaging) pipeline.push({ $skip: skip }, { $limit: limit });
 
     const schools = await School.aggregate(pipeline);
-    return res.status(200).json({ success: true, schools });
+    const normalizedSchools = normalizeEmployeeRoles(schools);
+
+    return res.status(200).json({ success: true, schools: normalizedSchools });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ success: false, error: "get schools server error" });
@@ -350,8 +406,11 @@ const getBySchFilter = async (req, res) => {
   const { supervisorId, districtStateId, schStatus } = req.params;
 
   const isValidParam = (v) =>
-    v !== undefined && v !== null && String(v).trim() !== "" &&
-    v !== "null" && v !== "undefined";
+    v !== undefined &&
+    v !== null &&
+    String(v).trim() !== "" &&
+    v !== "null" &&
+    v !== "undefined";
 
   const toStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
 
@@ -385,7 +444,6 @@ const getBySchFilter = async (req, res) => {
     let dsDistrict = "";
     let dsState = "";
     if (isValidParam(dsRaw) && !dsIsObjId) {
-      // handle "Kerala, Kerala," and extra spaces
       const parts = dsRaw
         .split(",")
         .map((p) => p.trim())
@@ -421,43 +479,7 @@ const getBySchFilter = async (req, res) => {
         ]
         : []),
 
-      // ✅ Active student count + breakdown by course NAME
-      {
-        $lookup: {
-          from: "students",
-          let: { sid: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$schoolId", "$$sid"] },
-                active: "Active",
-              },
-            },
-            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
-            { $group: { _id: "$courseId", count: { $sum: 1 } } },
-            {
-              $lookup: {
-                from: "courses",
-                localField: "_id",
-                foreignField: "_id",
-                as: "course",
-              },
-            },
-            { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
-            {
-              $project: {
-                _id: 0,
-                courseId: "$_id",
-                courseName: "$course.name",
-                count: 1,
-              },
-            },
-            { $sort: { courseName: 1 } },
-          ],
-          as: "studentCountsByCourse",
-        },
-      },
-      { $addFields: { studentCount: { $sum: "$studentCountsByCourse.count" } } },
+      ...buildSchoolCountsPipeline(),
 
       // ✅ supervisor populate
       {
@@ -469,6 +491,7 @@ const getBySchFilter = async (req, res) => {
         },
       },
       { $unwind: { path: "$supervisorId", preserveNullAndEmptyArrays: true } },
+
       {
         $lookup: {
           from: "users",
@@ -478,6 +501,7 @@ const getBySchFilter = async (req, res) => {
         },
       },
       { $unwind: { path: "$supervisorUser", preserveNullAndEmptyArrays: true } },
+
       {
         $addFields: {
           "supervisorId.userId": {
@@ -488,31 +512,14 @@ const getBySchFilter = async (req, res) => {
       },
       { $project: { supervisorUser: 0 } },
 
-      // final fields
-      {
-        $project: {
-          code: 1,
-          nameEnglish: 1,
-          nameArabic: 1,
-          nameNative: 1,
-          address: 1,
-          city: 1,
-          active: 1,
-          contactNumber: 1,
-          incharge1: 1,
-          incharge1Number: 1,
-          supervisorId: 1,
-          districtStateId: { district: 1, state: 1 },
-          studentCount: 1,
-          studentCountsByCourse: 1,
-        },
-      },
-
+      buildSchoolFinalProjectStage(),
       { $sort: { code: 1 } },
     ];
 
     const schools = await School.aggregate(pipeline);
-    return res.status(200).json({ success: true, schools });
+    const normalizedSchools = normalizeEmployeeRoles(schools);
+
+    return res.status(200).json({ success: true, schools: normalizedSchools });
   } catch (error) {
     console.log(error);
     return res

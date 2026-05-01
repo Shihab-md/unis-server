@@ -110,6 +110,219 @@ const addSupervisor = async (req, res) => {
   }
 };
 
+const getSupervisorSchoolCountMap = async (schoolMatch) => {
+  const schoolCounts = await School.aggregate([
+    { $match: schoolMatch },
+    { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+  ]);
+
+  return new Map(schoolCounts.map((c) => [String(c._id), c.count]));
+};
+
+const getSupervisorEmployeeCountMap = async (schoolMatch) => {
+  const employeeCounts = await School.aggregate([
+    { $match: schoolMatch },
+
+    {
+      $lookup: {
+        from: "employees",
+        let: { schId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$schoolId", "$$schId"] },
+              active: "Active",
+            },
+          },
+          {
+            $lookup: {
+              from: "users",
+              localField: "userId",
+              foreignField: "_id",
+              as: "user",
+            },
+          },
+          { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              role: "$user.role",
+            },
+          },
+        ],
+        as: "employeesTmp",
+      },
+    },
+
+    { $unwind: { path: "$employeesTmp", preserveNullAndEmptyArrays: false } },
+
+    {
+      $group: {
+        _id: {
+          supervisorId: "$supervisorId",
+          role: "$employeesTmp.role",
+        },
+        count: { $sum: 1 },
+      },
+    },
+
+    {
+      $group: {
+        _id: "$_id.supervisorId",
+        employeeCountsByRole: {
+          $push: {
+            role: "$_id.role",
+            count: "$count",
+          },
+        },
+        employeeCount: { $sum: "$count" },
+      },
+    },
+
+    {
+      $addFields: {
+        employeeCountsByRole: {
+          $sortArray: {
+            input: "$employeeCountsByRole",
+            sortBy: { role: 1 },
+          },
+        },
+      },
+    },
+  ]);
+
+  return new Map(
+    employeeCounts.map((x) => [
+      String(x._id),
+      {
+        ...x,
+        employeeCountsByRole: Array.isArray(x.employeeCountsByRole)
+          ? x.employeeCountsByRole.map((item) => ({
+            ...item,
+            role: item?.role ? toCamelCase(item.role) : "",
+          }))
+          : [],
+      },
+    ])
+  );
+};
+
+const getSupervisorStudentCountMap = async (schoolMatch) => {
+  const studentCounts = await School.aggregate([
+    { $match: schoolMatch },
+
+    {
+      $lookup: {
+        from: "students",
+        let: { schId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$schoolId", "$$schId"] },
+              active: "Active",
+            },
+          },
+          { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+          { $match: { courseId: { $ne: null } } },
+          { $project: { courseId: 1 } },
+        ],
+        as: "studentsTmp",
+      },
+    },
+
+    { $unwind: { path: "$studentsTmp", preserveNullAndEmptyArrays: false } },
+
+    {
+      $group: {
+        _id: {
+          supervisorId: "$supervisorId",
+          courseId: "$studentsTmp.courseId",
+        },
+        count: { $sum: 1 },
+      },
+    },
+
+    {
+      $lookup: {
+        from: "courses",
+        localField: "_id.courseId",
+        foreignField: "_id",
+        as: "course",
+      },
+    },
+    { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+
+    {
+      $group: {
+        _id: "$_id.supervisorId",
+        studentCountsByCourse: {
+          $push: {
+            courseId: "$_id.courseId",
+            courseName: "$course.name",
+            count: "$count",
+          },
+        },
+        studentCount: { $sum: "$count" },
+      },
+    },
+
+    {
+      $addFields: {
+        studentCountsByCourse: {
+          $sortArray: {
+            input: "$studentCountsByCourse",
+            sortBy: { courseName: 1 },
+          },
+        },
+      },
+    },
+  ]);
+
+  return new Map(studentCounts.map((x) => [String(x._id), x]));
+};
+
+const getSupervisorStatsMaps = async (supervisorIds = null) => {
+  const schoolMatch =
+    Array.isArray(supervisorIds) && supervisorIds.length > 0
+      ? { supervisorId: { $in: supervisorIds } }
+      : { supervisorId: { $ne: null } };
+
+  const [schoolCountMap, employeeCountMap, studentCountMap] = await Promise.all([
+    getSupervisorSchoolCountMap(schoolMatch),
+    getSupervisorEmployeeCountMap(schoolMatch),
+    getSupervisorStudentCountMap(schoolMatch),
+  ]);
+
+  return {
+    schoolCountMap,
+    employeeCountMap,
+    studentCountMap,
+  };
+};
+
+const attachSupervisorStats = (
+  supervisors,
+  schoolCountMap,
+  employeeCountMap,
+  studentCountMap
+) => {
+  return supervisors.map((s) => {
+    const sid = String(s._id);
+    const st = studentCountMap.get(sid);
+    const emp = employeeCountMap.get(sid);
+
+    return {
+      ...s,
+      _schoolsCount: schoolCountMap.get(sid) || 0,
+
+      employeeCount: emp?.employeeCount || 0,
+      employeeCountsByRole: emp?.employeeCountsByRole || [],
+
+      studentCount: st?.studentCount || 0,
+      studentCountsByCourse: st?.studentCountsByCourse || [],
+    };
+  });
+};
+
 const getSupervisors = async (req, res) => {
   try {
     // 1) Fetch supervisors
@@ -119,105 +332,15 @@ const getSupervisors = async (req, res) => {
       .populate({ path: "userId", select: "name email role" })
       .lean();
 
-    // 2) Count schools per supervisor
-    const schoolCounts = await School.aggregate([
-      { $match: { supervisorId: { $ne: null } } },
-      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
-    ]);
-    const schoolCountMap = new Map(schoolCounts.map((c) => [String(c._id), c.count]));
+    const { schoolCountMap, employeeCountMap, studentCountMap } =
+      await getSupervisorStatsMaps();
 
-    // 3) Student counts per supervisor (Active only) + breakdown by course name
-    // ✅ FIX: exclude students without courseId so you don't get {count: xx} entry
-    const studentCounts = await School.aggregate([
-      { $match: { supervisorId: { $ne: null } } },
-
-      {
-        $lookup: {
-          from: "students",
-          let: { schId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$schoolId", "$$schId"] },
-                active: "Active",
-              },
-            },
-            // take first course (if one course per student)
-            { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
-
-            // ✅ FIX: ignore students with no course assigned
-            { $match: { courseId: { $ne: null } } },
-
-            { $project: { courseId: 1 } },
-          ],
-          as: "studentsTmp",
-        },
-      },
-
-      // Flatten
-      { $unwind: { path: "$studentsTmp", preserveNullAndEmptyArrays: false } },
-
-      // Group by supervisor + courseId
-      {
-        $group: {
-          _id: {
-            supervisorId: "$supervisorId",
-            courseId: "$studentsTmp.courseId",
-          },
-          count: { $sum: 1 },
-        },
-      },
-
-      // Lookup course name
-      {
-        $lookup: {
-          from: "courses",
-          localField: "_id.courseId",
-          foreignField: "_id",
-          as: "course",
-        },
-      },
-      { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
-
-      // Group by supervisor to build array + total
-      {
-        $group: {
-          _id: "$_id.supervisorId",
-          studentCountsByCourse: {
-            $push: {
-              courseId: "$_id.courseId",
-              courseName: "$course.name",
-              count: "$count",
-            },
-          },
-          studentCount: { $sum: "$count" },
-        },
-      },
-
-      // Sort array by courseName (MongoDB 5.2+)
-      {
-        $addFields: {
-          studentCountsByCourse: {
-            $sortArray: { input: "$studentCountsByCourse", sortBy: { courseName: 1 } },
-          },
-        },
-      },
-    ]);
-
-    const studentCountMap = new Map(studentCounts.map((x) => [String(x._id), x]));
-
-    // 4) Attach counts to each supervisor
-    const result = supervisors.map((s) => {
-      const sid = String(s._id);
-      const st = studentCountMap.get(sid);
-
-      return {
-        ...s,
-        _schoolsCount: schoolCountMap.get(sid) || 0,
-        studentCount: st?.studentCount || 0,
-        studentCountsByCourse: st?.studentCountsByCourse || [],
-      };
-    });
+    const result = attachSupervisorStats(
+      supervisors,
+      schoolCountMap,
+      employeeCountMap,
+      studentCountMap
+    );
 
     return res.status(200).json({ success: true, supervisors: result });
   } catch (error) {
@@ -263,31 +386,28 @@ const getBySupFilter = async (req, res) => {
 
     const finalQuery = { ...(query || {}) };
 
-    // Fetch supervisors (lean + select only needed)
+    // 1) Fetch supervisors
     const supervisors = await Supervisor.find(finalQuery)
       .sort({ supervisorId: 1 })
-      .select("supervisorId contactNumber active jobType userId routeName remarks dob doj") // add fields you need
-      .populate({ path: "userId", select: "name email role" }) // safer than {password:0}
+      .select("supervisorId contactNumber active jobType userId routeName remarks dob doj")
+      .populate({ path: "userId", select: "name email role" })
       .lean();
 
     if (supervisors.length === 0) {
       return res.status(200).json({ success: true, supervisors: [] });
     }
 
-    // Count schools only for returned supervisors
     const supIds = supervisors.map((s) => s._id);
 
-    const counts = await School.aggregate([
-      { $match: { supervisorId: { $in: supIds } } },
-      { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
-    ]);
+    const { schoolCountMap, employeeCountMap, studentCountMap } =
+      await getSupervisorStatsMaps(supIds);
 
-    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
-
-    const result = supervisors.map((s) => ({
-      ...s,
-      _schoolsCount: countMap.get(String(s._id)) || 0,
-    }));
+    const result = attachSupervisorStats(
+      supervisors,
+      schoolCountMap,
+      employeeCountMap,
+      studentCountMap
+    );
 
     return res.status(200).json({ success: true, supervisors: result });
   } catch (error) {
