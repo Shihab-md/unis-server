@@ -180,7 +180,7 @@ const login = async (req, res) => {
     const tokenPayload = { _id: user._id, role, schoolId, schoolName };
     if (role === "supervisor") tokenPayload.schoolIds = schoolIds;
 
-    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: "7h" });
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: "12h" });
     return res.status(200).json({
       success: true,
       token,
