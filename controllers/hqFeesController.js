@@ -3,6 +3,7 @@ import FeeInvoice from "../models/FeeInvoice.js";
 import PaymentBatch from "../models/PaymentBatch.js";
 import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import Student from "../models/Student.js";
+import Account from "../models/Account.js";
 import { getNextNumber } from "./commonController.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
@@ -12,6 +13,418 @@ const requireRole = (role, allowed) => {
     const err = new Error("Forbidden");
     err.status = 403;
     throw err;
+  }
+};
+
+const MIGRATION_REMARK_DEFAULT = "Migration import - already paid before system go-live";
+
+const sumInvoiceNumbers = (rows = [], key) =>
+  rows.reduce((sum, row) => sum + Number(row?.[key] || 0), 0);
+
+const buildAutoAllocationsFromInvoice = (invoice, amount) => {
+  let remaining = Number(amount || 0);
+  const allocations = [];
+
+  for (const invItem of invoice.items || []) {
+    if (remaining <= 0) break;
+
+    const canPay = Math.max(
+      0,
+      Number(invItem?.netAmount || 0) - Number(invItem?.paidAmount || 0)
+    );
+    const payNow = Math.min(canPay, remaining);
+
+    if (payNow > 0) {
+      allocations.push({
+        headCode: invItem.headCode,
+        amount: payNow,
+      });
+      remaining -= payNow;
+    }
+  }
+
+  return allocations;
+};
+
+const syncAccountFromInvoices = async ({
+  invoice,
+  receiptNumber,
+  paidDate,
+  remarks,
+  session,
+}) => {
+  if (!invoice?.userId || !invoice?.acYear || !invoice?.academicId) {
+    return null;
+  }
+
+  const relatedInvoices = await FeeInvoice.find({
+    userId: invoice.userId,
+    acYear: invoice.acYear,
+    academicId: invoice.academicId,
+    status: { $ne: "CANCELLED" },
+  })
+    .select("total paidTotal")
+    .session(session)
+    .lean();
+
+  const totalFees = sumInvoiceNumbers(relatedInvoices, "total");
+  const totalPaid = sumInvoiceNumbers(relatedInvoices, "paidTotal");
+  const totalBalance = Math.max(0, totalFees - totalPaid);
+
+  return await Account.findOneAndUpdate(
+    {
+      userId: invoice.userId,
+      acYear: invoice.acYear,
+      academicId: invoice.academicId,
+    },
+    {
+      $set: {
+        receiptNumber: String(receiptNumber || "").trim(),
+        type: "fees",
+        fees: totalFees,
+        paid: totalPaid,
+        paidDate: totalPaid > 0 ? paidDate : null,
+        balance: totalBalance,
+        remarks: String(remarks || MIGRATION_REMARK_DEFAULT).trim(),
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        userId: invoice.userId,
+        acYear: invoice.acYear,
+        academicId: invoice.academicId,
+        createdAt: new Date(),
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      session,
+    }
+  );
+};
+
+const applyPaymentToInvoiceAndSyncAll = async ({
+  batch,
+  item,
+  session,
+  remarks,
+}) => {
+  const invoice = await FeeInvoice.findById(item.invoiceId).session(session);
+
+  if (!invoice) throw new Error("Invoice not found");
+  if (invoice.status === "CANCELLED") throw new Error("Invoice cancelled");
+  if (String(invoice.schoolId) !== String(batch.schoolId)) {
+    throw new Error("School mismatch");
+  }
+  if (Number(invoice.balance || 0) <= 0) {
+    throw new Error("Invoice already paid");
+  }
+  if (!Array.isArray(invoice.items) || invoice.items.length === 0) {
+    throw new Error("Invoice items not found");
+  }
+
+  const payAmount = Math.min(Number(item.amount || 0), Number(invoice.balance || 0));
+  if (!Number.isFinite(payAmount) || payAmount <= 0) {
+    throw new Error("Invalid payment amount");
+  }
+
+  const allocations =
+    Array.isArray(item.allocations) && item.allocations.length > 0
+      ? item.allocations
+      : buildAutoAllocationsFromInvoice(invoice, payAmount);
+
+  for (const a of allocations) {
+    const headCode = String(a?.headCode || "").trim();
+    const amt = Number(a?.amount || 0);
+
+    if (!headCode || !Number.isFinite(amt) || amt <= 0) continue;
+
+    const invItem = invoice.items.find((x) => x.headCode === headCode);
+    if (!invItem) continue;
+
+    const canPay = Math.max(
+      0,
+      Number(invItem.netAmount || 0) - Number(invItem.paidAmount || 0)
+    );
+    const payNow = Math.min(canPay, amt);
+
+    invItem.paidAmount = Number(invItem.paidAmount || 0) + payNow;
+  }
+
+  // invoice.paidTotal = invoice.items.reduce(
+  //   (sum, x) => sum + Number(x?.paidAmount || 0),
+  //   0
+  // );
+
+  invoice.paidTotal = invoice.total;
+  invoice.balance = Math.max(0, Number(invoice.total || 0) - Number(invoice.paidTotal || 0));
+  invoice.status = invoice.balance === 0 ? "PAID" : "PARTIAL";
+
+  await invoice.save({ session });
+
+  if (invoice.status === "PAID") {
+    await Student.updateOne(
+      { _id: invoice.studentId, feesPaid: 0 },
+      { $set: { feesPaid: 1 } },
+      { session }
+    );
+  }
+
+  await syncAccountFromInvoices({
+    invoice,
+    receiptNumber: batch.receiptNumber,
+    paidDate: batch.paidDate || new Date(),
+    remarks,
+    session,
+  });
+};
+
+export const createMigrationBatchesFromInvoicesAllSchools = async (req, res) => {
+  requireRole(req.user?.role, ["superadmin", "hquser"]);
+
+  const {
+    acYear,
+    paidDate,
+    mode = "bank",
+    referenceNo = "",
+    remarks = MIGRATION_REMARK_DEFAULT,
+  } = req.body || {};
+
+  if (!isObjectId(acYear)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid acYear",
+    });
+  }
+
+  if (!["cash", "bank", "upi", "online"].includes(String(mode))) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid payment mode",
+    });
+  }
+
+  const paidDateObj = paidDate ? new Date(paidDate) : new Date();
+  if (Number.isNaN(paidDateObj.getTime())) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid paidDate",
+    });
+  }
+
+  try {
+    // 1) Get all eligible due invoices for the selected academic year
+    const invoiceQuery = {
+      acYear: new mongoose.Types.ObjectId(acYear),
+      status: { $in: ["ISSUED", "PARTIAL"] },
+      balance: { $gt: 0 },
+    };
+
+    const invoices = await FeeInvoice.find(invoiceQuery)
+      .select(
+        "_id schoolId studentId userId academicId acYear balance status total items invoiceNo createdAt"
+      )
+      .sort({ schoolId: 1, createdAt: 1 })
+      .lean();
+
+    if (!invoices.length) {
+      return res.status(404).json({
+        success: false,
+        error: "No eligible due invoices found",
+      });
+    }
+
+    // 2) Skip invoices already attached to batch items
+    const alreadySentInvoiceIds = await PaymentBatchItem.distinct("invoiceId", {
+      invoiceId: { $in: invoices.map((x) => x._id) },
+      status: { $in: ["PENDING_APPROVAL", "APPLIED"] },
+    });
+
+    const sentSet = new Set(alreadySentInvoiceIds.map((x) => String(x)));
+
+    const eligibleInvoices = invoices.filter((inv) => !sentSet.has(String(inv._id)));
+
+    if (!eligibleInvoices.length) {
+      return res.status(200).json({
+        success: true,
+        message: "All eligible invoices are already processed",
+        summary: {
+          schoolsFound: 0,
+          schoolsProcessed: 0,
+          schoolsSkipped: 0,
+          batchesCreated: 0,
+          invoicesApplied: 0,
+          invoicesSkipped: invoices.length,
+          invoicesFailed: 0,
+        },
+        details: [],
+      });
+    }
+
+    // 3) Group by schoolId
+    const schoolMap = new Map();
+
+    for (const inv of eligibleInvoices) {
+      const sid = String(inv.schoolId || "");
+      if (!sid) continue;
+
+      if (!schoolMap.has(sid)) schoolMap.set(sid, []);
+      schoolMap.get(sid).push(inv);
+    }
+
+    const summary = {
+      schoolsFound: schoolMap.size,
+      schoolsProcessed: 0,
+      schoolsSkipped: 0,
+      batchesCreated: 0,
+      invoicesApplied: 0,
+      invoicesSkipped: invoices.length - eligibleInvoices.length,
+      invoicesFailed: 0,
+    };
+
+    const details = [];
+
+    // 4) Process one school at a time (one transaction per school)
+    for (const [schoolId, schoolInvoices] of schoolMap.entries()) {
+      if (!Array.isArray(schoolInvoices) || schoolInvoices.length === 0) {
+        summary.schoolsSkipped += 1;
+        continue;
+      }
+
+      const session = await mongoose.startSession();
+
+      try {
+        let batchDoc = null;
+
+        await session.withTransaction(async () => {
+          const validInvoices = schoolInvoices.filter(
+            (inv) =>
+              isObjectId(inv.studentId) &&
+              Number(inv.balance || 0) > 0 &&
+              Array.isArray(inv.items) &&
+              inv.items.length > 0
+          );
+
+          if (!validInvoices.length) {
+            throw new Error("No valid invoices for this school");
+          }
+
+          const totalAmount = validInvoices.reduce(
+            (sum, inv) => sum + Number(inv.balance || 0),
+            0
+          );
+
+          const batchNo = await getNextNumber({
+            name: "Batch",
+            prefix: "BAT",
+            pad: 9,
+          });
+
+          const receiptNumber = await getNextNumber({
+            name: "Receipt",
+            prefix: "RCPT",
+            pad: 9,
+          });
+
+          batchDoc = new PaymentBatch({
+            batchNo,
+            receiptNumber,
+            schoolId: new mongoose.Types.ObjectId(schoolId),
+            acYear: new mongoose.Types.ObjectId(acYear),
+            totalAmount,
+            itemCount: validInvoices.length,
+            mode,
+            referenceNo: String(referenceNo || "").trim(),
+            proofUrl: "",
+            proofDriveFileId: "",
+            proofDriveViewUrl: "",
+            proofDriveDownloadUrl: "",
+            proofFileName: "",
+            paidDate: paidDateObj,
+            status: "APPROVED",
+            createdBy: req.user._id,
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            remarks: String(remarks || MIGRATION_REMARK_DEFAULT).trim(),
+          });
+
+          //await batchDoc.save({ session });
+          await batchDoc.save({ session });
+
+          const itemDocs = validInvoices.map((inv) => ({
+            batchId: batchDoc._id,
+            schoolId: new mongoose.Types.ObjectId(schoolId),
+            acYear: new mongoose.Types.ObjectId(acYear),
+            invoiceId: inv._id,
+            studentId: inv.studentId,
+            amount: Number(inv.balance || 0),
+            allocations: buildAutoAllocationsFromInvoice(inv, Number(inv.balance || 0)),
+            status: "APPLIED",
+            error: "",
+          }));
+
+          const createdItems = await PaymentBatchItem.insertMany(itemDocs, {
+            session,
+            ordered: true,
+          });
+
+          for (const item of createdItems) {
+            await applyPaymentToInvoiceAndSyncAll({
+              batch: batchDoc,
+              item,
+              session,
+              remarks: String(remarks || MIGRATION_REMARK_DEFAULT).trim(),
+            });
+          }
+        });
+
+        summary.schoolsProcessed += 1;
+        summary.batchesCreated += 1;
+        summary.invoicesApplied += schoolInvoices.length;
+
+        details.push({
+          schoolId,
+          batchId: batchDoc?._id || null,
+          batchNo: batchDoc?.batchNo || "",
+          receiptNumber: batchDoc?.receiptNumber || "",
+          applied: schoolInvoices.length,
+          skipped: 0,
+          failed: 0,
+          error: "",
+        });
+      } catch (errSchool) {
+        console.log("[createMigrationBatchesFromInvoicesAllSchools] school failed:", schoolId, errSchool);
+
+        summary.schoolsSkipped += 1;
+        summary.invoicesFailed += schoolInvoices.length;
+
+        details.push({
+          schoolId,
+          batchId: null,
+          batchNo: "",
+          receiptNumber: "",
+          applied: 0,
+          skipped: 0,
+          failed: schoolInvoices.length,
+          error: errSchool?.message || "School migration failed",
+        });
+      } finally {
+        await session.endSession();
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Migration batches created from invoice balances",
+      summary,
+      details,
+    });
+  } catch (e) {
+    console.log(e);
+    return res.status(e.status || 500).json({
+      success: false,
+      error: e.message || "server error",
+    });
   }
 };
 
