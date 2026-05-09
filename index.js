@@ -32,6 +32,8 @@ import googleDriveRoutes from "./routes/googleDriveRoutes.js";
 
 import inspectionReportRoutes from "./routes/inspectionReportRoutes.js";
 
+import certificateBulkIhsRoutes from "./routes/certificateBulkIhsRoutes.js";
+
 await connectToDatabase()
 await loadCache()
  
@@ -72,6 +74,8 @@ app.use("/api/public", publicRoutes);
 app.use("/api/integrations/google-drive", googleDriveRoutes);
 
 app.use("/api/inspection-report", inspectionReportRoutes);
+
+app.use("/api/certificate-bulk-ihs", certificateBulkIhsRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
