@@ -509,7 +509,7 @@ export const getReportMeta = async (req, res) => {
     ]);
 
     const courseTypes = [...new Set(courses.map((item) => safeStr(item.type)).filter(Boolean))];
-    const statuses = ["Active", "In-Active", "Transferred", "Graduated", "Discontinued"];
+    const statuses = ["Active", "Alumni", "In-Active", "Transferred", "Graduated", "Discontinued"];
     const feeStatuses = ["Paid", "Unpaid"];
     const hostels = ["Yes", "No"];
 
