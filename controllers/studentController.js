@@ -1821,7 +1821,7 @@ const getStudent = async (req, res) => {
 
     const invoices = await FeeInvoice.find({
       studentId: student._id,
-      source: { $in: ["ADMISSION", "PROMOTE", "CERTIFICATE"] },
+      source: { $in: ["ADMISSION", "PROMOTE", "CERTIFICATE", "COURSE_CHANGE"] },
     })
       .select("invoiceNo acYear courseId source total paidTotal balance status createdAt")
       .populate({ path: "acYear", select: "_id acYear" })
