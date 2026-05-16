@@ -1249,6 +1249,34 @@ const getStudents = async (req, res) => {
   }
 };
 
+const getStudentListCourseStatus = (academicStatus, studentActive) => {
+  const status = String(academicStatus || "").trim();
+
+  if (String(studentActive || "") === "Alumni" && status === "Completed") {
+    return "Completed / Alumni";
+  }
+
+  if (status === "Not Promoted") return "Not-Promoted";
+  if (status === "Not-Promoted") return "Not-Promoted";
+  if (status) return status;
+
+  return "Admission";
+};
+
+const getCourseStatusFilterValue = (courseStatus) => {
+  const status = String(courseStatus || "").trim();
+
+  if (!status || status === "null" || status === "undefined") {
+    return null;
+  }
+
+  if (status === "Not-Promoted" || status === "Not Promoted") {
+    return { $in: ["Not-Promoted", "Not Promoted"] };
+  }
+
+  return status;
+};
+
 const getStudentsBySchool = async (req, res) => {
   const { schoolId } = req.params;
 
@@ -1263,7 +1291,8 @@ const getStudentsBySchool = async (req, res) => {
     }
 
     const activeAcYearId = await getActiveAcademicYearIdFromCache();
-    console.log("AC Year " + activeAcYearId)
+    console.log("AC Year " + activeAcYearId);
+
     const studentsList = await Student.find({
       schoolId,
       active: "Active",
@@ -1285,11 +1314,11 @@ const getStudentsBySchool = async (req, res) => {
       })
         .select(
           "studentId " +
-          "courseId1 year1 " +
-          "courseId2 year2 " +
-          "courseId3 year3 " +
-          "courseId4 year4 " +
-          "courseId5 year5"
+          "courseId1 year1 status1 " +
+          "courseId2 year2 status2 " +
+          "courseId3 year3 status3 " +
+          "courseId4 year4 status4 " +
+          "courseId5 year5 status5"
         )
         .populate([
           { path: "courseId1", select: "name type fees years code" },
@@ -1314,6 +1343,7 @@ const getStudentsBySchool = async (req, res) => {
         for (let i = 1; i <= 5; i++) {
           const c = acad[`courseId${i}`];
           const y = acad[`year${i}`];
+          const status = acad[`status${i}`];
 
           if (c?._id) {
             normalizedCourses.push({
@@ -1322,8 +1352,9 @@ const getStudentsBySchool = async (req, res) => {
               type: c.type || "",
               fees: c.fees || 0,
               code: c.code || "",
-              years: Number(y || 0), // ✅ student's current year
-              durationYears: Number(c.years || 0), // optional: actual course total duration
+              years: Number(y || 0), // student's current year
+              durationYears: Number(c.years || 0), // actual course total duration
+              status: getStudentListCourseStatus(status, s.active),
             });
           }
         }
@@ -1339,6 +1370,7 @@ const getStudentsBySchool = async (req, res) => {
           code: c.code || "",
           years: Number(c.years || 0),
           durationYears: Number(c.years || 0),
+          status: c.status || "-",
         }));
       }
 
@@ -1373,7 +1405,132 @@ const getStudentsBySchool = async (req, res) => {
   }
 };
 
+// const getStudentsBySchool = async (req, res) => {
+//   const { schoolId } = req.params;
+
+//   console.log("getStudentsBySchool : " + schoolId);
+
+//   try {
+//     if (!isObjectId(schoolId)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: "Invalid schoolId",
+//       });
+//     }
+
+//     const activeAcYearId = await getActiveAcademicYearIdFromCache();
+//     console.log("AC Year " + activeAcYearId)
+//     const studentsList = await Student.find({
+//       schoolId,
+//       active: "Active",
+//     })
+//       .sort({ rollNumber: 1 })
+//       .populate({ path: "userId", select: "name email role" })
+//       .populate({ path: "districtStateId", select: "district state" })
+//       .populate({ path: "courses", select: "name type fees years code" }) // fallback only
+//       .lean();
+
+//     const studentIds = studentsList.map((s) => s._id);
+
+//     let academicMap = new Map();
+
+//     if (isObjectId(activeAcYearId) && studentIds.length > 0) {
+//       const academics = await Academic.find({
+//         studentId: { $in: studentIds },
+//         acYear: activeAcYearId,
+//       })
+//         .select(
+//           "studentId " +
+//           "courseId1 year1 " +
+//           "courseId2 year2 " +
+//           "courseId3 year3 " +
+//           "courseId4 year4 " +
+//           "courseId5 year5"
+//         )
+//         .populate([
+//           { path: "courseId1", select: "name type fees years code" },
+//           { path: "courseId2", select: "name type fees years code" },
+//           { path: "courseId3", select: "name type fees years code" },
+//           { path: "courseId4", select: "name type fees years code" },
+//           { path: "courseId5", select: "name type fees years code" },
+//         ])
+//         .lean();
+
+//       academicMap = new Map(
+//         academics.map((a) => [String(a.studentId), a])
+//       );
+//     }
+
+//     const students = studentsList.map((s) => {
+//       const acad = academicMap.get(String(s._id));
+
+//       let normalizedCourses = [];
+
+//       if (acad) {
+//         for (let i = 1; i <= 5; i++) {
+//           const c = acad[`courseId${i}`];
+//           const y = acad[`year${i}`];
+
+//           if (c?._id) {
+//             normalizedCourses.push({
+//               _id: c._id,
+//               name: c.name || "",
+//               type: c.type || "",
+//               fees: c.fees || 0,
+//               code: c.code || "",
+//               years: Number(y || 0), // ✅ student's current year
+//               durationYears: Number(c.years || 0), // optional: actual course total duration
+//             });
+//           }
+//         }
+//       }
+
+//       // fallback to Student.courses if academic not found
+//       if (!normalizedCourses.length && Array.isArray(s.courses)) {
+//         normalizedCourses = s.courses.map((c) => ({
+//           _id: c._id,
+//           name: c.name || "",
+//           type: c.type || "",
+//           fees: c.fees || 0,
+//           code: c.code || "",
+//           years: Number(c.years || 0),
+//           durationYears: Number(c.years || 0),
+//         }));
+//       }
+
+//       const result = {
+//         ...s,
+//         courses: normalizedCourses,
+//       };
+
+//       const isPaid =
+//         result.feesPaid === 1 ||
+//         result.feesPaid === true ||
+//         result.feesPaid === "1";
+
+//       if (!isPaid) {
+//         const { rollNumber, ...rest } = result;
+//         return rest;
+//       }
+
+//       return result;
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       students,
+//     });
+//   } catch (error) {
+//     console.log(error);
+//     return res.status(500).json({
+//       success: false,
+//       error: "get students bySchoolId server error",
+//     });
+//   }
+// };
+
 // For certificate module.
+
 const getStudentsBySchoolAndTemplate = async (req, res) => {
   const { schoolId, templateId } = req.params;
 
@@ -1636,8 +1793,12 @@ const getByFilter = async (req, res) => {
           }
 
           if (isValidParam(courseStatus)) {
-            clause[`status${slot}`] = courseStatus;
+            clause[`status${slot}`] = getCourseStatusFilterValue(courseStatus);
           }
+
+          // if (isValidParam(courseStatus)) {
+          //   clause[`status${slot}`] = courseStatus;
+          // }
 
           return clause;
         })
@@ -1690,11 +1851,11 @@ const getByFilter = async (req, res) => {
       })
         .select(
           "studentId " +
-          "courseId1 year1 " +
-          "courseId2 year2 " +
-          "courseId3 year3 " +
-          "courseId4 year4 " +
-          "courseId5 year5"
+          "courseId1 year1 status1 " +
+          "courseId2 year2 status2 " +
+          "courseId3 year3 status3 " +
+          "courseId4 year4 status4 " +
+          "courseId5 year5 status5"
         )
         .populate([
           { path: "courseId1", select: "name type fees years code" },
@@ -1720,8 +1881,23 @@ const getByFilter = async (req, res) => {
 
       if (acad) {
         for (let i = 1; i <= 5; i++) {
+          // const c = acad[`courseId${i}`];
+          // const y = acad[`year${i}`];
+
+          // if (c?._id) {
+          //   normalizedCourses.push({
+          //     _id: c._id,
+          //     name: c.name || "",
+          //     type: c.type || "",
+          //     fees: c.fees || 0,
+          //     code: c.code || "",
+          //     years: Number(y || 0), // ✅ student's current year
+          //     durationYears: Number(c.years || 0), // optional: course total duration
+          //   });
+          // }
           const c = acad[`courseId${i}`];
           const y = acad[`year${i}`];
+          const status = acad[`status${i}`];
 
           if (c?._id) {
             normalizedCourses.push({
@@ -1730,8 +1906,9 @@ const getByFilter = async (req, res) => {
               type: c.type || "",
               fees: c.fees || 0,
               code: c.code || "",
-              years: Number(y || 0), // ✅ student's current year
-              durationYears: Number(c.years || 0), // optional: course total duration
+              years: Number(y || 0), // student's current year
+              durationYears: Number(c.years || 0), // course total duration
+              status: getStudentListCourseStatus(status, s.active),
             });
           }
         }
@@ -1739,6 +1916,15 @@ const getByFilter = async (req, res) => {
 
       // fallback to Student.courses if academic not found
       if (!normalizedCourses.length && Array.isArray(s.courses)) {
+        // normalizedCourses = s.courses.map((c) => ({
+        //   _id: c._id,
+        //   name: c.name || "",
+        //   type: c.type || "",
+        //   fees: c.fees || 0,
+        //   code: c.code || "",
+        //   years: Number(c.years || 0),
+        //   durationYears: Number(c.years || 0),
+        // }));
         normalizedCourses = s.courses.map((c) => ({
           _id: c._id,
           name: c.name || "",
@@ -1747,6 +1933,7 @@ const getByFilter = async (req, res) => {
           code: c.code || "",
           years: Number(c.years || 0),
           durationYears: Number(c.years || 0),
+          status: c.status || "-",
         }));
       }
 
