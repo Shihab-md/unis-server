@@ -110,13 +110,40 @@ const addSupervisor = async (req, res) => {
   }
 };
 
+// const getSupervisorSchoolCountMap = async (schoolMatch) => {
+//   const schoolCounts = await School.aggregate([
+//     { $match: schoolMatch },
+//     { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+//   ]);
+
+//   return new Map(schoolCounts.map((c) => [String(c._id), c.count]));
+// };
 const getSupervisorSchoolCountMap = async (schoolMatch) => {
   const schoolCounts = await School.aggregate([
     { $match: schoolMatch },
-    { $group: { _id: "$supervisorId", count: { $sum: 1 } } },
+
+    {
+      $group: {
+        _id: "$supervisorId",
+
+        schoolActiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "Active"] }, 1, 0],
+          },
+        },
+
+        schoolInactiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "In-Active"] }, 1, 0],
+          },
+        },
+
+        schoolCount: { $sum: 1 },
+      },
+    },
   ]);
 
-  return new Map(schoolCounts.map((c) => [String(c._id), c.count]));
+  return new Map(schoolCounts.map((c) => [String(c._id), c]));
 };
 
 const getSupervisorEmployeeCountMap = async (schoolMatch) => {
@@ -299,6 +326,29 @@ const getSupervisorStatsMaps = async (supervisorIds = null) => {
   };
 };
 
+// const attachSupervisorStats = (
+//   supervisors,
+//   schoolCountMap,
+//   employeeCountMap,
+//   studentCountMap
+// ) => {
+//   return supervisors.map((s) => {
+//     const sid = String(s._id);
+//     const st = studentCountMap.get(sid);
+//     const emp = employeeCountMap.get(sid);
+
+//     return {
+//       ...s,
+//       _schoolsCount: schoolCountMap.get(sid) || 0,
+
+//       employeeCount: emp?.employeeCount || 0,
+//       employeeCountsByRole: emp?.employeeCountsByRole || [],
+
+//       studentCount: st?.studentCount || 0,
+//       studentCountsByCourse: st?.studentCountsByCourse || [],
+//     };
+//   });
+// };
 const attachSupervisorStats = (
   supervisors,
   schoolCountMap,
@@ -307,12 +357,17 @@ const attachSupervisorStats = (
 ) => {
   return supervisors.map((s) => {
     const sid = String(s._id);
+    const sch = schoolCountMap.get(sid);
     const st = studentCountMap.get(sid);
     const emp = employeeCountMap.get(sid);
 
     return {
       ...s,
-      _schoolsCount: schoolCountMap.get(sid) || 0,
+
+      _schoolsCount: sch?.schoolCount || 0,
+      schoolCount: sch?.schoolCount || 0,
+      schoolActiveCount: sch?.schoolActiveCount || 0,
+      schoolInactiveCount: sch?.schoolInactiveCount || 0,
 
       employeeCount: emp?.employeeCount || 0,
       employeeCountsByRole: emp?.employeeCountsByRole || [],
