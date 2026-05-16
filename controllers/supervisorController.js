@@ -6,6 +6,8 @@ import School from "../models/School.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
+import mongoose from "mongoose";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -233,78 +235,318 @@ const getSupervisorEmployeeCountMap = async (schoolMatch) => {
   );
 };
 
-const getSupervisorStudentCountMap = async (schoolMatch) => {
-  const studentCounts = await School.aggregate([
-    { $match: schoolMatch },
+const getActiveAcYearObjectIdForPipeline = async () => {
+  const activeAcYearId = await getActiveAcademicYearIdFromCache();
 
-    {
-      $lookup: {
-        from: "students",
-        let: { schId: "$_id" },
-        pipeline: [
-          {
-            $match: {
-              $expr: { $eq: ["$schoolId", "$$schId"] },
-              active: "Active",
+  if (!activeAcYearId) return null;
+
+  return typeof activeAcYearId === "string" &&
+    mongoose.Types.ObjectId.isValid(activeAcYearId)
+    ? new mongoose.Types.ObjectId(activeAcYearId)
+    : activeAcYearId;
+};
+
+// const getSupervisorStudentCountMap = async (schoolMatch) => {
+//   const studentCounts = await School.aggregate([
+//     { $match: schoolMatch },
+
+//     {
+//       $lookup: {
+//         from: "students",
+//         let: { schId: "$_id" },
+//         pipeline: [
+//           {
+//             $match: {
+//               $expr: { $eq: ["$schoolId", "$$schId"] },
+//               active: "Active",
+//             },
+//           },
+//           { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+//           { $match: { courseId: { $ne: null } } },
+//           { $project: { courseId: 1 } },
+//         ],
+//         as: "studentsTmp",
+//       },
+//     },
+
+//     { $unwind: { path: "$studentsTmp", preserveNullAndEmptyArrays: false } },
+
+//     {
+//       $group: {
+//         _id: {
+//           supervisorId: "$supervisorId",
+//           courseId: "$studentsTmp.courseId",
+//         },
+//         count: { $sum: 1 },
+//       },
+//     },
+
+//     {
+//       $lookup: {
+//         from: "courses",
+//         localField: "_id.courseId",
+//         foreignField: "_id",
+//         as: "course",
+//       },
+//     },
+//     { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+
+//     {
+//       $group: {
+//         _id: "$_id.supervisorId",
+//         studentCountsByCourse: {
+//           $push: {
+//             courseId: "$_id.courseId",
+//             courseName: "$course.name",
+//             count: "$count",
+//           },
+//         },
+//         studentCount: { $sum: "$count" },
+//       },
+//     },
+
+//     {
+//       $addFields: {
+//         studentCountsByCourse: {
+//           $sortArray: {
+//             input: "$studentCountsByCourse",
+//             sortBy: { courseName: 1 },
+//           },
+//         },
+//       },
+//     },
+//   ]);
+
+//   return new Map(studentCounts.map((x) => [String(x._id), x]));
+// };
+const getSupervisorStudentCountMap = async (schoolMatch) => {
+  const activeAcYearObjectId = await getActiveAcYearObjectIdForPipeline();
+
+  if (!activeAcYearObjectId) {
+    return new Map();
+  }
+
+  const [studentTotals, studentCourseCounts] = await Promise.all([
+    // ✅ Unique active student count by supervisor
+    School.aggregate([
+      { $match: schoolMatch },
+
+      {
+        $lookup: {
+          from: "students",
+          let: { schId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$schoolId", "$$schId"] },
+                active: "Active",
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+              },
+            },
+          ],
+          as: "activeStudentsTmp",
+        },
+      },
+
+      {
+        $addFields: {
+          schoolStudentCount: { $size: "$activeStudentsTmp" },
+        },
+      },
+
+      {
+        $group: {
+          _id: "$supervisorId",
+          studentCount: { $sum: "$schoolStudentCount" },
+        },
+      },
+    ]),
+
+    // ✅ Course-wise count from active Academic year
+    School.aggregate([
+      { $match: schoolMatch },
+
+      {
+        $lookup: {
+          from: "students",
+          let: { schId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$schoolId", "$$schId"] },
+                active: "Active",
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+              },
+            },
+          ],
+          as: "activeStudentsTmp",
+        },
+      },
+
+      {
+        $lookup: {
+          from: "academics",
+          let: {
+            studentIds: "$activeStudentsTmp._id",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ["$studentId", "$$studentIds"] },
+                    { $eq: ["$acYear", activeAcYearObjectId] },
+                  ],
+                },
+              },
+            },
+
+            {
+              $project: {
+                studentId: 1,
+                courseIds: [
+                  "$courseId1",
+                  "$courseId2",
+                  "$courseId3",
+                  "$courseId4",
+                  "$courseId5",
+                ],
+              },
+            },
+
+            {
+              $project: {
+                studentId: 1,
+                courseIds: {
+                  $filter: {
+                    input: "$courseIds",
+                    as: "cid",
+                    cond: { $ne: ["$$cid", null] },
+                  },
+                },
+              },
+            },
+
+            {
+              $unwind: {
+                path: "$courseIds",
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+
+            // ✅ avoid duplicate same student + same course
+            {
+              $group: {
+                _id: {
+                  studentId: "$studentId",
+                  courseId: "$courseIds",
+                },
+              },
+            },
+
+            {
+              $project: {
+                _id: 0,
+                courseId: "$_id.courseId",
+              },
+            },
+          ],
+          as: "academicCoursesTmp",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$academicCoursesTmp",
+          preserveNullAndEmptyArrays: false,
+        },
+      },
+
+      {
+        $group: {
+          _id: {
+            supervisorId: "$supervisorId",
+            courseId: "$academicCoursesTmp.courseId",
+          },
+          count: { $sum: 1 },
+        },
+      },
+
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id.courseId",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$course",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      {
+        $sort: {
+          "course.name": 1,
+        },
+      },
+
+      {
+        $group: {
+          _id: "$_id.supervisorId",
+
+          studentCountsByCourse: {
+            $push: {
+              courseId: "$_id.courseId",
+              courseName: "$course.name",
+              count: "$count",
             },
           },
-          { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
-          { $match: { courseId: { $ne: null } } },
-          { $project: { courseId: 1 } },
-        ],
-        as: "studentsTmp",
-      },
-    },
 
-    { $unwind: { path: "$studentsTmp", preserveNullAndEmptyArrays: false } },
-
-    {
-      $group: {
-        _id: {
-          supervisorId: "$supervisorId",
-          courseId: "$studentsTmp.courseId",
-        },
-        count: { $sum: 1 },
-      },
-    },
-
-    {
-      $lookup: {
-        from: "courses",
-        localField: "_id.courseId",
-        foreignField: "_id",
-        as: "course",
-      },
-    },
-    { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
-
-    {
-      $group: {
-        _id: "$_id.supervisorId",
-        studentCountsByCourse: {
-          $push: {
-            courseId: "$_id.courseId",
-            courseName: "$course.name",
-            count: "$count",
-          },
-        },
-        studentCount: { $sum: "$count" },
-      },
-    },
-
-    {
-      $addFields: {
-        studentCountsByCourse: {
-          $sortArray: {
-            input: "$studentCountsByCourse",
-            sortBy: { courseName: 1 },
-          },
+          studentCourseCount: { $sum: "$count" },
         },
       },
-    },
+    ]),
   ]);
 
-  return new Map(studentCounts.map((x) => [String(x._id), x]));
+  const studentMap = new Map();
+
+  studentTotals.forEach((x) => {
+    studentMap.set(String(x._id), {
+      studentCount: x.studentCount || 0, // unique students
+      studentCourseCount: 0, // all course enrollments
+      studentCountsByCourse: [],
+    });
+  });
+
+  studentCourseCounts.forEach((x) => {
+    const sid = String(x._id);
+
+    const existing = studentMap.get(sid) || {
+      studentCount: 0,
+      studentCourseCount: 0,
+      studentCountsByCourse: [],
+    };
+
+    studentMap.set(sid, {
+      ...existing,
+      studentCourseCount: x.studentCourseCount || 0,
+      studentCountsByCourse: x.studentCountsByCourse || [],
+    });
+  });
+
+  return studentMap;
 };
 
 const getSupervisorStatsMaps = async (supervisorIds = null) => {
@@ -349,6 +591,34 @@ const getSupervisorStatsMaps = async (supervisorIds = null) => {
 //     };
 //   });
 // };
+// const attachSupervisorStats = (
+//   supervisors,
+//   schoolCountMap,
+//   employeeCountMap,
+//   studentCountMap
+// ) => {
+//   return supervisors.map((s) => {
+//     const sid = String(s._id);
+//     const sch = schoolCountMap.get(sid);
+//     const st = studentCountMap.get(sid);
+//     const emp = employeeCountMap.get(sid);
+
+//     return {
+//       ...s,
+
+//       _schoolsCount: sch?.schoolCount || 0,
+//       schoolCount: sch?.schoolCount || 0,
+//       schoolActiveCount: sch?.schoolActiveCount || 0,
+//       schoolInactiveCount: sch?.schoolInactiveCount || 0,
+
+//       employeeCount: emp?.employeeCount || 0,
+//       employeeCountsByRole: emp?.employeeCountsByRole || [],
+
+//       studentCount: st?.studentCount || 0,
+//       studentCountsByCourse: st?.studentCountsByCourse || [],
+//     };
+//   });
+// };
 const attachSupervisorStats = (
   supervisors,
   schoolCountMap,
@@ -372,7 +642,13 @@ const attachSupervisorStats = (
       employeeCount: emp?.employeeCount || 0,
       employeeCountsByRole: emp?.employeeCountsByRole || [],
 
+      // ✅ unique active students
       studentCount: st?.studentCount || 0,
+
+      // ✅ all course enrollments
+      studentCourseCount: st?.studentCourseCount || 0,
+
+      // ✅ active academic-year all course-wise count
       studentCountsByCourse: st?.studentCountsByCourse || [],
     };
   });

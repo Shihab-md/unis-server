@@ -4,6 +4,8 @@ import School from "../models/School.js";
 import Employee from "../models/Employee.js";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
+import mongoose from "mongoose";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const addDistrictState = async (req, res) => {
   try {
@@ -211,8 +213,129 @@ const getDistrictEmployeeCountMap = async (districtStateIds = []) => {
   );
 };
 
+const getActiveAcYearObjectIdForPipeline = async () => {
+  const activeAcYearId = await getActiveAcademicYearIdFromCache();
+
+  if (!activeAcYearId) return null;
+
+  return typeof activeAcYearId === "string" &&
+    mongoose.Types.ObjectId.isValid(activeAcYearId)
+    ? new mongoose.Types.ObjectId(activeAcYearId)
+    : activeAcYearId;
+};
+
+// const getDistrictStudentCountMap = async (districtStateIds = []) => {
+//   if (!Array.isArray(districtStateIds) || districtStateIds.length === 0) {
+//     return new Map();
+//   }
+
+//   const studentCounts = await Student.aggregate([
+//     {
+//       $match: {
+//         districtStateId: { $in: districtStateIds },
+//         active: { $in: ["Active", "In-Active", "Alumni"] },
+//         courses: { $exists: true, $ne: [] },
+//       },
+//     },
+
+//     // ✅ Important: all courses, not only first course
+//     {
+//       $unwind: {
+//         path: "$courses",
+//         preserveNullAndEmptyArrays: false,
+//       },
+//     },
+
+//     {
+//       $group: {
+//         _id: {
+//           districtStateId: "$districtStateId",
+//           courseId: "$courses",
+//         },
+
+//         activeCount: {
+//           $sum: {
+//             $cond: [{ $eq: ["$active", "Active"] }, 1, 0],
+//           },
+//         },
+
+//         inactiveCount: {
+//           $sum: {
+//             $cond: [{ $eq: ["$active", "In-Active"] }, 1, 0],
+//           },
+//         },
+
+//         alumniCount: {
+//           $sum: {
+//             $cond: [{ $eq: ["$active", "Alumni"] }, 1, 0],
+//           },
+//         },
+//       },
+//     },
+
+//     {
+//       $addFields: {
+//         totalCount: {
+//           $add: ["$activeCount", "$inactiveCount", "$alumniCount"],
+//         },
+//       },
+//     },
+
+//     {
+//       $lookup: {
+//         from: "courses",
+//         localField: "_id.courseId",
+//         foreignField: "_id",
+//         as: "course",
+//       },
+//     },
+
+//     {
+//       $unwind: {
+//         path: "$course",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     {
+//       $sort: {
+//         "course.name": 1,
+//       },
+//     },
+
+//     {
+//       $group: {
+//         _id: "$_id.districtStateId",
+
+//         studentCountsByCourse: {
+//           $push: {
+//             courseId: "$_id.courseId",
+//             courseName: "$course.name",
+//             activeCount: "$activeCount",
+//             inactiveCount: "$inactiveCount",
+//             alumniCount: "$alumniCount",
+//             totalCount: "$totalCount",
+//           },
+//         },
+
+//         studentActiveCount: { $sum: "$activeCount" },
+//         studentInactiveCount: { $sum: "$inactiveCount" },
+//         studentAlumniCount: { $sum: "$alumniCount" },
+//         studentCount: { $sum: "$totalCount" },
+//       },
+//     },
+//   ]);
+
+//   return new Map(studentCounts.map((x) => [String(x._id), x]));
+// };
 const getDistrictStudentCountMap = async (districtStateIds = []) => {
   if (!Array.isArray(districtStateIds) || districtStateIds.length === 0) {
+    return new Map();
+  }
+
+  const activeAcYearObjectId = await getActiveAcYearObjectIdForPipeline();
+
+  if (!activeAcYearObjectId) {
     return new Map();
   }
 
@@ -221,14 +344,84 @@ const getDistrictStudentCountMap = async (districtStateIds = []) => {
       $match: {
         districtStateId: { $in: districtStateIds },
         active: { $in: ["Active", "In-Active", "Alumni"] },
-        courses: { $exists: true, $ne: [] },
       },
     },
 
-    // ✅ Important: all courses, not only first course
+    {
+      $lookup: {
+        from: "academics",
+        let: {
+          sid: "$_id",
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$studentId", "$$sid"] },
+                  { $eq: ["$acYear", activeAcYearObjectId] },
+                ],
+              },
+            },
+          },
+
+          {
+            $project: {
+              studentId: 1,
+              courseIds: [
+                "$courseId1",
+                "$courseId2",
+                "$courseId3",
+                "$courseId4",
+                "$courseId5",
+              ],
+            },
+          },
+
+          {
+            $project: {
+              studentId: 1,
+              courseIds: {
+                $filter: {
+                  input: "$courseIds",
+                  as: "cid",
+                  cond: { $ne: ["$$cid", null] },
+                },
+              },
+            },
+          },
+
+          {
+            $unwind: {
+              path: "$courseIds",
+              preserveNullAndEmptyArrays: false,
+            },
+          },
+
+          // ✅ avoid duplicate same student + same course
+          {
+            $group: {
+              _id: {
+                studentId: "$studentId",
+                courseId: "$courseIds",
+              },
+            },
+          },
+
+          {
+            $project: {
+              _id: 0,
+              courseId: "$_id.courseId",
+            },
+          },
+        ],
+        as: "academicCoursesTmp",
+      },
+    },
+
     {
       $unwind: {
-        path: "$courses",
+        path: "$academicCoursesTmp",
         preserveNullAndEmptyArrays: false,
       },
     },
@@ -237,24 +430,35 @@ const getDistrictStudentCountMap = async (districtStateIds = []) => {
       $group: {
         _id: {
           districtStateId: "$districtStateId",
-          courseId: "$courses",
+          courseId: "$academicCoursesTmp.courseId",
+          status: "$active",
+        },
+        count: { $sum: 1 },
+      },
+    },
+
+    {
+      $group: {
+        _id: {
+          districtStateId: "$_id.districtStateId",
+          courseId: "$_id.courseId",
         },
 
         activeCount: {
           $sum: {
-            $cond: [{ $eq: ["$active", "Active"] }, 1, 0],
+            $cond: [{ $eq: ["$_id.status", "Active"] }, "$count", 0],
           },
         },
 
         inactiveCount: {
           $sum: {
-            $cond: [{ $eq: ["$active", "In-Active"] }, 1, 0],
+            $cond: [{ $eq: ["$_id.status", "In-Active"] }, "$count", 0],
           },
         },
 
         alumniCount: {
           $sum: {
-            $cond: [{ $eq: ["$active", "Alumni"] }, 1, 0],
+            $cond: [{ $eq: ["$_id.status", "Alumni"] }, "$count", 0],
           },
         },
       },

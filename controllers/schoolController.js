@@ -7,6 +7,7 @@ import Numbering from "../models/Numbering.js";
 import getRedis from "../db/redis.js"
 import mongoose from "mongoose";
 import { toCamelCase } from "./commonController.js";
+import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const upload = multer({});
 
@@ -181,9 +182,107 @@ const normalizeEmployeeRoles = (schools = []) => {
   }));
 };
 
-const buildSchoolCountsPipeline = () => {
+// const buildSchoolCountsPipeline = () => {
+//   return [
+//     // ✅ Active student count + breakdown by course NAME
+//     {
+//       $lookup: {
+//         from: "students",
+//         let: { sid: "$_id" },
+//         pipeline: [
+//           {
+//             $match: {
+//               $expr: { $eq: ["$schoolId", "$$sid"] },
+//               active: "Active",
+//             },
+//           },
+//           { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+//           {
+//             $group: {
+//               _id: "$courseId",
+//               count: { $sum: 1 },
+//             },
+//           },
+//           {
+//             $lookup: {
+//               from: "courses",
+//               localField: "_id",
+//               foreignField: "_id",
+//               as: "course",
+//             },
+//           },
+//           { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+//           {
+//             $project: {
+//               _id: 0,
+//               courseId: "$_id",
+//               courseName: "$course.name",
+//               count: 1,
+//             },
+//           },
+//           { $sort: { courseName: 1 } },
+//         ],
+//         as: "studentCountsByCourse",
+//       },
+//     },
+
+//     // ✅ Active employee count + breakdown by user.role
+//     {
+//       $lookup: {
+//         from: "employees",
+//         let: { sid: "$_id" },
+//         pipeline: [
+//           {
+//             $match: {
+//               $expr: { $eq: ["$schoolId", "$$sid"] },
+//               active: "Active",
+//             },
+//           },
+//           {
+//             $lookup: {
+//               from: "users",
+//               localField: "userId",
+//               foreignField: "_id",
+//               as: "user",
+//             },
+//           },
+//           { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+//           {
+//             $group: {
+//               _id: "$user.role",
+//               count: { $sum: 1 },
+//             },
+//           },
+//           {
+//             $project: {
+//               _id: 0,
+//               role: "$_id",
+//               count: 1,
+//             },
+//           },
+//           { $sort: { role: 1 } },
+//         ],
+//         as: "employeeCountsByRole",
+//       },
+//     },
+
+//     // ✅ totals
+//     {
+//       $addFields: {
+//         studentCount: { $sum: "$studentCountsByCourse.count" },
+//         employeeCount: { $sum: "$employeeCountsByRole.count" },
+//       },
+//     },
+//   ];
+// };
+const buildSchoolCountsPipeline = async () => {
+  const activeAcYearId = await getActiveAcademicYearIdFromCache();
+
+  const activeAcYearObjectId = mongoose.Types.ObjectId.isValid(activeAcYearId)
+    ? new mongoose.Types.ObjectId(activeAcYearId)
+    : activeAcYearId;
+
   return [
-    // ✅ Active student count + breakdown by course NAME
     {
       $lookup: {
         from: "students",
@@ -195,10 +294,70 @@ const buildSchoolCountsPipeline = () => {
               active: "Active",
             },
           },
-          { $addFields: { courseId: { $arrayElemAt: ["$courses", 0] } } },
+          {
+            $project: {
+              _id: 1,
+            },
+          },
+        ],
+        as: "activeStudentsTmp",
+      },
+    },
+
+    {
+      $addFields: {
+        studentCount: { $size: "$activeStudentsTmp" },
+      },
+    },
+
+    {
+      $lookup: {
+        from: "academics",
+        let: {
+          studentIds: "$activeStudentsTmp._id",
+        },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $in: ["$studentId", "$$studentIds"] },
+                  { $eq: ["$acYear", activeAcYearObjectId] },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              courseIds: [
+                "$courseId1",
+                "$courseId2",
+                "$courseId3",
+                "$courseId4",
+                "$courseId5",
+              ],
+            },
+          },
+          {
+            $project: {
+              courseIds: {
+                $filter: {
+                  input: "$courseIds",
+                  as: "cid",
+                  cond: { $ne: ["$$cid", null] },
+                },
+              },
+            },
+          },
+          {
+            $unwind: {
+              path: "$courseIds",
+              preserveNullAndEmptyArrays: false,
+            },
+          },
           {
             $group: {
-              _id: "$courseId",
+              _id: "$courseIds",
               count: { $sum: 1 },
             },
           },
@@ -210,7 +369,12 @@ const buildSchoolCountsPipeline = () => {
               as: "course",
             },
           },
-          { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+          {
+            $unwind: {
+              path: "$course",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
           {
             $project: {
               _id: 0,
@@ -219,13 +383,22 @@ const buildSchoolCountsPipeline = () => {
               count: 1,
             },
           },
-          { $sort: { courseName: 1 } },
+          {
+            $sort: {
+              courseName: 1,
+            },
+          },
         ],
         as: "studentCountsByCourse",
       },
     },
 
-    // ✅ Active employee count + breakdown by user.role
+    {
+      $addFields: {
+        studentCourseCount: { $sum: "$studentCountsByCourse.count" },
+      },
+    },
+
     {
       $lookup: {
         from: "employees",
@@ -245,7 +418,12 @@ const buildSchoolCountsPipeline = () => {
               as: "user",
             },
           },
-          { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+          {
+            $unwind: {
+              path: "$user",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
           {
             $group: {
               _id: "$user.role",
@@ -259,17 +437,25 @@ const buildSchoolCountsPipeline = () => {
               count: 1,
             },
           },
-          { $sort: { role: 1 } },
+          {
+            $sort: {
+              role: 1,
+            },
+          },
         ],
         as: "employeeCountsByRole",
       },
     },
 
-    // ✅ totals
     {
       $addFields: {
-        studentCount: { $sum: "$studentCountsByCourse.count" },
         employeeCount: { $sum: "$employeeCountsByRole.count" },
+      },
+    },
+
+    {
+      $project: {
+        activeStudentsTmp: 0,
       },
     },
   ];
@@ -382,9 +568,10 @@ const getSchools = async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10), 1), 500);
     const skip = (page - 1) * limit;
 
+    const schoolCountsPipeline = await buildSchoolCountsPipeline();
     const pipeline = [
       { $match: filter },
-      ...buildSchoolCountsPipeline(),
+      ...schoolCountsPipeline,
       ...buildSchoolPopulatePipeline(),
       buildSchoolFinalProjectStage(),
       { $sort: { code: 1 } },
@@ -453,6 +640,8 @@ const getBySchFilter = async (req, res) => {
       dsState = parts[1] || "";
     }
 
+    const schoolCountsPipeline = await buildSchoolCountsPipeline();
+
     const pipeline = [
       { $match: baseMatch },
 
@@ -479,7 +668,7 @@ const getBySchFilter = async (req, res) => {
         ]
         : []),
 
-      ...buildSchoolCountsPipeline(),
+      ...schoolCountsPipeline,
 
       // ✅ supervisor populate
       {
