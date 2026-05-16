@@ -1,5 +1,7 @@
 import DistrictState from "../models/DistrictState.js";
 import Student from "../models/Student.js";
+import School from "../models/School.js";
+import Employee from "../models/Employee.js";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 
@@ -43,52 +45,373 @@ const addDistrictState = async (req, res) => {
   }
 };
 
-const getDistrictStates = async (req, res) => {
-  try {
-    const districtStates = await DistrictState.find().sort({ state: 1, district: 1 });
+const getDistrictNiswanCountMap = async (districtStateIds = []) => {
+  if (!Array.isArray(districtStateIds) || districtStateIds.length === 0) {
+    return new Map();
+  }
 
-    const counts = await Student.aggregate([
-      {
-        $group: {
-          _id: '$districtStateId',
-          count: { $sum: 1 },
+  const niswanCounts = await School.aggregate([
+    {
+      $match: {
+        districtStateId: { $in: districtStateIds },
+      },
+    },
+    {
+      $group: {
+        _id: "$districtStateId",
+
+        niswanActiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "Active"] }, 1, 0],
+          },
+        },
+
+        niswanInactiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "In-Active"] }, 1, 0],
+          },
         },
       },
-    ]);
+    },
+    {
+      $addFields: {
+        niswanCount: {
+          $add: ["$niswanActiveCount", "$niswanInactiveCount"],
+        },
+      },
+    },
+  ]);
 
-    if (districtStates.length > 0 && counts.length > 0) {
-      for (const count of counts) {
-        districtStates.map(districtState => {
-          if (districtState?._id?.toString() == count?._id?.toString()) {
-            districtState._studentsCount = count.count;
-            districtState.toObject({ virtuals: true });
-          };
-        });
-      }
-    }
-
-    return res.status(200).json({ success: true, districtStates });
-  } catch (error) {
-    console.log(error)
-    return res
-      .status(500)
-      .json({ success: false, error: "get district and States server error" });
-  }
+  return new Map(niswanCounts.map((x) => [String(x._id), x]));
 };
 
-{/*
-const getDistrictStatesFromCache = async (req, res) => {
+const getDistrictEmployeeCountMap = async (districtStateIds = []) => {
+  if (!Array.isArray(districtStateIds) || districtStateIds.length === 0) {
+    return new Map();
+  }
+
+  const employeeCounts = await School.aggregate([
+    {
+      $match: {
+        districtStateId: { $in: districtStateIds },
+      },
+    },
+
+    {
+      $lookup: {
+        from: "employees",
+        let: { sid: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$schoolId", "$$sid"] },
+              active: { $in: ["Active", "In-Active"] },
+            },
+          },
+          {
+            $lookup: {
+              from: "users",
+              localField: "userId",
+              foreignField: "_id",
+              as: "user",
+            },
+          },
+          {
+            $unwind: {
+              path: "$user",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $project: {
+              role: "$user.role",
+              active: 1,
+            },
+          },
+        ],
+        as: "employeesTmp",
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$employeesTmp",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+
+    {
+      $group: {
+        _id: {
+          districtStateId: "$districtStateId",
+          role: "$employeesTmp.role",
+        },
+
+        activeCount: {
+          $sum: {
+            $cond: [{ $eq: ["$employeesTmp.active", "Active"] }, 1, 0],
+          },
+        },
+
+        inactiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$employeesTmp.active", "In-Active"] }, 1, 0],
+          },
+        },
+      },
+    },
+
+    {
+      $addFields: {
+        totalCount: {
+          $add: ["$activeCount", "$inactiveCount"],
+        },
+      },
+    },
+
+    {
+      $sort: {
+        "_id.role": 1,
+      },
+    },
+
+    {
+      $group: {
+        _id: "$_id.districtStateId",
+
+        employeeCountsByRole: {
+          $push: {
+            role: "$_id.role",
+            activeCount: "$activeCount",
+            inactiveCount: "$inactiveCount",
+            totalCount: "$totalCount",
+          },
+        },
+
+        employeeActiveCount: { $sum: "$activeCount" },
+        employeeInactiveCount: { $sum: "$inactiveCount" },
+        employeeCount: { $sum: "$totalCount" },
+      },
+    },
+  ]);
+
+  return new Map(
+    employeeCounts.map((x) => [
+      String(x._id),
+      {
+        ...x,
+        employeeCountsByRole: Array.isArray(x.employeeCountsByRole)
+          ? x.employeeCountsByRole.map((item) => ({
+            ...item,
+            role: item?.role ? toCamelCase(item.role) : "",
+          }))
+          : [],
+      },
+    ])
+  );
+};
+
+const getDistrictStudentCountMap = async (districtStateIds = []) => {
+  if (!Array.isArray(districtStateIds) || districtStateIds.length === 0) {
+    return new Map();
+  }
+
+  const studentCounts = await Student.aggregate([
+    {
+      $match: {
+        districtStateId: { $in: districtStateIds },
+        active: { $in: ["Active", "In-Active", "Alumni"] },
+        courses: { $exists: true, $ne: [] },
+      },
+    },
+
+    // ✅ Important: all courses, not only first course
+    {
+      $unwind: {
+        path: "$courses",
+        preserveNullAndEmptyArrays: false,
+      },
+    },
+
+    {
+      $group: {
+        _id: {
+          districtStateId: "$districtStateId",
+          courseId: "$courses",
+        },
+
+        activeCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "Active"] }, 1, 0],
+          },
+        },
+
+        inactiveCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "In-Active"] }, 1, 0],
+          },
+        },
+
+        alumniCount: {
+          $sum: {
+            $cond: [{ $eq: ["$active", "Alumni"] }, 1, 0],
+          },
+        },
+      },
+    },
+
+    {
+      $addFields: {
+        totalCount: {
+          $add: ["$activeCount", "$inactiveCount", "$alumniCount"],
+        },
+      },
+    },
+
+    {
+      $lookup: {
+        from: "courses",
+        localField: "_id.courseId",
+        foreignField: "_id",
+        as: "course",
+      },
+    },
+
+    {
+      $unwind: {
+        path: "$course",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    {
+      $sort: {
+        "course.name": 1,
+      },
+    },
+
+    {
+      $group: {
+        _id: "$_id.districtStateId",
+
+        studentCountsByCourse: {
+          $push: {
+            courseId: "$_id.courseId",
+            courseName: "$course.name",
+            activeCount: "$activeCount",
+            inactiveCount: "$inactiveCount",
+            alumniCount: "$alumniCount",
+            totalCount: "$totalCount",
+          },
+        },
+
+        studentActiveCount: { $sum: "$activeCount" },
+        studentInactiveCount: { $sum: "$inactiveCount" },
+        studentAlumniCount: { $sum: "$alumniCount" },
+        studentCount: { $sum: "$totalCount" },
+      },
+    },
+  ]);
+
+  return new Map(studentCounts.map((x) => [String(x._id), x]));
+};
+
+const getDistrictStates = async (req, res) => {
   try {
-    const redis = await getRedis();
-    const districtStates = JSON.parse(await redis.get('districtStates'));
-    return res.status(200).json({ success: true, districtStates });
+    const districtStates = await DistrictState.find()
+      .sort({ state: 1, district: 1 })
+      .lean();
+
+    const districtStateIds = districtStates.map((districtState) => districtState._id);
+
+    const [niswanCountMap, employeeCountMap, studentCountMap] =
+      await Promise.all([
+        getDistrictNiswanCountMap(districtStateIds),
+        getDistrictEmployeeCountMap(districtStateIds),
+        getDistrictStudentCountMap(districtStateIds),
+      ]);
+
+    const result = districtStates.map((districtState) => {
+      const did = String(districtState._id);
+
+      const niswanStats = niswanCountMap.get(did);
+      const employeeStats = employeeCountMap.get(did);
+      const studentStats = studentCountMap.get(did);
+
+      return {
+        ...districtState,
+
+        // ✅ Niswan counts
+        niswanActiveCount: niswanStats?.niswanActiveCount || 0,
+        niswanInactiveCount: niswanStats?.niswanInactiveCount || 0,
+        niswanCount: niswanStats?.niswanCount || 0,
+
+        // old/common aliases if existing UI uses these
+        schoolCount: niswanStats?.niswanCount || 0,
+        _schoolsCount: niswanStats?.niswanCount || 0,
+        activeSchoolCount: niswanStats?.niswanActiveCount || 0,
+        inactiveSchoolCount: niswanStats?.niswanInactiveCount || 0,
+
+        // ✅ Employee counts
+        employeeActiveCount: employeeStats?.employeeActiveCount || 0,
+        employeeInactiveCount: employeeStats?.employeeInactiveCount || 0,
+        employeeCount: employeeStats?.employeeCount || 0,
+        employeeCountsByRole: employeeStats?.employeeCountsByRole || [],
+
+        // ✅ Student counts
+        studentActiveCount: studentStats?.studentActiveCount || 0,
+        studentInactiveCount: studentStats?.studentInactiveCount || 0,
+        studentAlumniCount: studentStats?.studentAlumniCount || 0,
+        studentCount: studentStats?.studentCount || 0,
+        studentCountsByCourse: studentStats?.studentCountsByCourse || [],
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      districtStates: result,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, error: "get district and States server error" });
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      error: "get district and States server error",
+    });
   }
 };
-*/}
+// const getDistrictStates = async (req, res) => {
+//   try {
+//     const districtStates = await DistrictState.find().sort({ state: 1, district: 1 });
+
+//     const counts = await Student.aggregate([
+//       {
+//         $group: {
+//           _id: '$districtStateId',
+//           count: { $sum: 1 },
+//         },
+//       },
+//     ]);
+
+//     if (districtStates.length > 0 && counts.length > 0) {
+//       for (const count of counts) {
+//         districtStates.map(districtState => {
+//           if (districtState?._id?.toString() == count?._id?.toString()) {
+//             districtState._studentsCount = count.count;
+//             districtState.toObject({ virtuals: true });
+//           };
+//         });
+//       }
+//     }
+
+//     return res.status(200).json({ success: true, districtStates });
+//   } catch (error) {
+//     console.log(error)
+//     return res
+//       .status(500)
+//       .json({ success: false, error: "get district and States server error" });
+//   }
+// };
+
 const getDistrictStatesFromCache = async (req, res) => {
   try {
     const redis = await getRedis();
