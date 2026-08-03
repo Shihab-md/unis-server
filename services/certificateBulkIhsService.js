@@ -15,6 +15,7 @@ import {
 } from "../utils/ihsBulkTemplateHelper.js";
 
 const PDF_COLOR_BODY_BLUE = rgb(14 / 255, 56 / 255, 194 / 255);
+const BULK_IHS_DRIVE_FOLDER_PATH = ["UNIS", "Certificates", "IHS Bulk Temporary"];
 
 const SPECIAL_CERTIFICATE_LAYOUT = {
   studentName: {
@@ -439,13 +440,17 @@ const drawSpecialCertificateVectorTexts = async ({
 
 const buildSpecialCertificatePdfBuffer = async ({
   template,
+  templatePdfBytes,
   studentName,
   guardianName,
   rollNumber,
   certificateNum,
   issueDateText,
 }) => {
-  const templatePdf = await loadTemplatePdf(template.template);
+  const templatePdf = templatePdfBytes
+    ? await PDFDocument.load(templatePdfBytes)
+    : await loadTemplatePdf(template.template);
+
   const outputPdf = await PDFDocument.create();
 
   const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
@@ -496,6 +501,66 @@ export const processBulkIhsExcelRows = async ({ rows = [], createdBy = null }) =
   const templateMap = new Map(
     templates.map((template) => [String(template._id), template])
   );
+
+  const templatePdfBytesMap = new Map();
+
+  const getCachedTemplatePdfBytes = async (template) => {
+    const templateKey = String(template._id);
+
+    if (!templatePdfBytesMap.has(templateKey)) {
+      templatePdfBytesMap.set(templateKey, await fetchBinary(template.template));
+    }
+
+    return templatePdfBytesMap.get(templateKey);
+  };
+
+  let bulkDriveContext = null;
+
+  const getBulkDriveContext = async () => {
+    if (bulkDriveContext) return bulkDriveContext;
+
+    bulkDriveContext = await runWithDriveRetry(async (drive) => {
+      const folderId = await ensureFolderPath(drive, BULK_IHS_DRIVE_FOLDER_PATH);
+      return { drive, folderId };
+    });
+
+    return bulkDriveContext;
+  };
+
+  const uploadBulkIhsPdfToDrive = async ({ fileName, pdfBytes }) => {
+    try {
+      const { drive, folderId } = await getBulkDriveContext();
+      return await uploadBufferToDrive(
+        drive,
+        folderId,
+        fileName,
+        pdfBytes,
+        "application/pdf"
+      );
+    } catch (error) {
+      const msg = String(error?.message || "");
+
+      if (
+        msg.includes("reconnect Google Drive") ||
+        msg.includes("OAuth configuration changed") ||
+        msg.includes("Stored Google Drive token is invalid")
+      ) {
+        throw error;
+      }
+
+      console.log("Retrying bulk IHS Drive upload once:", msg || error);
+      bulkDriveContext = null;
+
+      const { drive, folderId } = await getBulkDriveContext();
+      return await uploadBufferToDrive(
+        drive,
+        folderId,
+        fileName,
+        pdfBytes,
+        "application/pdf"
+      );
+    }
+  };
 
   const existingQuery = validRowsForDbCheck.length
     ? {
@@ -581,9 +646,11 @@ export const processBulkIhsExcelRows = async ({ rows = [], createdBy = null }) =
       }
 
       const certificateNum = await getNextIhsCertificateNumber();
+      const templatePdfBytes = await getCachedTemplatePdfBytes(template);
 
       const pdfBytes = await buildSpecialCertificatePdfBuffer({
         template,
+        templatePdfBytes,
         studentName: row.studentName,
         guardianName: row.guardianName,
         rollNumber: row.rollNumber,
@@ -599,19 +666,9 @@ export const processBulkIhsExcelRows = async ({ rows = [], createdBy = null }) =
 
       const outName = buildTimestampedName(`${baseFileName}.pdf`);
 
-      const uploaded = await runWithDriveRetry(async (drive) => {
-        const folderId = await ensureFolderPath(drive, [
-          "UNIS",
-          "Certificates",
-          "IHS Bulk Temporary",
-        ]);
-        return await uploadBufferToDrive(
-          drive,
-          folderId,
-          outName,
-          pdfBytes,
-          "application/pdf"
-        );
+      const uploaded = await uploadBulkIhsPdfToDrive({
+        fileName: outName,
+        pdfBytes,
       });
 
       const newCertificate = new IhsBulkCertificate({
