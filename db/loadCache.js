@@ -103,7 +103,7 @@ const loadCache = async () => {
                 .lean(),
 
             Template.find()
-                .select("_id courseId")
+                .select("_id courseId certificateFees")
                 .populate({ path: "courseId", select: "name" })
                 .lean(),
 

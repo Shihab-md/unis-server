@@ -4,6 +4,7 @@ import Certificate from "../models/Certificate.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
+import FeeInvoice from "../models/FeeInvoice.js";
 import Academic from "../models/Academic.js";
 import Numbering from "../models/Numbering.js";
 import { createCanvas, registerFont } from "canvas";
@@ -1074,6 +1075,9 @@ const addCertificate = async (req, res) => {
       return res.status(404).json({ success: false, error: "Template not found." });
     }
 
+    const certificateFees = Number(template?.certificateFees);
+    const safeCertificateFees = Number.isFinite(certificateFees) && certificateFees >= 0 ? certificateFees : 75;
+
     const tempType = getCertificateTempType(template?.courseId?.name);
 
     if (!issueDate) {
@@ -1106,6 +1110,47 @@ const addCertificate = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "Certificate Already Found. No : " + cert.code });
+    }
+
+    const certificateInvoice = await FeeInvoice.findOne({
+      schoolId,
+      studentId,
+      courseId: template.courseId._id || template.courseId,
+      source: "CERTIFICATE",
+      status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
+    })
+      .select("_id status total paidTotal balance")
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    let certificateFeesForRecord = safeCertificateFees;
+    let certificateInvoiceId = null;
+
+    if (certificateInvoice) {
+      certificateInvoiceId = certificateInvoice._id;
+      certificateFeesForRecord = Number(
+        certificateInvoice.total ||
+        certificateInvoice.paidTotal ||
+        certificateInvoice.balance ||
+        safeCertificateFees ||
+        0
+      );
+
+      if (certificateInvoice.status !== "PAID") {
+        return res.status(400).json({
+          success: false,
+          error: "Certificate fee is pending for this student.",
+        });
+      }
+    } else if (safeCertificateFees > 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Certificate invoice is not created or not paid for this student.",
+      });
+    }
+
+    if (!Number.isFinite(certificateFeesForRecord) || certificateFeesForRecord < 0) {
+      certificateFeesForRecord = 0;
     }
 
     const getIdValue = (value) => {
@@ -1341,6 +1386,8 @@ const addCertificate = async (req, res) => {
       studentId: studentId,
       schoolId: schoolId,
       userId: student?.userId?._id || student?.userId,
+      certificateFees: certificateFeesForRecord,
+      certificateInvoiceId,
       certificate: uploaded.previewUrl,
       certificateDriveFileId: uploaded.fileId,
       certificateDriveViewUrl: uploaded.viewUrl,
@@ -1364,6 +1411,8 @@ const addCertificate = async (req, res) => {
       fileName: uploaded.fileName,
       mimeType: "application/pdf",
       type: "url",
+      certificateFees: certificateFeesForRecord,
+      certificateInvoiceId,
     });
   } catch (error) {
     console.log(error);
@@ -1389,7 +1438,7 @@ const addCertificate = async (req, res) => {
 const getCertificates = async (req, res) => {
   try {
     const certificates = await Certificate.find({})
-      .select("code issueDate")
+      .select("code issueDate certificateFees certificateInvoiceId")
       .populate({ path: "templateId", select: "code" })
       .populate({ path: "courseId", select: "name" })
       .populate({ path: "studentId", select: "rollNumber fatherName motherName guardianName" })
@@ -1410,7 +1459,7 @@ const getByCertFilter = async (req, res) => {
   console.log("getByCertFilter : " + certSchoolId + ", " + certCourseId + ",  " + certACYearId);
 
   try {
-    let filterQuery = Certificate.find().select("code issueDate");
+    let filterQuery = Certificate.find().select("code issueDate certificateFees certificateInvoiceId");
 
     if (
       certSchoolId &&
@@ -1473,7 +1522,7 @@ const getCertificate = async (req, res) => {
   try {
     const certificate = await Certificate.findById({ _id: id })
       .select(
-        "code issueDate certificate certificateDriveFileId certificateDriveViewUrl certificateDriveDownloadUrl certificateDrivePreviewUrl certificateFileName"
+        "code issueDate certificateFees certificateInvoiceId certificate certificateDriveFileId certificateDriveViewUrl certificateDriveDownloadUrl certificateDrivePreviewUrl certificateFileName"
       )
       .populate({ path: "templateId", select: "code" })
       .populate({ path: "courseId", select: "name" })

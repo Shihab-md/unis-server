@@ -8,6 +8,8 @@ const certificateSchema = new Schema({
   studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true },
+  certificateFees: { type: Number, default: 0, min: 0 },
+  certificateInvoiceId: { type: Schema.Types.ObjectId, ref: "FeeInvoice", default: null },
 
   issueDate: { type: Date, required: true },
   // Legacy field - keep for backward compatibility (we store Drive preview URL here)

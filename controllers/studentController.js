@@ -11,6 +11,7 @@ import Template from "../models/Template.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Account from "../models/Account.js";
 import FeeInvoice from "../models/FeeInvoice.js";
+import Certificate from "../models/Certificate.js";
 import PaymentBatch from "../models/PaymentBatch.js";
 import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import Numbering from "../models/Numbering.js";
@@ -209,6 +210,27 @@ const createFeesInvoiceSafe = async ({
 
     return inv?.[0] || null;
   }
+};
+
+const getCertificateFeeFromTemplateMaster = async (courseId, session = null, fallbackFee = 75) => {
+  const fallback = Number(fallbackFee);
+  const safeFallback = Number.isFinite(fallback) && fallback >= 0 ? fallback : 75;
+
+  if (!courseId || !mongoose.Types.ObjectId.isValid(String(courseId))) {
+    return safeFallback;
+  }
+
+  const template = await Template.findOne({ courseId })
+    .select("certificateFees")
+    .session(session || null)
+    .lean();
+
+  if (!template) {
+    return safeFallback;
+  }
+
+  const fee = Number(template?.certificateFees);
+  return Number.isFinite(fee) && fee >= 0 ? fee : safeFallback;
 };
 
 /* ----------------------- Fees helpers for multi-course slots ----------------------- */
@@ -1605,30 +1627,93 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
 
     const schoolStudentIds = students.map((s) => s._id);
 
-    // find paid certificate invoices for these students and this course
-    const paidCertificateInvoices = await FeeInvoice.find({
+    const courseIdForCertificate = template.courseId._id || template.courseId;
+
+    const rawTemplateCertificateFees = Number(template?.certificateFees);
+    const templateCertificateFees =
+      Number.isFinite(rawTemplateCertificateFees) && rawTemplateCertificateFees >= 0
+        ? rawTemplateCertificateFees
+        : 75;
+
+    // Existing certificates should not be selectable again.
+    const existingCertificates = await Certificate.find({
       schoolId,
       studentId: { $in: schoolStudentIds },
-      courseId: template.courseId._id || template.courseId,
-      source: "CERTIFICATE",
-      status: "PAID",
+      templateId,
     })
-      .select("_id studentId acYear academicId status source")
+      .select("_id studentId code")
       .lean();
 
-    const paidCertificateStudentSet = new Set(
-      paidCertificateInvoices.map((inv) => String(inv.studentId))
+    const existingCertificateMap = new Map(
+      existingCertificates.map((cert) => [String(cert.studentId), cert])
     );
+
+    // Certificate invoice/payment status decides print eligibility when fee is greater than 0.
+    // If an unpaid certificate invoice exists, do not bypass it even if master fee is later changed.
+    const certificateInvoices = await FeeInvoice.find({
+      schoolId,
+      studentId: { $in: schoolStudentIds },
+      courseId: courseIdForCertificate,
+      source: "CERTIFICATE",
+      status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
+    })
+      .select("_id studentId acYear academicId status source total paidTotal balance createdAt updatedAt")
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    const paidCertificateInvoiceMap = new Map();
+    const pendingCertificateInvoiceMap = new Map();
+
+    for (const inv of certificateInvoices) {
+      const sid = String(inv.studentId);
+
+      if ((inv.status === "ISSUED" || inv.status === "PARTIAL") && !pendingCertificateInvoiceMap.has(sid)) {
+        pendingCertificateInvoiceMap.set(sid, inv);
+      }
+
+      if (inv.status === "PAID" && !paidCertificateInvoiceMap.has(sid)) {
+        paidCertificateInvoiceMap.set(sid, inv);
+      }
+    }
 
     const studentsWithEligibility = students.map((student) => {
       const sid = String(student._id);
-      const certificateFeePaid = paidCertificateStudentSet.has(sid);
+      const existingCertificate = existingCertificateMap.get(sid);
+      const pendingInvoice = pendingCertificateInvoiceMap.get(sid);
+      const paidInvoice = paidCertificateInvoiceMap.get(sid);
+
+      let canSelectCertificate = false;
+      let certificateFeePaid = false;
+      let certificateBlockReason = "";
+      let certificateInvoiceStatus = "";
+      let certificateFees = templateCertificateFees;
+
+      if (existingCertificate) {
+        certificateBlockReason = `Certificate already created: ${existingCertificate.code || "-"}`;
+      } else if (pendingInvoice) {
+        certificateInvoiceStatus = pendingInvoice.status;
+        certificateFees = Number(pendingInvoice.total || pendingInvoice.balance || templateCertificateFees || 0);
+        certificateBlockReason = "Certificate fee pending";
+      } else if (paidInvoice) {
+        certificateInvoiceStatus = "PAID";
+        certificateFees = Number(paidInvoice.total || paidInvoice.paidTotal || templateCertificateFees || 0);
+        certificateFeePaid = true;
+        canSelectCertificate = true;
+      } else if (templateCertificateFees <= 0) {
+        certificateFees = 0;
+        certificateFeePaid = true;
+        canSelectCertificate = true;
+      } else {
+        certificateBlockReason = "Certificate invoice not created";
+      }
 
       return {
         ...student,
+        certificateFees,
         certificateFeePaid,
-        canSelectCertificate: certificateFeePaid,
-        certificateBlockReason: certificateFeePaid ? "" : "Certificate fee pending",
+        certificateInvoiceStatus,
+        canSelectCertificate,
+        certificateBlockReason,
       };
     });
 
@@ -6026,10 +6111,11 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
               const courseNamesText = await getAcademicCourseNamesText(sourceAcad, session);
 
-              const normalizedCertificateFee = (() => {
-                const n = Number(certificateFee);
-                return Number.isFinite(n) && n > 0 ? n : DEFAULT_CERTIFICATE_FEE;
-              })();
+              const normalizedCertificateFee = await getCertificateFeeFromTemplateMaster(
+                targetCourse._id,
+                session,
+                DEFAULT_CERTIFICATE_FEE
+              );
 
               if (normalizedCertificateFee > 0) {
                 await upsertFeesDueAccount({
