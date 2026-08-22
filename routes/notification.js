@@ -10,15 +10,18 @@ import {
   getWebPushPublicKey,
   registerWebPushSubscription,
   unregisterWebPushSubscription,
-  sendSelfTestNotification,
+  sendBroadcastNotification,
+  listBroadcastNotifications,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
 
-// All notification endpoints are self-scoped from req.user. Clients cannot request
-// another user's notification feed or register a token on another user's behalf.
+// All notification feed endpoints are self-scoped from req.user.
 router.get("/", authMiddleware, listNotifications);
 router.get("/unread-count", authMiddleware, getUnreadCount);
+router.get("/sent", authMiddleware, listBroadcastNotifications);
+router.post("/send", authMiddleware, sendBroadcastNotification);
+
 router.patch("/read-all", authMiddleware, markAllNotificationsRead);
 router.patch("/:id/read", authMiddleware, markNotificationRead);
 
@@ -28,7 +31,5 @@ router.delete("/mobile/unregister", authMiddleware, unregisterMobilePushToken);
 router.get("/web/public-key", authMiddleware, getWebPushPublicKey);
 router.post("/web/subscribe", authMiddleware, registerWebPushSubscription);
 router.delete("/web/unsubscribe", authMiddleware, unregisterWebPushSubscription);
-
-router.post("/test", authMiddleware, sendSelfTestNotification);
 
 export default router;

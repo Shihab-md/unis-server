@@ -23,7 +23,9 @@ export const notifyOnSuccess = ({ type, title, message, resourceType, resourceId
     const statusCode = Number(res.statusCode || 200);
     const success = statusCode < 400 && payload?.success !== false;
 
-    if (success && req.user?._id) {
+    const isSuperAdmin = String(req.user?.role || "").toLowerCase() === "superadmin";
+
+    if (success && req.user?._id && isSuperAdmin) {
       try {
         const resolvedResourceId = valueOf(resourceId, req, payload) || defaultResourceId(req, payload);
         await createUserNotification({
