@@ -188,6 +188,28 @@ const ensureFolderPath = async (drive, parts = []) => {
   return parentId;
 };
 
+const sanitizeDriveFolderName = (value, fallback = "Course") => {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/-+/g, "-")
+    .replace(/^[-.\s]+|[-.\s]+$/g, "");
+
+  return (cleaned || fallback).slice(0, 160);
+};
+
+const getCertificateCourseFolderName = (course) => {
+  const code = String(course?.code || "").trim();
+  const name = String(course?.name || "").trim();
+  const fallback = course?._id ? `Course_${course._id}` : "Course";
+
+  return sanitizeDriveFolderName(
+    `${code}${code && name ? "-" : ""}${name}`.trim(),
+    fallback
+  );
+};
+
 const drivePreviewUrl = (fileId) => `https://drive.google.com/uc?export=view&id=${fileId}`;
 const driveDownloadUrl = (fileId) => `https://drive.google.com/uc?export=download&id=${fileId}`;
 
@@ -1068,7 +1090,7 @@ const addCertificate = async (req, res) => {
 
     const template = await Template.findById({ _id: templateId }).populate({
       path: "courseId",
-      select: "_id name years",
+      select: "_id code name years",
     });
 
     if (!template) {
@@ -1368,8 +1390,15 @@ const addCertificate = async (req, res) => {
 
     const outName = buildTimestampedName(fileName);
 
+    const courseFolderName = getCertificateCourseFolderName(template?.courseId);
+
     const uploaded = await runWithDriveRetry(async (drive) => {
-      const folderId = await ensureFolderPath(drive, ["UNIS", "Certificates"]);
+      const folderId = await ensureFolderPath(drive, [
+        "UNIS",
+        "Certificates",
+        courseFolderName,
+      ]);
+
       return await uploadBufferToDrive(
         drive,
         folderId,
@@ -1622,7 +1651,7 @@ const resolveCertificateRenderContext = async (certificateId) => {
 
   const template = await Template.findById({ _id: certificate.templateId }).populate({
     path: "courseId",
-    select: "_id name years",
+    select: "_id code name years",
   });
 
   if (!template) {

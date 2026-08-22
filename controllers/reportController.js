@@ -17,6 +17,41 @@ const isObjectIdLike = (v) => mongoose.Types.ObjectId.isValid(String(v || ""));
 const safeStr = (v) => (v === undefined || v === null ? "" : String(v).trim());
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const STUDY_YEAR_OPTIONS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const ALUMNI_STUDENT_STATUSES = ["Graduated"];
+const ALUMNI_ACADEMIC_STATUSES = ["Completed"];
+
+const parseStudyYear = (value) => {
+  const raw = safeStr(value);
+  if (raw === "") return null;
+
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 20) return null;
+
+  return n;
+};
+
+const isAlumniStatus = (status) => safeStr(status).toLowerCase() === "alumni";
+
+const buildAcademicSlotClauses = ({ courseId, studyYear, courseStatus } = {}) => {
+  const clauses = [];
+  const year = parseStudyYear(studyYear);
+  const courseObjectId = courseId && isObjectIdLike(courseId) ? oid(courseId) : null;
+  const statusText = safeStr(courseStatus);
+
+  if (!courseObjectId && year === null && !statusText) return clauses;
+
+  for (let i = 1; i <= 5; i += 1) {
+    const clause = {};
+    if (courseObjectId) clause[`courseId${i}`] = courseObjectId;
+    if (year !== null) clause[`year${i}`] = year;
+    if (statusText) clause[`status${i}`] = statusText;
+    clauses.push(clause);
+  }
+
+  return clauses;
+};
+
 function getAuthPayload(req) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
@@ -88,21 +123,16 @@ function buildStudentScopeFromResolvedSchoolIds(resolvedSchoolIds) {
   return { schoolId: { $in: resolvedSchoolIds.map(oid) } };
 }
 
-async function getStudentIdsByAcademicFilter({ acYear, courseId }) {
+async function getStudentIdsByAcademicFilter({ acYear, courseId, studyYear, courseStatus } = {}) {
   const match = {};
 
   if (acYear && isObjectIdLike(acYear)) {
     match.acYear = oid(acYear);
   }
 
-  if (courseId && isObjectIdLike(courseId)) {
-    match.$or = [
-      { courseId1: oid(courseId) },
-      { courseId2: oid(courseId) },
-      { courseId3: oid(courseId) },
-      { courseId4: oid(courseId) },
-      { courseId5: oid(courseId) },
-    ];
+  const slotClauses = buildAcademicSlotClauses({ courseId, studyYear, courseStatus });
+  if (slotClauses.length > 0) {
+    match.$or = slotClauses;
   }
 
   if (Object.keys(match).length === 0) return null;
@@ -116,16 +146,28 @@ function buildStudentMatch({
   feesStatus,
   hostel,
   studentIdsByAcademic,
+  alumniStudentIdsByAcademic,
 }) {
   const match = buildStudentScopeFromResolvedSchoolIds(resolvedSchoolIds);
 
-  if (status) match.active = status;
   if (hostel === "Yes" || hostel === "No") match.hostel = hostel;
   if (feesStatus === "Paid") match.feesPaid = 1;
   if (feesStatus === "Unpaid") match.feesPaid = 0;
 
   if (Array.isArray(studentIdsByAcademic)) {
     match._id = { $in: studentIdsByAcademic.map((id) => oid(id)) };
+  }
+
+  if (isAlumniStatus(status)) {
+    const alumniOr = [{ active: { $in: ALUMNI_STUDENT_STATUSES } }];
+
+    if (Array.isArray(alumniStudentIdsByAcademic) && alumniStudentIdsByAcademic.length > 0) {
+      alumniOr.push({ _id: { $in: alumniStudentIdsByAcademic.map((id) => oid(id)) } });
+    }
+
+    match.$or = alumniOr;
+  } else if (status) {
+    match.active = status;
   }
 
   return match;
@@ -204,6 +246,7 @@ async function buildFeesCollectionSeries({
   hostel,
   feesStatus,
   studentIdsByAcademic,
+  alumniStudentIdsByAcademic,
 }) {
   const pipeline = [
     { $addFields: { paidAmount: { $ifNull: ["$paid", "$fees"] } } },
@@ -231,7 +274,15 @@ async function buildFeesCollectionSeries({
     pipeline.push({ $match: { "student.schoolId": { $in: resolvedSchoolIds.map(oid) } } });
   }
 
-  if (status) {
+  if (isAlumniStatus(status)) {
+    const alumniOr = [{ "student.active": { $in: ALUMNI_STUDENT_STATUSES } }];
+
+    if (Array.isArray(alumniStudentIdsByAcademic) && alumniStudentIdsByAcademic.length > 0) {
+      alumniOr.push({ "student._id": { $in: alumniStudentIdsByAcademic.map((id) => oid(id)) } });
+    }
+
+    pipeline.push({ $match: { $or: alumniOr } });
+  } else if (status) {
     pipeline.push({ $match: { "student.active": status } });
   }
 
@@ -301,6 +352,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       q: safeStr(req.query.q),
       courseId: safeStr(req.query.courseId),
       acYear: safeStr(req.query.acYear),
+      year: safeStr(req.query.year),
       status: safeStr(req.query.status),
       feesStatus: safeStr(req.query.feesStatus),
       hostel: safeStr(req.query.hostel),
@@ -314,10 +366,21 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       q: filters.q,
     });
 
-    const studentIdsByAcademic = await getStudentIdsByAcademicFilter({
-      acYear: filters.acYear,
-      courseId: filters.courseId,
-    });
+    const [studentIdsByAcademic, alumniStudentIdsByAcademic] = await Promise.all([
+      getStudentIdsByAcademicFilter({
+        acYear: filters.acYear,
+        courseId: filters.courseId,
+        studyYear: filters.year,
+      }),
+      isAlumniStatus(filters.status)
+        ? getStudentIdsByAcademicFilter({
+            acYear: filters.acYear,
+            courseId: filters.courseId,
+            studyYear: filters.year,
+            courseStatus: ALUMNI_ACADEMIC_STATUSES[0],
+          })
+        : Promise.resolve(null),
+    ]);
 
     const studentMatch = buildStudentMatch({
       resolvedSchoolIds,
@@ -325,6 +388,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       feesStatus: filters.feesStatus,
       hostel: filters.hostel,
       studentIdsByAcademic,
+      alumniStudentIdsByAcademic,
     });
 
     const cacheKey = buildCacheKey("rep:home", [
@@ -336,6 +400,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       filters.q,
       filters.courseId,
       filters.acYear,
+      filters.year,
       filters.status,
       filters.feesStatus,
       filters.hostel,
@@ -397,6 +462,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
         hostel: filters.hostel,
         feesStatus: filters.feesStatus,
         studentIdsByAcademic,
+        alumniStudentIdsByAcademic,
       }),
       Student.find({ ...studentMatch, feesPaid: 0 })
         .select("_id userId schoolId rollNumber feesPaid doa active hostel courses")
@@ -436,6 +502,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
         q: filters.q || null,
         courseId: filters.courseId || null,
         acYear: filters.acYear || null,
+        year: filters.year || null,
         status: filters.status || null,
         feesStatus: filters.feesStatus || null,
         hostel: filters.hostel || null,
@@ -512,6 +579,7 @@ export const getReportMeta = async (req, res) => {
     const statuses = ["Active", "Alumni", "In-Active", "Transferred", "Graduated", "Discontinued"];
     const feeStatuses = ["Paid", "Unpaid"];
     const hostels = ["Yes", "No"];
+    const studyYears = STUDY_YEAR_OPTIONS;
 
     return res.status(200).json({
       success: true,
@@ -523,6 +591,7 @@ export const getReportMeta = async (req, res) => {
       statuses,
       feeStatuses,
       hostels,
+      studyYears,
     });
   } catch (e) {
     console.log(e);
@@ -599,6 +668,7 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       q: safeStr(req.query.q),
       courseId: safeStr(req.query.courseId),
       acYear: safeStr(req.query.acYear),
+      year: safeStr(req.query.year),
       status: safeStr(req.query.status),
       feesStatus: safeStr(req.query.feesStatus),
       hostel: safeStr(req.query.hostel),
@@ -620,6 +690,7 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       filters.q,
       filters.courseId,
       filters.acYear,
+      filters.year,
       filters.status,
       filters.feesStatus,
       filters.hostel,
@@ -659,10 +730,21 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
     }
 
     const schoolIds = schools.map((s) => s._id);
-    const studentIdsByAcademic = await getStudentIdsByAcademicFilter({
-      acYear: filters.acYear,
-      courseId: filters.courseId,
-    });
+    const [studentIdsByAcademic, alumniStudentIdsByAcademic] = await Promise.all([
+      getStudentIdsByAcademicFilter({
+        acYear: filters.acYear,
+        courseId: filters.courseId,
+        studyYear: filters.year,
+      }),
+      isAlumniStatus(filters.status)
+        ? getStudentIdsByAcademicFilter({
+            acYear: filters.acYear,
+            courseId: filters.courseId,
+            studyYear: filters.year,
+            courseStatus: ALUMNI_ACADEMIC_STATUSES[0],
+          })
+        : Promise.resolve(null),
+    ]);
 
     const studentMatch = buildStudentMatch({
       resolvedSchoolIds: schoolIds.map((id) => String(id)),
@@ -670,6 +752,7 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       feesStatus: filters.feesStatus,
       hostel: filters.hostel,
       studentIdsByAcademic,
+      alumniStudentIdsByAcademic,
     });
 
     const stats = await Student.aggregate([
