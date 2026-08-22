@@ -161,7 +161,7 @@ const addSchool = async (req, res) => {
       .lean();
     redis.set("schools", JSON.stringify(totalSchoolsList), { EX: 60 * 30 });
 
-    return res.status(200).json({ success: true, message: "Niswan is created." });
+    return res.status(200).json({ success: true, message: "Niswan is created.", resourceId: newSchool._id });
   } catch (error) {
     console.log(error);
     return res
@@ -606,6 +606,16 @@ const getBySchFilter = async (req, res) => {
   try {
     const baseMatch = {};
 
+    // V0.11: the normal Niswan list is role-scoped, so filtered reads must not widen it.
+    // requireSchoolReadRole has already resolved req.accessContext for Admin/Muavin.
+    const access = req.accessContext;
+    const requestRole = String(req.user?.role || "").trim().toLowerCase();
+    if (access && !access.isHQ && requestRole !== "guest") {
+      const allowedIds = Array.isArray(access.schoolIds) ? access.schoolIds : [];
+      if (!allowedIds.length) return res.status(200).json({ success: true, schools: [] });
+      baseMatch._id = { $in: allowedIds.map((value) => new mongoose.Types.ObjectId(value)) };
+    }
+
     // ✅ supervisorId is stored as ObjectId → convert
     if (isValidParam(supervisorId)) {
       if (!isObjectId(supervisorId)) {
@@ -891,7 +901,20 @@ const updateSchool = async (req, res) => {
     }
       */}
 
-    return res.status(200).json({ success: true, message: "Niswan updated." })
+    // Keep reference-data lookups consistent after a mobile/web edit.
+    try {
+      const redis = await getRedis();
+      const totalSchoolsList = await School.find()
+        .sort({ code: 1 })
+        .select("_id code nameEnglish districtStateId active supervisorId")
+        .populate({ path: "districtStateId", select: "district state" })
+        .lean();
+      await redis.set("schools", JSON.stringify(totalSchoolsList), { EX: 60 * 30 });
+    } catch (cacheError) {
+      console.log("[updateSchool] cache refresh skipped:", cacheError?.message || cacheError);
+    }
+
+    return res.status(200).json({ success: true, message: "Niswan updated.", resourceId: id })
 
   } catch (error) {
     return res

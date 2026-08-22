@@ -11,6 +11,8 @@ import academicYearRouter from './routes/academicYear.js'
 import templateRouter from './routes/template.js'
 import certificateRouter from './routes/certificate.js'
 import districtStateRouter from './routes/districtState.js'
+import notificationRouter from './routes/notification.js'
+import mobileRouter from './routes/mobile.js'
 
 import settingRouter from './routes/setting.js'
 import dashboardRouter from './routes/dashboard.js'
@@ -56,6 +58,8 @@ app.use('/api/academicYear', academicYearRouter)
 app.use('/api/template', templateRouter)
 app.use('/api/certificate', certificateRouter)
 app.use('/api/districtState', districtStateRouter)
+app.use('/api/notifications', notificationRouter)
+app.use('/api/mobile', mobileRouter)
 
 app.use('/api/setting', settingRouter)
 app.use('/api/dashboard', dashboardRouter)

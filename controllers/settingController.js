@@ -63,7 +63,7 @@ const changePassword = async (req, res) => {
         user.password = hashPassword;
         await user.save();
 
-        return res.status(200).json({ success: true });
+        return res.status(200).json({ success: true, message: "Password changed successfully.", resourceId: userId });
     } catch (error) {
         console.log("[changePassword] error:", error);
         return res.status(500).json({ success: false, error: "setting error" });

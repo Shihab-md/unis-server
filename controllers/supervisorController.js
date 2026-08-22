@@ -11,6 +11,8 @@ import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])\S{8,64}$/;
+
 const addSupervisor = async (req, res) => {
 
   let savedUser;
@@ -36,11 +38,20 @@ const addSupervisor = async (req, res) => {
 
     console.log("user started");
 
+    if (!PASSWORD_REGEX.test(String(password || ""))) {
+      return res.status(400).json({ success: false, error: "Password must be 8–64 characters with uppercase, lowercase, number and special character, with no spaces." });
+    }
+
     const user = await User.findOne({ email: email });
     if (user) {
       return res
         .status(400)
         .json({ success: false, error: "User already registered." });
+    }
+
+    const duplicateSupervisorId = await Supervisor.findOne({ supervisorId: String(supervisorId || "").trim() }).select("_id").lean();
+    if (duplicateSupervisorId?._id) {
+      return res.status(400).json({ success: false, error: "Muavin ID already exists." });
     }
 
     const hashPassword = await bcrypt.hash(password, 10);
@@ -53,7 +64,7 @@ const addSupervisor = async (req, res) => {
       profileImage: "-",
       //profileImage: req.file ? req.file.buffer.toString('base64') : "",
     });
-    const savedUser = await newUser.save();
+    savedUser = await newUser.save();
 
     const newSupervisor = new Supervisor({
       userId: savedUser._id,
@@ -80,7 +91,7 @@ const addSupervisor = async (req, res) => {
       const fileBuffer = req.file.buffer;
       const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
         access: 'public',
-        contentType: 'image/png',
+        contentType: req.file?.mimetype || 'image/png',
         token: process.env.BLOB_READ_WRITE_TOKEN,
         allowOverwrite: true,
       });
@@ -95,7 +106,7 @@ const addSupervisor = async (req, res) => {
       .lean();
     redis.set("supervisors", JSON.stringify(totalSupervisorsList), { EX: 60 * 30 });
 
-    return res.status(200).json({ success: true, message: "Supervisor Created Successfully." });
+    return res.status(200).json({ success: true, message: "Supervisor Created Successfully.", resourceId: savedSupervisor._id });
   } catch (error) {
     console.log(error);
 
@@ -788,7 +799,7 @@ const getSupervisor = async (req, res) => {
 const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, supervisorId, contactNumber, address, routeName, gender,
+    const { name, email, supervisorId, contactNumber, address, routeName, gender,
       qualification, dob, maritalStatus, doj, jobType, salary, remarks, active } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
@@ -805,23 +816,37 @@ const updateSupervisor = async (req, res) => {
         .json({ success: false, error: "User not found." });
     }
 
+    const normalizedSupervisorId = String(supervisorId || "").trim();
+    const duplicateSupervisorId = await Supervisor.findOne({ supervisorId: normalizedSupervisorId, _id: { $ne: supervisor._id } }).select("_id").lean();
+    if (duplicateSupervisorId?._id) {
+      return res.status(400).json({ success: false, error: "Muavin ID already exists." });
+    }
+    if (email && String(email).trim().toLowerCase() !== String(user.email || "").trim().toLowerCase()) {
+      const duplicateEmail = await User.findOne({ email: String(email).trim(), _id: { $ne: user._id } }).select("_id").lean();
+      if (duplicateEmail?._id) {
+        return res.status(400).json({ success: false, error: "Email is already registered to another UNIS user." });
+      }
+    }
+
     let updateUser;
     if (req.file) {
       const fileBuffer = req.file.buffer;
       const blob = await put("profiles/" + user._id + ".png", fileBuffer, {
         access: 'public',
-        contentType: 'image/png',
+        contentType: req.file?.mimetype || 'image/png',
         token: process.env.BLOB_READ_WRITE_TOKEN,
         allowOverwrite: true,
       });
 
       updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, {
         name: toCamelCase(name),
+        ...(email ? { email: String(email).trim() } : {}),
         profileImage: blob.downloadUrl,
       })
     } else {
       updateUser = await User.findByIdAndUpdate({ _id: supervisor.userId }, {
         name: toCamelCase(name),
+        ...(email ? { email: String(email).trim() } : {}),
       })
     }
 
@@ -841,7 +866,19 @@ const updateSupervisor = async (req, res) => {
         .json({ success: false, error: "Update Failed..." });
     }
 
-    return res.status(200).json({ success: true, message: "Supervisor details updated Successfully." })
+    try {
+      const redis = await getRedis();
+      const totalSupervisorsList = await Supervisor.find()
+        .sort({ supervisorId: 1 })
+        .select("_id supervisorId userId active")
+        .populate({ path: "userId", select: "name" })
+        .lean();
+      await redis.set("supervisors", JSON.stringify(totalSupervisorsList), { EX: 60 * 30 });
+    } catch (cacheError) {
+      console.log("[updateSupervisor] cache refresh skipped:", cacheError?.message || cacheError);
+    }
+
+    return res.status(200).json({ success: true, message: "Supervisor details updated Successfully.", resourceId: id })
 
   } catch (error) {
     return res

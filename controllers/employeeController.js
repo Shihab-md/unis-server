@@ -166,6 +166,7 @@ const addEmployee = async (req, res) => {
     const hashPassword = await bcrypt.hash(String(password), 10);
 
     let createdUserId = null;
+    let createdEmployeeMongoId = null;
 
     await session.withTransaction(async () => {
       const newUser = await User.create(
@@ -183,7 +184,7 @@ const addEmployee = async (req, res) => {
 
       createdUserId = newUser[0]._id;
 
-      await Employee.create(
+      const createdEmployees = await Employee.create(
         [
           {
             userId: createdUserId,
@@ -204,7 +205,24 @@ const addEmployee = async (req, res) => {
         ],
         { session }
       );
+      createdEmployeeMongoId = createdEmployees?.[0]?._id || null;
     });
+
+    // Optional profile image is best-effort. Employee creation must not become a false failure
+    // after the DB transaction has already committed if the external Blob upload is unavailable.
+    if (req.file && createdUserId) {
+      try {
+        const blob = await put("profiles/" + createdUserId + ".png", req.file.buffer, {
+          access: 'public',
+          contentType: req.file.mimetype || 'image/png',
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+          allowOverwrite: true,
+        });
+        await User.findByIdAndUpdate(createdUserId, { profileImage: blob.downloadUrl });
+      } catch (photoError) {
+        console.error("[employee] profile image upload failed after create:", photoError?.message || photoError);
+      }
+    }
 
     // ✅ refresh redis count (best-effort)
     try {
@@ -217,6 +235,7 @@ const addEmployee = async (req, res) => {
       success: true,
       message: "Employee created",
       employeeId,
+      employeeMongoId: createdEmployeeMongoId,
     });
   } catch (error) {
     console.log(error);
@@ -439,8 +458,19 @@ const importEmployeesData = async (req, res) => {
       }
     } catch { }
 
-    // ✅ Return TEXT so frontend can download cleanly
+    // Preserve the production Web text response. Mobile V0.12 explicitly requests JSON so
+    // the same controller can return structured counts without changing the existing Web flow.
     res.setHeader("X-Import-Success-Count", String(successCount));
+    const wantsJson = String(req.headers["x-unis-response-format"] || "").toLowerCase() === "json";
+    if (wantsJson) {
+      return res.status(200).json({
+        success: true,
+        importedCount: successCount,
+        issueCount: Math.max(rows.length - successCount, 0),
+        totalRows: rows.length,
+        finalResultData,
+      });
+    }
     return res.status(200).type("text/plain; charset=utf-8").send(finalResultData);
   } catch (error) {
     console.log(error);
@@ -695,43 +725,29 @@ const getByEmpFilter = async (req, res) => {
 
 const getAdminsBySupervisor = async (req, res) => {
   try {
-    // ✅ Your auth middleware should set req.user (or req.userId)
-    // Pick correct one based on your project
-    const supervisorId = req.user?._id || req.userId;
-
-    if (!supervisorId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
-    }
-
-    // 1) get schoolIds under this supervisor
-    const schools = await School.find({ supervisorId })
-      .select("_id code nameEnglish")
-      .lean();
-
-    const schoolIds = schools.map((s) => s._id);
+    // V0.4 authorization middleware resolves the active Muavin and assigned Niswans
+    // server-side. Do not trust a client-supplied supervisor or school id here.
+    const schoolIds = Array.isArray(req.accessContext?.schoolIds)
+      ? req.accessContext.schoolIds
+      : [];
 
     if (schoolIds.length === 0) {
-      return res.status(200).json({ success: true, admins: [], schools: [] });
+      return res.status(200).json({ success: true, employees: [] });
     }
 
-    // 2) get admins in those schools
     const admins = await Employee.find({
       schoolId: { $in: schoolIds },
       active: "Active",
     })
       .select("_id employeeId schoolId userId contactNumber designation active")
       .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" }) // ✅ no password
+      .populate({ path: "userId", select: "name email role" })
       .sort({ employeeId: 1 })
       .lean();
 
-    // 3) keep only role=admin (since Employee doesn’t store role)
-    const employees = admins.filter((e) => String(e?.userId?.role).toLowerCase() === "admin");
+    const employees = admins.filter((e) => String(e?.userId?.role || "").toLowerCase() === "admin");
 
-    return res.status(200).json({
-      success: true,
-      employees
-    });
+    return res.status(200).json({ success: true, employees });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ success: false, error: "get admins under supervisor server error" });
@@ -810,7 +826,7 @@ const updateEmployee = async (req, res) => {
       const fileBuffer = req.file.buffer;
       const blob = await put("profiles/" + user._id + ".png", fileBuffer, {
         access: 'public',
-        contentType: 'image/png',
+        contentType: req.file.mimetype || 'image/png',
         token: process.env.BLOB_READ_WRITE_TOKEN,
         allowOverwrite: true,
       });

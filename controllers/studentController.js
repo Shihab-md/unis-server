@@ -570,7 +570,7 @@ const addStudent = async (req, res) => {
       const fileBuffer = req.file.buffer;
       const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
         access: 'public',
-        contentType: 'image/png',
+        contentType: req.file.mimetype || 'image/png',
         token: process.env.BLOB_READ_WRITE_TOKEN,
         allowOverwrite: true,
       });
@@ -596,7 +596,7 @@ const addStudent = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalStudents', await Student.countDocuments());
 
-    return res.status(200).json({ success: true, message: "Student created." });
+    return res.status(200).json({ success: true, message: "Student created.", studentId: savedStudent._id, rollNumber: savedStudent.rollNumber });
   } catch (error) {
 
     if (savedUser != null) {
@@ -1976,7 +1976,7 @@ const getStudent = async (req, res) => {
   try {
     let student = await Student.findById(id)
       .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "userId", select: "name email role profileImage" })
       .populate({ path: "courses", select: "name type fees years code" })
       .populate({ path: "districtStateId", select: "district state" })
       .lean();
@@ -2055,7 +2055,7 @@ const getStudentForEdit = async (req, res) => {
   try {
     const student = await Student.findById(id)
       .populate({ path: "schoolId", select: "code nameEnglish" })
-      .populate({ path: "userId", select: "name email role" })
+      .populate({ path: "userId", select: "name email role profileImage" })
       .populate({ path: "districtStateId", select: "district state" })
       .populate({ path: "courses", select: "name type fees years code" })
       .lean();
@@ -2440,9 +2440,10 @@ const updateStudent = async (req, res) => {
       // ---- Optional upload BEFORE transaction writes ----
       // (Cannot rollback blob upload, but safe enough.)
       if (req.file) {
-        const blob = await put(`profiles/${id}.png`, req.file.buffer, {
+        const profileOwnerId = req.authorizedStudent?.userId || id;
+        const blob = await put(`profiles/${profileOwnerId}.png`, req.file.buffer, {
           access: "public",
-          contentType: "image/png",
+          contentType: req.file.mimetype || "image/png",
           token: process.env.BLOB_READ_WRITE_TOKEN,
           allowOverwrite: true,
         });
@@ -2704,7 +2705,7 @@ const updateStudent = async (req, res) => {
       });
 
       await session.endSession();
-      return res.status(200).json({ success: true, message: "Student updated successfully." });
+      return res.status(200).json({ success: true, message: "Student updated successfully.", studentId: id });
     } catch (txError) {
       await session.endSession();
       console.log(txError);

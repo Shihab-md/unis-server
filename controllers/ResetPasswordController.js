@@ -7,6 +7,8 @@ import { toCamelCase } from "./commonController.js";
 
 const cleanValue = (value) => String(value || "").trim();
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])\S{8,64}$/;
+
 const normalizeFoundUser = ({ roleLabel, entity, loginIdField }) => {
     const user = entity?.userId;
 
@@ -126,10 +128,10 @@ const resetPasswordByLoginId = async (req, res) => {
             });
         }
 
-        if (newPassword.length < 6) {
+        if (!PASSWORD_REGEX.test(newPassword)) {
             return res.status(400).json({
                 success: false,
-                error: "Password must be at least 6 characters.",
+                error: "Password must be 8–64 characters with uppercase, lowercase, number and special character, with no spaces.",
             });
         }
 
@@ -156,6 +158,7 @@ const resetPasswordByLoginId = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: "Password reset successful.",
+            resourceId: foundUser.userId,
         });
     } catch (error) {
         console.log(error);
