@@ -68,6 +68,61 @@ const normalizeSchoolIds = (schoolIds = []) => {
   ].map((id) => new mongoose.Types.ObjectId(id));
 };
 
+
+const normalizeTextParam = (value, maxLength = 120) => {
+  const text = String(value || "").trim();
+  return text ? text.slice(0, maxLength) : "";
+};
+
+const escapeRegExp = (value = "") =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseDateStart = (value) => {
+  const text = normalizeTextParam(value, 40);
+  if (!text) return null;
+
+  const date = new Date(text.length === 10 ? `${text}T00:00:00.000Z` : text);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const parseDateEnd = (value) => {
+  const text = normalizeTextParam(value, 40);
+  if (!text) return null;
+
+  const date = new Date(text.length === 10 ? `${text}T23:59:59.999Z` : text);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const buildCreatedAtFilter = (fromValue, toValue) => {
+  const start = parseDateStart(fromValue);
+  const end = parseDateEnd(toValue);
+  const filter = {};
+
+  if (start) filter.$gte = start;
+  if (end) filter.$lte = end;
+
+  return Object.keys(filter).length > 0 ? filter : null;
+};
+
+const normalizeReadStatus = (value, unreadOnly) => {
+  if (unreadOnly) return "unread";
+
+  const status = normalizeTextParam(value, 20).toLowerCase();
+  return ["all", "unread", "read"].includes(status) ? status : "all";
+};
+
+const normalizeNotificationKind = (value) => {
+  const kind = normalizeTextParam(value, 30).toLowerCase();
+  return ["all", "manual", "system"].includes(kind) ? kind : "all";
+};
+
+const normalizeDeliveryStatus = (value) => {
+  const status = normalizeTextParam(value, 30).toLowerCase();
+  return ["all", "success", "failed", "partial", "no-sent"].includes(status)
+    ? status
+    : "all";
+};
+
 const addIds = (set, ids = []) => {
   ids.forEach((id) => {
     if (id) set.add(String(id));
@@ -208,9 +263,38 @@ export const listNotifications = async (req, res) => {
     const page = clamp(req.query.page, 1, 100000, 1);
     const limit = clamp(req.query.limit, 1, 50, 20);
     const unreadOnly = String(req.query.unreadOnly || "false").toLowerCase() === "true";
-    const filter = { userId: req.user._id, ...(unreadOnly ? { readAt: null } : {}) };
+    const readStatus = normalizeReadStatus(req.query.readStatus, unreadOnly);
+    const kind = normalizeNotificationKind(req.query.kind);
+    const resourceType = normalizeTextParam(req.query.resourceType, 60);
+    const search = normalizeTextParam(req.query.search, 120);
+    const createdAtFilter = buildCreatedAtFilter(req.query.dateFrom, req.query.dateTo);
 
-    const [notifications, total, unreadCount, allCount] = await Promise.all([
+    const filter = { userId: req.user._id };
+
+    if (readStatus === "unread") filter.readAt = null;
+    if (readStatus === "read") filter.readAt = { $ne: null };
+
+    if (kind === "manual") filter.type = "manual.broadcast";
+    if (kind === "system") filter.type = { $ne: "manual.broadcast" };
+
+    if (resourceType && resourceType.toLowerCase() !== "all") {
+      filter.resourceType = { $regex: `^${escapeRegExp(resourceType)}$`, $options: "i" };
+    }
+
+    if (createdAtFilter) filter.createdAt = createdAtFilter;
+
+    if (search) {
+      const pattern = { $regex: escapeRegExp(search), $options: "i" };
+      filter.$or = [
+        { title: pattern },
+        { message: pattern },
+        { type: pattern },
+        { resourceType: pattern },
+        { resourceId: pattern },
+      ];
+    }
+
+    const [notifications, total, unreadCount, allCount, filteredUnreadCount] = await Promise.all([
       Notification.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
@@ -219,6 +303,7 @@ export const listNotifications = async (req, res) => {
       Notification.countDocuments(filter),
       Notification.countDocuments({ userId: req.user._id, readAt: null }),
       Notification.countDocuments({ userId: req.user._id }),
+      Notification.countDocuments({ ...filter, readAt: null }),
     ]);
 
     return res.status(200).json({
@@ -229,6 +314,7 @@ export const listNotifications = async (req, res) => {
       total,
       allCount,
       unreadCount,
+      filteredUnreadCount,
       hasMore: page * limit < total,
     });
   } catch (error) {
@@ -504,15 +590,71 @@ export const listBroadcastNotifications = async (req, res) => {
     }
 
     const page = clamp(req.query.page, 1, 100000, 1);
-    const limit = clamp(req.query.limit, 1, 50, 30);
+    const limit = clamp(req.query.limit, 1, 50, 20);
+    const search = normalizeTextParam(req.query.search, 120);
+    const targetRole = normalizeTextParam(req.query.targetRole, 40).toLowerCase();
+    const schoolId = normalizeTextParam(req.query.schoolId, 80);
+    const deliveryStatus = normalizeDeliveryStatus(req.query.deliveryStatus);
+    const createdAtFilter = buildCreatedAtFilter(req.query.dateFrom, req.query.dateTo);
+
+    const filter = {};
+
+    if (targetRole && targetRole !== "all" && VALID_TARGET_ROLES.has(targetRole)) {
+      filter.targetRoles = targetRole;
+    }
+
+    if (schoolId && schoolId !== "all") {
+      if (schoolId === "ALL") {
+        filter.selectAllSchools = true;
+      } else if (mongoose.Types.ObjectId.isValid(schoolId)) {
+        filter.$or = [
+          { selectAllSchools: true },
+          { "targetNiswans.schoolId": new mongoose.Types.ObjectId(schoolId) },
+        ];
+      }
+    }
+
+    if (deliveryStatus === "success") {
+      filter.failedCount = 0;
+      filter.sentCount = { $gt: 0 };
+    } else if (deliveryStatus === "failed") {
+      filter.failedCount = { $gt: 0 };
+    } else if (deliveryStatus === "partial") {
+      filter.failedCount = { $gt: 0 };
+      filter.sentCount = { $gt: 0 };
+    } else if (deliveryStatus === "no-sent") {
+      filter.sentCount = 0;
+    }
+
+    if (createdAtFilter) filter.createdAt = createdAtFilter;
+
+    if (search) {
+      const pattern = { $regex: escapeRegExp(search), $options: "i" };
+      const searchOr = [
+        { title: pattern },
+        { message: pattern },
+        { targetRoles: pattern },
+        { "targetNiswans.code": pattern },
+        { "targetNiswans.nameEnglish": pattern },
+        { createdByName: pattern },
+        { createdByRole: pattern },
+      ];
+
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchOr;
+      }
+    }
 
     const [broadcasts, total] = await Promise.all([
-      NotificationBroadcast.find({})
+      NotificationBroadcast.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
-      NotificationBroadcast.countDocuments({}),
+      NotificationBroadcast.countDocuments(filter),
     ]);
 
     return res.status(200).json({

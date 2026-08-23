@@ -24,6 +24,19 @@ const CATEGORIES = new Set([
 
 const PRIORITIES = new Set(["Low", "Normal", "High", "Urgent"]);
 const STATUSES = new Set(["Open", "In Progress", "Answered", "Closed"]);
+const ROLE_FILTERS = new Set([
+  "hquser",
+  "supervisor",
+  "admin",
+  "employee",
+  "teacher",
+  "usthadh",
+  "warden",
+  "staff",
+  "student",
+  "parent",
+  "guest",
+]);
 
 const EMPLOYEE_LINKED_ROLES = new Set([
   "hquser",
@@ -45,6 +58,21 @@ const clamp = (value, min, max, fallback) => {
 const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const cleanText = (value = "", max = 2500) => String(value || "").trim().slice(0, max);
 const isSuperAdmin = (req) => String(req.user?.role || "").toLowerCase() === "superadmin";
+
+const isTruthyQueryValue = (value) => {
+  const text = String(value ?? "").trim().toLowerCase();
+  return ["1", "true", "yes", "y", "on", "unread"].includes(text);
+};
+
+const parseDateBoundary = (value, boundary) => {
+  const text = cleanText(value, 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+
+  const suffix = boundary === "end" ? "T23:59:59.999Z" : "T00:00:00.000Z";
+  const date = new Date(`${text}${suffix}`);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 
 const safeObjectId = (value) => {
   const text = String(value || "").trim();
@@ -142,10 +170,45 @@ const markReadForViewer = async (query, user) => {
   return updated || query;
 };
 
+const getUnreadFilterClause = (req) => {
+  const role = String(req.user?.role || "").toLowerCase();
+
+  if (role === "superadmin") {
+    return {
+      $and: [
+        { lastMessageByRole: { $ne: "superadmin" } },
+        { lastMessageBy: { $ne: req.user._id } },
+        {
+          $or: [
+            { readBySuperadminAt: null },
+            { readBySuperadminAt: { $exists: false } },
+            { $expr: { $gt: ["$lastMessageAt", "$readBySuperadminAt"] } },
+          ],
+        },
+      ],
+    };
+  }
+
+  return {
+    $and: [
+      { lastMessageBy: { $ne: req.user._id } },
+      {
+        $or: [
+          { readByUserAt: null },
+          { readByUserAt: { $exists: false } },
+          { $expr: { $gt: ["$lastMessageAt", "$readByUserAt"] } },
+        ],
+      },
+    ],
+  };
+};
+
 const buildListFilter = (req) => {
   const filter = { active: true };
+  const andClauses = [];
+  const superadmin = isSuperAdmin(req);
 
-  if (!isSuperAdmin(req)) {
+  if (!superadmin) {
     filter.createdBy = req.user._id;
   }
 
@@ -158,21 +221,47 @@ const buildListFilter = (req) => {
   const priority = cleanText(req.query.priority, 40);
   if (priority && priority !== "All" && PRIORITIES.has(priority)) filter.priority = priority;
 
+  if (superadmin) {
+    const role = cleanText(req.query.role || req.query.createdByRole, 40).toLowerCase();
+    if (role && role !== "all" && ROLE_FILTERS.has(role)) {
+      filter.createdByRole = new RegExp(`^${escapeRegex(role)}$`, "i");
+    }
+
+    const schoolId = safeObjectId(req.query.schoolId || req.query.niswanId);
+    if (schoolId) filter.schoolId = schoolId;
+  }
+
+  const updatedFrom = parseDateBoundary(req.query.updatedFrom || req.query.dateFrom, "start");
+  const updatedTo = parseDateBoundary(req.query.updatedTo || req.query.dateTo, "end");
+  if (updatedFrom || updatedTo) {
+    filter.lastMessageAt = {};
+    if (updatedFrom) filter.lastMessageAt.$gte = updatedFrom;
+    if (updatedTo) filter.lastMessageAt.$lte = updatedTo;
+  }
+
+  if (isTruthyQueryValue(req.query.unreadOnly)) {
+    andClauses.push(getUnreadFilterClause(req));
+  }
+
   const search = cleanText(req.query.search, 120);
   if (search) {
     const regex = new RegExp(escapeRegex(search), "i");
-    filter.$or = [
-      { subject: regex },
-      { message: regex },
-      { createdByName: regex },
-      { createdByRole: regex },
-      { schoolCode: regex },
-      { schoolName: regex },
-      { category: regex },
-      { priority: regex },
-      { status: regex },
-    ];
+    andClauses.push({
+      $or: [
+        { subject: regex },
+        { message: regex },
+        { createdByName: regex },
+        { createdByRole: regex },
+        { schoolCode: regex },
+        { schoolName: regex },
+        { category: regex },
+        { priority: regex },
+        { status: regex },
+      ],
+    });
   }
+
+  if (andClauses.length > 0) filter.$and = andClauses;
 
   return filter;
 };
