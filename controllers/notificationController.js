@@ -325,6 +325,17 @@ export const listNotifications = async (req, res) => {
 
 export const getUnreadCount = async (req, res) => {
   try {
+    // Superadmin Notification page is intentionally Sent Details only.
+    // The bell badge must therefore not count hidden received Notification rows.
+    // Sent history count is shown inside the Notifications page pagination, not in the bell.
+    if (isSuperAdmin(req)) {
+      return res.status(200).json({
+        success: true,
+        unreadCount: 0,
+        superadminSentOnly: true,
+      });
+    }
+
     const unreadCount = await Notification.countDocuments({ userId: req.user._id, readAt: null });
     return res.status(200).json({ success: true, unreadCount });
   } catch (error) {
