@@ -4,6 +4,7 @@ import { put } from "@vercel/blob";
 import mongoose from "mongoose";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
+import Employee from "../models/Employee.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
 import Course from "../models/Course.js";
@@ -19,6 +20,7 @@ import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase, getNextNumber, createInvoiceFromStructure, parseDate } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
+import { createUserNotification } from "../services/notificationService.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -618,7 +620,22 @@ const addStudent = async (req, res) => {
     const redis = await getRedis();
     await redis.set('totalStudents', await Student.countDocuments());
 
-    return res.status(200).json({ success: true, message: "Student created.", studentId: savedStudent._id, rollNumber: savedStudent.rollNumber });
+    const adminNotification = await notifySchoolAdminsForStudentAction({
+      schoolId: schoolById?._id || schoolId,
+      studentId: savedStudent?._id,
+      studentName: savedUser?.name || toCamelCase(name),
+      rollNumber: savedStudent?.rollNumber || rollNumber,
+      action: "ADMISSION",
+      actorUserId: req.user?._id || req.user?.id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Student created.",
+      studentId: savedStudent._id,
+      rollNumber: savedStudent.rollNumber,
+      adminNotification,
+    });
   } catch (error) {
 
     if (savedUser != null) {
@@ -2470,6 +2487,7 @@ const getStudentForPromote = async (req, res) => {
 const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
+    let notificationInfo = null;
 
     const {
       name,
@@ -2787,10 +2805,32 @@ const updateStudent = async (req, res) => {
           { $set: { courses: uniqueCourses } },
           { session }
         );
+
+        notificationInfo = {
+          schoolId: updatedStudent?.schoolId || schoolId,
+          studentId: updatedStudent?._id || id,
+          studentName: updatedUser?.name || toCamelCase(name),
+          rollNumber: student?.rollNumber || updatedStudent?.rollNumber || "",
+        };
       });
 
       await session.endSession();
-      return res.status(200).json({ success: true, message: "Student updated successfully.", studentId: id });
+
+      const adminNotification = await notifySchoolAdminsForStudentAction({
+        schoolId: notificationInfo?.schoolId || schoolId,
+        studentId: notificationInfo?.studentId || id,
+        studentName: notificationInfo?.studentName || toCamelCase(name),
+        rollNumber: notificationInfo?.rollNumber || "",
+        action: "UPDATE",
+        actorUserId: req.user?._id || req.user?.id,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Student updated successfully.",
+        studentId: id,
+        adminNotification,
+      });
     } catch (txError) {
       await session.endSession();
       console.log(txError);
@@ -3575,6 +3615,11 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
         .select("_id name type years fees code promotionOrder")
         .lean();
     }
+
+    const notificationTargetCourse =
+      normalizedPolicy === "PROMOTE" && isSchoolEducation && nextSchoolCourse?._id
+        ? nextSchoolCourse
+        : sourceCourse;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       const idsChunk = chunks[chunkIndex];
@@ -5068,6 +5113,242 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 */}
 
 {/*
+
+const getBulkPromoteNotificationMeta = (policy = "") => {
+  const normalizedPolicy = String(policy || "").trim();
+
+  if (normalizedPolicy === "COMPLETE") {
+    return {
+      type: "student.completed",
+      title: "Student completion updated",
+      actionText: "completed",
+      receiptLabel: "Completed",
+    };
+  }
+
+  if (normalizedPolicy === "NOT_PROMOTE") {
+    return {
+      type: "student.notPromoted",
+      title: "Student promotion updated",
+      actionText: "marked as not promoted",
+      receiptLabel: "Not promoted",
+    };
+  }
+
+  return {
+    type: "student.promoted",
+    title: "Student promotion updated",
+    actionText: "promoted",
+    receiptLabel: "Promoted",
+  };
+};
+
+const notifySchoolAdminsForBulkPromote = async ({
+  schoolId,
+  policy,
+  courseName = "Course",
+  targetCourseName = "",
+  count = 0,
+  skipped = 0,
+  errorCount = 0,
+}) => {
+  try {
+    const successCount = Number(count || 0);
+    if (!schoolId || !isObjectId(schoolId) || successCount <= 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const adminEmployees = await Employee.find({
+      schoolId,
+      active: "Active",
+    })
+      .select("userId")
+      .populate({ path: "userId", select: "_id name role" })
+      .lean();
+
+    const adminUserIds = [
+      ...new Set(
+        (Array.isArray(adminEmployees) ? adminEmployees : [])
+          .map((employee) => employee?.userId)
+          .filter((user) => user && String(user.role || "") === "admin")
+          .map((user) => String(user._id))
+          .filter(isObjectId)
+      ),
+    ];
+
+    if (adminUserIds.length === 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const school = await School.findById(schoolId)
+      .select("code nameEnglish")
+      .lean();
+
+    const meta = getBulkPromoteNotificationMeta(policy);
+    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
+    const courseText = targetCourseName && targetCourseName !== courseName
+      ? `${courseName} → ${targetCourseName}`
+      : courseName;
+
+    const extraParts = [];
+    if (Number(skipped || 0) > 0) extraParts.push(`Skipped: ${Number(skipped || 0)}`);
+    if (Number(errorCount || 0) > 0) extraParts.push(`Errors: ${Number(errorCount || 0)}`);
+
+    const message = [
+      `${successCount} student(s) ${meta.actionText} for ${courseText || "selected course"}.`,
+      schoolText ? `Niswan: ${schoolText}.` : "",
+      extraParts.length ? extraParts.join(", ") + "." : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const results = await Promise.allSettled(
+      adminUserIds.map((userId) =>
+        createUserNotification({
+          userId,
+          type: meta.type,
+          title: meta.title,
+          message,
+          resourceType: "student",
+          resourceId: String(schoolId),
+          webPath: "/dashboard/notifications",
+          mobilePath: "/(app)/notifications",
+        })
+      )
+    );
+
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        "[bulkPromote] school admin notification failed:",
+        failed.map((item) => item.reason?.message || item.reason).join(" | ")
+      );
+    }
+
+    return {
+      success: failed.length === 0,
+      sent: results.length - failed.length,
+      failed: failed.length,
+    };
+  } catch (error) {
+    console.warn("[bulkPromote] unable to notify school admins:", error?.message || error);
+    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
+  }
+};
+
+const getStudentActionNotificationMeta = (action) => {
+  const normalizedAction = String(action || "").trim().toUpperCase();
+
+  if (normalizedAction === "ADMISSION") {
+    return {
+      type: "student.admitted",
+      title: "Student admission created",
+      actionText: "was admitted",
+    };
+  }
+
+  if (normalizedAction === "UPDATE") {
+    return {
+      type: "student.updated",
+      title: "Student details updated",
+      actionText: "details were updated",
+    };
+  }
+
+  return {
+    type: "student.updated",
+    title: "Student update",
+    actionText: "was updated",
+  };
+};
+
+const notifySchoolAdminsForStudentAction = async ({
+  schoolId,
+  studentId,
+  studentName = "Student",
+  rollNumber = "",
+  action = "UPDATE",
+  actorUserId = null,
+}) => {
+  try {
+    if (!schoolId || !isObjectId(schoolId) || !studentId || !isObjectId(studentId)) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const actorId = String(actorUserId || "");
+
+    const adminEmployees = await Employee.find({
+      schoolId,
+      active: "Active",
+    })
+      .select("userId")
+      .populate({ path: "userId", select: "_id name role" })
+      .lean();
+
+    const adminUserIds = [
+      ...new Set(
+        (Array.isArray(adminEmployees) ? adminEmployees : [])
+          .map((employee) => employee?.userId)
+          .filter((user) => user && String(user.role || "").toLowerCase() === "admin")
+          .map((user) => String(user._id))
+          .filter(isObjectId)
+          .filter((userId) => !actorId || userId !== actorId)
+      ),
+    ];
+
+    if (adminUserIds.length === 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const school = await School.findById(schoolId)
+      .select("code nameEnglish")
+      .lean();
+
+    const meta = getStudentActionNotificationMeta(action);
+    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
+    const studentText = [rollNumber, studentName].filter(Boolean).join(" - ") || "Student";
+
+    const message = [
+      `${studentText} ${meta.actionText}.`,
+      schoolText ? `Niswan: ${schoolText}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const results = await Promise.allSettled(
+      adminUserIds.map((userId) =>
+        createUserNotification({
+          userId,
+          type: meta.type,
+          title: meta.title,
+          message,
+          resourceType: "student",
+          resourceId: String(studentId),
+          webPath: "/dashboard/notifications",
+          mobilePath: "/(app)/notifications",
+        })
+      )
+    );
+
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        "[studentAction] school admin notification failed:",
+        failed.map((item) => item.reason?.message || item.reason).join(" | ")
+      );
+    }
+
+    return {
+      success: failed.length === 0,
+      sent: results.length - failed.length,
+      failed: failed.length,
+    };
+  } catch (error) {
+    console.warn("[studentAction] unable to notify school admins:", error?.message || error);
+    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
+  }
+};
+
 const getStudentProgressGroupKey = (course) => {
   if (!course?._id) return null;
 
@@ -5700,6 +5981,129 @@ console.log("activeYear : " + activeYear)
 };
 */}
 
+
+const getBulkPromoteNotificationMeta = (policy = "") => {
+  const normalizedPolicy = String(policy || "").trim();
+
+  if (normalizedPolicy === "COMPLETE") {
+    return {
+      type: "student.completed",
+      title: "Student completion updated",
+      actionText: "completed",
+      receiptLabel: "Completed",
+    };
+  }
+
+  if (normalizedPolicy === "NOT_PROMOTE") {
+    return {
+      type: "student.notPromoted",
+      title: "Student promotion updated",
+      actionText: "marked as not promoted",
+      receiptLabel: "Not promoted",
+    };
+  }
+
+  return {
+    type: "student.promoted",
+    title: "Student promotion updated",
+    actionText: "promoted",
+    receiptLabel: "Promoted",
+  };
+};
+
+const notifySchoolAdminsForBulkPromote = async ({
+  schoolId,
+  policy,
+  courseName = "Course",
+  targetCourseName = "",
+  count = 0,
+  skipped = 0,
+  errorCount = 0,
+}) => {
+  try {
+    const successCount = Number(count || 0);
+    if (!schoolId || !isObjectId(schoolId) || successCount <= 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const adminEmployees = await Employee.find({
+      schoolId,
+      active: "Active",
+    })
+      .select("userId")
+      .populate({ path: "userId", select: "_id name role" })
+      .lean();
+
+    const adminUserIds = [
+      ...new Set(
+        (Array.isArray(adminEmployees) ? adminEmployees : [])
+          .map((employee) => employee?.userId)
+          .filter((user) => user && String(user.role || "") === "admin")
+          .map((user) => String(user._id))
+          .filter(isObjectId)
+      ),
+    ];
+
+    if (adminUserIds.length === 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const school = await School.findById(schoolId)
+      .select("code nameEnglish")
+      .lean();
+
+    const meta = getBulkPromoteNotificationMeta(policy);
+    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
+    const courseText = targetCourseName && targetCourseName !== courseName
+      ? `${courseName} → ${targetCourseName}`
+      : courseName;
+
+    const extraParts = [];
+    if (Number(skipped || 0) > 0) extraParts.push(`Skipped: ${Number(skipped || 0)}`);
+    if (Number(errorCount || 0) > 0) extraParts.push(`Errors: ${Number(errorCount || 0)}`);
+
+    const message = [
+      `${successCount} student(s) ${meta.actionText} for ${courseText || "selected course"}.`,
+      schoolText ? `Niswan: ${schoolText}.` : "",
+      extraParts.length ? extraParts.join(", ") + "." : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const results = await Promise.allSettled(
+      adminUserIds.map((userId) =>
+        createUserNotification({
+          userId,
+          type: meta.type,
+          title: meta.title,
+          message,
+          resourceType: "student",
+          resourceId: String(schoolId),
+          webPath: "/dashboard/notifications",
+          mobilePath: "/(app)/notifications",
+        })
+      )
+    );
+
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        "[bulkPromote] school admin notification failed:",
+        failed.map((item) => item.reason?.message || item.reason).join(" | ")
+      );
+    }
+
+    return {
+      success: failed.length === 0,
+      sent: results.length - failed.length,
+      failed: failed.length,
+    };
+  } catch (error) {
+    console.warn("[bulkPromote] unable to notify school admins:", error?.message || error);
+    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
+  }
+};
+
 const getStudentProgressGroupKey = (course) => {
   if (!course?._id) return null;
 
@@ -6329,7 +6733,23 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       }
     }
 
-    return res.status(200).json({ success: true, summary });
+    const adminNotification = await notifySchoolAdminsForBulkPromote({
+      schoolId,
+      policy: normalizedPolicy,
+      courseName: sourceCourse?.name || "Course",
+      targetCourseName: notificationTargetCourse?.name || sourceCourse?.name || "Course",
+      count: summary.promoted,
+      skipped: summary.skipped,
+      errorCount: Array.isArray(summary.errors) ? summary.errors.length : 0,
+    });
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        ...summary,
+        adminNotification,
+      },
+    });
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({
