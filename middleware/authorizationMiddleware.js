@@ -649,7 +649,7 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
     }
 
     const [template, school, student] = await Promise.all([
-      Template.findById(templateId).select("_id courseId").lean(),
+      Template.findById(templateId).select("_id courseId certificateFees").lean(),
       School.findById(schoolId).select("_id active").lean(),
       Student.findById(studentId).select("_id schoolId userId").lean(),
     ]);
@@ -665,7 +665,8 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
     }
 
     // Enforce on the server the same eligibility rule used by the production Web selector:
-    // the matching course must be Completed and the CERTIFICATE fee invoice must be PAID.
+    // the matching course must be Completed. If Template Master certificate fee is > 0,
+    // the CERTIFICATE fee invoice must be PAID. If fee is 0, invoice is not required.
     const completedAcademic = await Academic.findOne({
       studentId: student._id,
       $or: [
@@ -684,19 +685,30 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
       });
     }
 
-    const paidCertificateInvoice = await FeeInvoice.findOne({
-      schoolId: school._id,
-      studentId: student._id,
-      courseId: template.courseId,
-      source: "CERTIFICATE",
-      status: "PAID",
-    }).select("_id").lean();
+    const rawTemplateCertificateFees = Number(template?.certificateFees);
+    const templateCertificateFees =
+      Number.isFinite(rawTemplateCertificateFees) && rawTemplateCertificateFees >= 0
+        ? rawTemplateCertificateFees
+        : 75;
+    const isCertificateFree = templateCertificateFees <= 0;
 
-    if (!paidCertificateInvoice?._id) {
-      return res.status(400).json({
-        success: false,
-        error: "Certificate fee is pending for the selected Student.",
-      });
+    // Certificate fee 0 means free certificate.
+    // Do not require a CERTIFICATE invoice and do not let old pending invoices block printing.
+    if (!isCertificateFree) {
+      const paidCertificateInvoice = await FeeInvoice.findOne({
+        schoolId: school._id,
+        studentId: student._id,
+        courseId: template.courseId,
+        source: "CERTIFICATE",
+        status: "PAID",
+      }).select("_id").lean();
+
+      if (!paidCertificateInvoice?._id) {
+        return res.status(400).json({
+          success: false,
+          error: "Certificate fee is pending for the selected Student.",
+        });
+      }
     }
 
     req.authorizedCertificateStudent = student;
