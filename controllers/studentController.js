@@ -4,7 +4,6 @@ import { put } from "@vercel/blob";
 import mongoose from "mongoose";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
-import Employee from "../models/Employee.js";
 import School from "../models/School.js";
 import Academic from "../models/Academic.js";
 import Course from "../models/Course.js";
@@ -23,6 +22,46 @@ import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 import { createUserNotification } from "../services/notificationService.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+const extractObjectIdText = (value) => {
+  if (value === undefined || value === null) return "";
+
+  if (typeof value === "object") {
+    return (
+      extractObjectIdText(value._id) ||
+      extractObjectIdText(value.id) ||
+      extractObjectIdText(value.value) ||
+      ""
+    );
+  }
+
+  const text = String(value).trim();
+  if (!text || text === "null" || text === "undefined" || text === "[object Object]") {
+    return "";
+  }
+
+  try {
+    if (text.startsWith("{") || text.startsWith("[")) {
+      const parsed = JSON.parse(text);
+      const parsedId = extractObjectIdText(parsed);
+      if (parsedId) return parsedId;
+    }
+  } catch {
+    // Continue with plain string extraction.
+  }
+
+  if (OBJECT_ID_RE.test(text)) return text;
+
+  const match = text.match(/[a-fA-F0-9]{24}/);
+  return match?.[0] || "";
+};
+
+const normalizeObjectIdValue = (value) => {
+  const text = extractObjectIdText(value);
+  return OBJECT_ID_RE.test(text) ? text : "";
+};
 
 // 2) Upsert Account as "Fees Due" (payment happens later via HQ approval)
 const upsertFeesDueAccount = async ({
@@ -412,7 +451,17 @@ const addStudent = async (req, res) => {
 
     } = req.body;
 
-    const schoolById = await School.findById({ _id: schoolId });
+    const safeSchoolId = normalizeObjectIdValue(schoolId);
+    if (!safeSchoolId || !OBJECT_ID_RE.test(safeSchoolId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Valid Niswan is required before adding student",
+      });
+    }
+
+    req.body.schoolId = safeSchoolId;
+
+    const schoolById = await School.findById(safeSchoolId);
     if (schoolById == null) {
       return res
         .status(404)
@@ -496,8 +545,18 @@ const addStudent = async (req, res) => {
         .json({ success: false, error: "Error: Student NOT added." });
     }
 
-    console.log("AC Year : " + acYear)
-    const academicYearById = await AcademicYear.findById({ _id: acYear });
+    const safeAcYear = normalizeObjectIdValue(acYear);
+    if (!safeAcYear || !OBJECT_ID_RE.test(safeAcYear)) {
+      return res.status(400).json({
+        success: false,
+        error: "Valid Academic Year is required before adding student",
+      });
+    }
+
+    req.body.acYear = safeAcYear;
+
+    console.log("AC Year : " + safeAcYear)
+    const academicYearById = await AcademicYear.findById(safeAcYear);
     if (academicYearById == null) {
       return res
         .status(404)
@@ -621,7 +680,7 @@ const addStudent = async (req, res) => {
     await redis.set('totalStudents', await Student.countDocuments());
 
     const adminNotification = await notifySchoolAdminsForStudentAction({
-      schoolId: schoolById?._id || schoolId,
+      schoolId: schoolById?._id || safeSchoolId,
       studentId: savedStudent?._id,
       studentName: savedUser?.name || toCamelCase(name),
       rollNumber: savedStudent?.rollNumber || rollNumber,
@@ -2487,7 +2546,6 @@ const getStudentForPromote = async (req, res) => {
 const updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    let notificationInfo = null;
 
     const {
       name,
@@ -2531,10 +2589,23 @@ const updateStudent = async (req, res) => {
       instituteId5, courseId5, refNumber5, year5, fees5, discount5,
     } = req.body;
 
+    const safeStudentId = normalizeObjectIdValue(id);
+    const safeSchoolId = normalizeObjectIdValue(schoolId);
+    const safeAcYear = normalizeObjectIdValue(acYear);
+
     // basic validation early (no DB writes yet)
-    if (!id) return res.status(400).json({ success: false, error: "Student id is required" });
-    if (!schoolId) return res.status(400).json({ success: false, error: "schoolId is required" });
-    if (!acYear) return res.status(400).json({ success: false, error: "acYear is required" });
+    if (!safeStudentId || !OBJECT_ID_RE.test(safeStudentId)) {
+      return res.status(400).json({ success: false, error: "Valid Student id is required" });
+    }
+    if (!safeSchoolId || !OBJECT_ID_RE.test(safeSchoolId)) {
+      return res.status(400).json({ success: false, error: "Valid Niswan is required" });
+    }
+    if (!safeAcYear || !OBJECT_ID_RE.test(safeAcYear)) {
+      return res.status(400).json({ success: false, error: "Valid Academic Year is required" });
+    }
+
+    req.body.schoolId = safeSchoolId;
+    req.body.acYear = safeAcYear;
 
     const session = await mongoose.startSession();
 
@@ -2543,7 +2614,7 @@ const updateStudent = async (req, res) => {
       // ---- Optional upload BEFORE transaction writes ----
       // (Cannot rollback blob upload, but safe enough.)
       if (req.file) {
-        const profileOwnerId = req.authorizedStudent?.userId || id;
+        const profileOwnerId = req.authorizedStudent?.userId || safeStudentId;
         const blob = await put(`profiles/${profileOwnerId}.png`, req.file.buffer, {
           access: "public",
           contentType: req.file.mimetype || "image/png",
@@ -2555,17 +2626,17 @@ const updateStudent = async (req, res) => {
 
       await session.withTransaction(async () => {
         // 1) Load student + user (in transaction)
-        const student = await Student.findById(id).session(session);
+        const student = await Student.findById(safeStudentId).session(session);
         if (!student) throw new Error("Student not found");
 
         const user = await User.findById(student.userId).session(session);
         if (!user) throw new Error("User not found");
 
-        const school = await School.findById(schoolId).select("_id").session(session);
+        const school = await School.findById(safeSchoolId).select("_id").session(session);
         if (!school) throw new Error("Niswan not found");
 
-        console.log("AC Year : " + acYear);
-        const academicYearById = await AcademicYear.findById(acYear).select("_id").session(session);
+        console.log("AC Year : " + safeAcYear);
+        const academicYearById = await AcademicYear.findById(safeAcYear).select("_id").session(session);
         if (!academicYearById) throw new Error("Academic Year Not exists");
 
         // helpers
@@ -2608,9 +2679,9 @@ const updateStudent = async (req, res) => {
 
         // 3) Update Student
         const updatedStudent = await Student.findByIdAndUpdate(
-          id,
+          safeStudentId,
           {
-            schoolId,
+            schoolId: safeSchoolId,
             doa,
             dob,
             gender,
@@ -2729,7 +2800,7 @@ const updateStudent = async (req, res) => {
 
         const accountUpdate = {
           userId: student.userId,
-          schoolId: schoolId,
+          schoolId: safeSchoolId,
           acYear: academicYearById._id,
           academicId: academicDoc._id,
           receiptNumber: prevAccountDoc?.receiptNumber || "Admission",
@@ -2766,7 +2837,7 @@ const updateStudent = async (req, res) => {
           if (feesChanged || changedSlots.length > 0) {
             for (const slot of changedSlots) {
               await createFeesInvoiceSafe({
-                schoolId: schoolId,
+                schoolId: safeSchoolId,
                 studentId: student._id,
                 userId: student.userId,
                 acYear: academicYearById._id,
@@ -2801,26 +2872,18 @@ const updateStudent = async (req, res) => {
         const uniqueCourses = [...new Set(coursesArray)];
 
         await Student.findByIdAndUpdate(
-          id,
+          safeStudentId,
           { $set: { courses: uniqueCourses } },
           { session }
         );
-
-        notificationInfo = {
-          schoolId: updatedStudent?.schoolId || schoolId,
-          studentId: updatedStudent?._id || id,
-          studentName: updatedUser?.name || toCamelCase(name),
-          rollNumber: student?.rollNumber || updatedStudent?.rollNumber || "",
-        };
       });
 
       await session.endSession();
 
       const adminNotification = await notifySchoolAdminsForStudentAction({
-        schoolId: notificationInfo?.schoolId || schoolId,
-        studentId: notificationInfo?.studentId || id,
-        studentName: notificationInfo?.studentName || toCamelCase(name),
-        rollNumber: notificationInfo?.rollNumber || "",
+        schoolId: safeSchoolId,
+        studentId: safeStudentId,
+        studentName: name,
         action: "UPDATE",
         actorUserId: req.user?._id || req.user?.id,
       });
@@ -2828,7 +2891,7 @@ const updateStudent = async (req, res) => {
       return res.status(200).json({
         success: true,
         message: "Student updated successfully.",
-        studentId: id,
+        studentId: safeStudentId,
         adminNotification,
       });
     } catch (txError) {
@@ -3066,6 +3129,244 @@ const deleteStudent = async (req, res) => {
 }
 
 const isObjectId = (v) => /^[a-fA-F0-9]{24}$/.test(String(v || ""));
+
+const getSchoolAdminUserIdsForNotification = async ({ schoolId, actorUserId = null }) => {
+  const safeSchoolId = normalizeObjectIdValue(schoolId);
+  if (!safeSchoolId || !isObjectId(safeSchoolId)) return [];
+
+  const actorId = normalizeObjectIdValue(actorUserId);
+
+  const adminEmployees = await Employee.find({
+    schoolId: safeSchoolId,
+    active: "Active",
+  })
+    .select("userId")
+    .populate({ path: "userId", select: "_id role active" })
+    .lean();
+
+  return [
+    ...new Set(
+      (Array.isArray(adminEmployees) ? adminEmployees : [])
+        .map((employee) => employee?.userId)
+        .filter((user) => user && String(user.role || "").toLowerCase() === "admin")
+        .filter((user) => {
+          const userActive = user?.active;
+          return !userActive || String(userActive) === "Active";
+        })
+        .map((user) => normalizeObjectIdValue(user._id))
+        .filter(isObjectId)
+        .filter((userId) => !actorId || userId !== actorId)
+    ),
+  ];
+};
+
+const getSchoolDisplayText = async (schoolId) => {
+  const safeSchoolId = normalizeObjectIdValue(schoolId);
+  if (!safeSchoolId || !isObjectId(safeSchoolId)) return "";
+
+  const school = await School.findById(safeSchoolId)
+    .select("code nameEnglish name")
+    .lean();
+
+  return [school?.code, school?.nameEnglish || school?.name]
+    .filter(Boolean)
+    .join(" : ");
+};
+
+const getStudentActionNotificationMeta = (action) => {
+  const normalizedAction = String(action || "").trim().toUpperCase();
+
+  if (normalizedAction === "ADMISSION") {
+    return {
+      type: "student.admitted",
+      title: "Student admission created",
+      actionText: "was admitted",
+    };
+  }
+
+  if (normalizedAction === "UPDATE") {
+    return {
+      type: "student.updated",
+      title: "Student details updated",
+      actionText: "details were updated",
+    };
+  }
+
+  return {
+    type: "student.updated",
+    title: "Student update",
+    actionText: "was updated",
+  };
+};
+
+const notifySchoolAdminsForStudentAction = async ({
+  schoolId,
+  studentId,
+  studentName = "Student",
+  rollNumber = "",
+  action = "UPDATE",
+  actorUserId = null,
+}) => {
+  try {
+    const safeSchoolId = normalizeObjectIdValue(schoolId);
+    const safeStudentId = normalizeObjectIdValue(studentId);
+
+    if (!safeSchoolId || !isObjectId(safeSchoolId) || !safeStudentId || !isObjectId(safeStudentId)) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const adminUserIds = await getSchoolAdminUserIdsForNotification({
+      schoolId: safeSchoolId,
+      actorUserId,
+    });
+
+    if (adminUserIds.length === 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const meta = getStudentActionNotificationMeta(action);
+    const schoolText = await getSchoolDisplayText(safeSchoolId);
+    const studentText = [rollNumber, studentName].filter(Boolean).join(" - ") || "Student";
+
+    const message = [
+      `${studentText} ${meta.actionText}.`,
+      schoolText ? `Niswan: ${schoolText}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const results = await Promise.allSettled(
+      adminUserIds.map((userId) =>
+        createUserNotification({
+          userId,
+          type: meta.type,
+          title: meta.title,
+          message,
+          resourceType: "student",
+          resourceId: safeStudentId,
+          webPath: "/dashboard/notifications",
+          mobilePath: "/(app)/notifications",
+        })
+      )
+    );
+
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        "[studentAction] school admin notification failed:",
+        failed.map((item) => item.reason?.message || item.reason).join(" | ")
+      );
+    }
+
+    return {
+      success: failed.length === 0,
+      sent: results.length - failed.length,
+      failed: failed.length,
+    };
+  } catch (error) {
+    console.warn("[studentAction] unable to notify school admins:", error?.message || error);
+    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
+  }
+};
+
+const getBulkPromoteNotificationMeta = (policy = "") => {
+  const normalizedPolicy = String(policy || "").trim().toUpperCase();
+
+  if (normalizedPolicy === "COMPLETE") {
+    return {
+      type: "student.completed",
+      title: "Student completion updated",
+      actionText: "completed",
+    };
+  }
+
+  if (normalizedPolicy === "NOT_PROMOTE") {
+    return {
+      type: "student.notPromoted",
+      title: "Student not-promoted updated",
+      actionText: "marked as not promoted",
+    };
+  }
+
+  return {
+    type: "student.promoted",
+    title: "Student promotion updated",
+    actionText: "promoted",
+  };
+};
+
+const notifySchoolAdminsForBulkPromote = async ({
+  schoolId,
+  policy,
+  courseName = "Course",
+  targetCourseName = "Course",
+  count = 0,
+  skipped = 0,
+  errorCount = 0,
+  actorUserId = null,
+}) => {
+  try {
+    const safeSchoolId = normalizeObjectIdValue(schoolId);
+    if (!safeSchoolId || !isObjectId(safeSchoolId) || Number(count || 0) <= 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const adminUserIds = await getSchoolAdminUserIdsForNotification({
+      schoolId: safeSchoolId,
+      actorUserId,
+    });
+
+    if (adminUserIds.length === 0) {
+      return { success: true, sent: 0, skipped: true };
+    }
+
+    const meta = getBulkPromoteNotificationMeta(policy);
+    const schoolText = await getSchoolDisplayText(safeSchoolId);
+
+    const message = [
+      `${Number(count || 0)} student(s) ${meta.actionText}.`,
+      `Course: ${courseName || "Course"}.`,
+      targetCourseName && targetCourseName !== courseName ? `Target course: ${targetCourseName}.` : "",
+      schoolText ? `Niswan: ${schoolText}.` : "",
+      Number(skipped || 0) > 0 ? `Skipped: ${Number(skipped || 0)}.` : "",
+      Number(errorCount || 0) > 0 ? `Errors: ${Number(errorCount || 0)}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const results = await Promise.allSettled(
+      adminUserIds.map((userId) =>
+        createUserNotification({
+          userId,
+          type: meta.type,
+          title: meta.title,
+          message,
+          resourceType: "student",
+          resourceId: safeSchoolId,
+          webPath: "/dashboard/notifications",
+          mobilePath: "/(app)/notifications",
+        })
+      )
+    );
+
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        "[bulkPromote] school admin notification failed:",
+        failed.map((item) => item.reason?.message || item.reason).join(" | ")
+      );
+    }
+
+    return {
+      success: failed.length === 0,
+      sent: results.length - failed.length,
+      failed: failed.length,
+    };
+  } catch (error) {
+    console.warn("[bulkPromote] unable to notify school admins:", error?.message || error);
+    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
+  }
+};
 
 const removeStudents = async (req, res) => {
   try {
@@ -3615,11 +3916,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
         .select("_id name type years fees code promotionOrder")
         .lean();
     }
-
-    const notificationTargetCourse =
-      normalizedPolicy === "PROMOTE" && isSchoolEducation && nextSchoolCourse?._id
-        ? nextSchoolCourse
-        : sourceCourse;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       const idsChunk = chunks[chunkIndex];
@@ -5113,242 +5409,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 */}
 
 {/*
-
-const getBulkPromoteNotificationMeta = (policy = "") => {
-  const normalizedPolicy = String(policy || "").trim();
-
-  if (normalizedPolicy === "COMPLETE") {
-    return {
-      type: "student.completed",
-      title: "Student completion updated",
-      actionText: "completed",
-      receiptLabel: "Completed",
-    };
-  }
-
-  if (normalizedPolicy === "NOT_PROMOTE") {
-    return {
-      type: "student.notPromoted",
-      title: "Student promotion updated",
-      actionText: "marked as not promoted",
-      receiptLabel: "Not promoted",
-    };
-  }
-
-  return {
-    type: "student.promoted",
-    title: "Student promotion updated",
-    actionText: "promoted",
-    receiptLabel: "Promoted",
-  };
-};
-
-const notifySchoolAdminsForBulkPromote = async ({
-  schoolId,
-  policy,
-  courseName = "Course",
-  targetCourseName = "",
-  count = 0,
-  skipped = 0,
-  errorCount = 0,
-}) => {
-  try {
-    const successCount = Number(count || 0);
-    if (!schoolId || !isObjectId(schoolId) || successCount <= 0) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const adminEmployees = await Employee.find({
-      schoolId,
-      active: "Active",
-    })
-      .select("userId")
-      .populate({ path: "userId", select: "_id name role" })
-      .lean();
-
-    const adminUserIds = [
-      ...new Set(
-        (Array.isArray(adminEmployees) ? adminEmployees : [])
-          .map((employee) => employee?.userId)
-          .filter((user) => user && String(user.role || "") === "admin")
-          .map((user) => String(user._id))
-          .filter(isObjectId)
-      ),
-    ];
-
-    if (adminUserIds.length === 0) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const school = await School.findById(schoolId)
-      .select("code nameEnglish")
-      .lean();
-
-    const meta = getBulkPromoteNotificationMeta(policy);
-    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
-    const courseText = targetCourseName && targetCourseName !== courseName
-      ? `${courseName} → ${targetCourseName}`
-      : courseName;
-
-    const extraParts = [];
-    if (Number(skipped || 0) > 0) extraParts.push(`Skipped: ${Number(skipped || 0)}`);
-    if (Number(errorCount || 0) > 0) extraParts.push(`Errors: ${Number(errorCount || 0)}`);
-
-    const message = [
-      `${successCount} student(s) ${meta.actionText} for ${courseText || "selected course"}.`,
-      schoolText ? `Niswan: ${schoolText}.` : "",
-      extraParts.length ? extraParts.join(", ") + "." : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    const results = await Promise.allSettled(
-      adminUserIds.map((userId) =>
-        createUserNotification({
-          userId,
-          type: meta.type,
-          title: meta.title,
-          message,
-          resourceType: "student",
-          resourceId: String(schoolId),
-          webPath: "/dashboard/notifications",
-          mobilePath: "/(app)/notifications",
-        })
-      )
-    );
-
-    const failed = results.filter((result) => result.status === "rejected");
-    if (failed.length > 0) {
-      console.warn(
-        "[bulkPromote] school admin notification failed:",
-        failed.map((item) => item.reason?.message || item.reason).join(" | ")
-      );
-    }
-
-    return {
-      success: failed.length === 0,
-      sent: results.length - failed.length,
-      failed: failed.length,
-    };
-  } catch (error) {
-    console.warn("[bulkPromote] unable to notify school admins:", error?.message || error);
-    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
-  }
-};
-
-const getStudentActionNotificationMeta = (action) => {
-  const normalizedAction = String(action || "").trim().toUpperCase();
-
-  if (normalizedAction === "ADMISSION") {
-    return {
-      type: "student.admitted",
-      title: "Student admission created",
-      actionText: "was admitted",
-    };
-  }
-
-  if (normalizedAction === "UPDATE") {
-    return {
-      type: "student.updated",
-      title: "Student details updated",
-      actionText: "details were updated",
-    };
-  }
-
-  return {
-    type: "student.updated",
-    title: "Student update",
-    actionText: "was updated",
-  };
-};
-
-const notifySchoolAdminsForStudentAction = async ({
-  schoolId,
-  studentId,
-  studentName = "Student",
-  rollNumber = "",
-  action = "UPDATE",
-  actorUserId = null,
-}) => {
-  try {
-    if (!schoolId || !isObjectId(schoolId) || !studentId || !isObjectId(studentId)) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const actorId = String(actorUserId || "");
-
-    const adminEmployees = await Employee.find({
-      schoolId,
-      active: "Active",
-    })
-      .select("userId")
-      .populate({ path: "userId", select: "_id name role" })
-      .lean();
-
-    const adminUserIds = [
-      ...new Set(
-        (Array.isArray(adminEmployees) ? adminEmployees : [])
-          .map((employee) => employee?.userId)
-          .filter((user) => user && String(user.role || "").toLowerCase() === "admin")
-          .map((user) => String(user._id))
-          .filter(isObjectId)
-          .filter((userId) => !actorId || userId !== actorId)
-      ),
-    ];
-
-    if (adminUserIds.length === 0) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const school = await School.findById(schoolId)
-      .select("code nameEnglish")
-      .lean();
-
-    const meta = getStudentActionNotificationMeta(action);
-    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
-    const studentText = [rollNumber, studentName].filter(Boolean).join(" - ") || "Student";
-
-    const message = [
-      `${studentText} ${meta.actionText}.`,
-      schoolText ? `Niswan: ${schoolText}.` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    const results = await Promise.allSettled(
-      adminUserIds.map((userId) =>
-        createUserNotification({
-          userId,
-          type: meta.type,
-          title: meta.title,
-          message,
-          resourceType: "student",
-          resourceId: String(studentId),
-          webPath: "/dashboard/notifications",
-          mobilePath: "/(app)/notifications",
-        })
-      )
-    );
-
-    const failed = results.filter((result) => result.status === "rejected");
-    if (failed.length > 0) {
-      console.warn(
-        "[studentAction] school admin notification failed:",
-        failed.map((item) => item.reason?.message || item.reason).join(" | ")
-      );
-    }
-
-    return {
-      success: failed.length === 0,
-      sent: results.length - failed.length,
-      failed: failed.length,
-    };
-  } catch (error) {
-    console.warn("[studentAction] unable to notify school admins:", error?.message || error);
-    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
-  }
-};
-
 const getStudentProgressGroupKey = (course) => {
   if (!course?._id) return null;
 
@@ -5981,129 +6041,6 @@ console.log("activeYear : " + activeYear)
 };
 */}
 
-
-const getBulkPromoteNotificationMeta = (policy = "") => {
-  const normalizedPolicy = String(policy || "").trim();
-
-  if (normalizedPolicy === "COMPLETE") {
-    return {
-      type: "student.completed",
-      title: "Student completion updated",
-      actionText: "completed",
-      receiptLabel: "Completed",
-    };
-  }
-
-  if (normalizedPolicy === "NOT_PROMOTE") {
-    return {
-      type: "student.notPromoted",
-      title: "Student promotion updated",
-      actionText: "marked as not promoted",
-      receiptLabel: "Not promoted",
-    };
-  }
-
-  return {
-    type: "student.promoted",
-    title: "Student promotion updated",
-    actionText: "promoted",
-    receiptLabel: "Promoted",
-  };
-};
-
-const notifySchoolAdminsForBulkPromote = async ({
-  schoolId,
-  policy,
-  courseName = "Course",
-  targetCourseName = "",
-  count = 0,
-  skipped = 0,
-  errorCount = 0,
-}) => {
-  try {
-    const successCount = Number(count || 0);
-    if (!schoolId || !isObjectId(schoolId) || successCount <= 0) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const adminEmployees = await Employee.find({
-      schoolId,
-      active: "Active",
-    })
-      .select("userId")
-      .populate({ path: "userId", select: "_id name role" })
-      .lean();
-
-    const adminUserIds = [
-      ...new Set(
-        (Array.isArray(adminEmployees) ? adminEmployees : [])
-          .map((employee) => employee?.userId)
-          .filter((user) => user && String(user.role || "") === "admin")
-          .map((user) => String(user._id))
-          .filter(isObjectId)
-      ),
-    ];
-
-    if (adminUserIds.length === 0) {
-      return { success: true, sent: 0, skipped: true };
-    }
-
-    const school = await School.findById(schoolId)
-      .select("code nameEnglish")
-      .lean();
-
-    const meta = getBulkPromoteNotificationMeta(policy);
-    const schoolText = [school?.code, school?.nameEnglish].filter(Boolean).join(" : ");
-    const courseText = targetCourseName && targetCourseName !== courseName
-      ? `${courseName} → ${targetCourseName}`
-      : courseName;
-
-    const extraParts = [];
-    if (Number(skipped || 0) > 0) extraParts.push(`Skipped: ${Number(skipped || 0)}`);
-    if (Number(errorCount || 0) > 0) extraParts.push(`Errors: ${Number(errorCount || 0)}`);
-
-    const message = [
-      `${successCount} student(s) ${meta.actionText} for ${courseText || "selected course"}.`,
-      schoolText ? `Niswan: ${schoolText}.` : "",
-      extraParts.length ? extraParts.join(", ") + "." : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    const results = await Promise.allSettled(
-      adminUserIds.map((userId) =>
-        createUserNotification({
-          userId,
-          type: meta.type,
-          title: meta.title,
-          message,
-          resourceType: "student",
-          resourceId: String(schoolId),
-          webPath: "/dashboard/notifications",
-          mobilePath: "/(app)/notifications",
-        })
-      )
-    );
-
-    const failed = results.filter((result) => result.status === "rejected");
-    if (failed.length > 0) {
-      console.warn(
-        "[bulkPromote] school admin notification failed:",
-        failed.map((item) => item.reason?.message || item.reason).join(" | ")
-      );
-    }
-
-    return {
-      success: failed.length === 0,
-      sent: results.length - failed.length,
-      failed: failed.length,
-    };
-  } catch (error) {
-    console.warn("[bulkPromote] unable to notify school admins:", error?.message || error);
-    return { success: false, sent: 0, failed: 1, error: error?.message || String(error) };
-  }
-};
-
 const getStudentProgressGroupKey = (course) => {
   if (!course?._id) return null;
 
@@ -6225,13 +6162,20 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
     const normalizedPolicy = String(policy || "").trim();
     const DEFAULT_CERTIFICATE_FEE = 75;
+    const safeSchoolId = normalizeObjectIdValue(schoolId);
+    const safeTargetAcYear = normalizeObjectIdValue(targetAcYear);
+    const safeCourseId = normalizeObjectIdValue(courseId);
 
-    if (!isObjectId(schoolId) || !isObjectId(targetAcYear) || !isObjectId(courseId)) {
+    if (!isObjectId(safeSchoolId) || !isObjectId(safeTargetAcYear) || !isObjectId(safeCourseId)) {
       return res.status(400).json({
         success: false,
         error: "Invalid schoolId / targetAcYear / courseId",
       });
     }
+
+    req.body.schoolId = safeSchoolId;
+    req.body.targetAcYear = safeTargetAcYear;
+    req.body.courseId = safeCourseId;
 
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({
@@ -6247,7 +6191,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       });
     }
 
-    const uniqueIds = [...new Set(studentIds.map(String))].filter(isObjectId);
+    const uniqueIds = [...new Set(studentIds.map((id) => normalizeObjectIdValue(id)))].filter(isObjectId);
 
     if (normalizedPolicy === "PROMOTE" || normalizedPolicy === "COMPLETE") {
       const missingGradeStudentIds = uniqueIds.filter(
@@ -6275,6 +6219,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
       promoted: 0,
       skipped: 0,
       alumniUpdated: 0,
+      skippedDetails: [],
       errors: [],
     };
 
@@ -6304,10 +6249,10 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
     const certificateFinanceAcYear = activeYear._id;
 
-    console.log("Requested Target AC Year : " + targetAcYear);
+    console.log("Requested Target AC Year : " + safeTargetAcYear);
     console.log("Certificate Finance AC Year : " + certificateFinanceAcYear);
 
-    const sourceCourse = await Course.findById(courseId)
+    const sourceCourse = await Course.findById(safeCourseId)
       .select("_id name type years fees code promotionOrder")
       .lean();
 
@@ -6339,6 +6284,11 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
         .lean();
     }
 
+    const notificationTargetCourse =
+      normalizedPolicy === "PROMOTE" && nextSchoolCourse?._id
+        ? nextSchoolCourse
+        : sourceCourse;
+
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       const idsChunk = chunks[chunkIndex];
       session = await mongoose.startSession();
@@ -6347,12 +6297,21 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
         promoted: 0,
         skipped: 0,
         alumniUpdated: 0,
+        skippedDetails: [],
         errors: [],
+      };
+
+      const markSkipped = (studentId, reason) => {
+        chunkSummary.skipped++;
+        chunkSummary.skippedDetails.push({
+          studentId: String(studentId || "-"),
+          reason: reason || "Skipped",
+        });
       };
 
       try {
         await session.withTransaction(async () => {
-          const students = await Student.find({ _id: { $in: idsChunk }, schoolId })
+          const students = await Student.find({ _id: { $in: idsChunk }, schoolId: safeSchoolId })
             .select("_id userId schoolId feesPaid active")
             .session(session)
             .lean();
@@ -6383,12 +6342,12 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
             }
 
             if (String(st.active) !== "Active") {
-              chunkSummary.skipped++;
+              markSkipped(sid, `Student is not Active (${st.active || "-"})`);
               continue;
             }
 
             if (requireFeesPaid && Number(st.feesPaid || 0) !== 1) {
-              chunkSummary.skipped++;
+              markSkipped(sid, "Fees paid flag is not completed");
               continue;
             }
 
@@ -6406,17 +6365,17 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
             const sourceAcadQuery = {
               studentId: sid,
               $or: [
-                { courseId1: courseId },
-                { courseId2: courseId },
-                { courseId3: courseId },
-                { courseId4: courseId },
-                { courseId5: courseId },
+                { courseId1: safeCourseId },
+                { courseId2: safeCourseId },
+                { courseId3: safeCourseId },
+                { courseId4: safeCourseId },
+                { courseId5: safeCourseId },
               ],
             };
 
             // For PROMOTE / NOT_PROMOTE, do not use target year as source
             if (normalizedPolicy !== "COMPLETE") {
-              sourceAcadQuery.acYear = { $ne: targetAcYear };
+              sourceAcadQuery.acYear = { $ne: safeTargetAcYear };
             }
 
             const sourceAcad = await Academic.findOne(sourceAcadQuery)
@@ -6424,19 +6383,19 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               .session(session);
 
             if (!sourceAcad) {
-              chunkSummary.skipped++;
+              markSkipped(sid, "Source academic record not found for selected course");
               continue;
             }
 
-            const srcSlot = findCourseSlotIndex(sourceAcad, courseId);
+            const srcSlot = findCourseSlotIndex(sourceAcad, safeCourseId);
             if (!srcSlot) {
-              chunkSummary.skipped++;
+              markSkipped(sid, "Selected course not found in source academic record");
               continue;
             }
 
             const srcStatus = String(sourceAcad[`status${srcSlot}`] || "");
             if (srcStatus === "Completed") {
-              chunkSummary.skipped++;
+              markSkipped(sid, "Selected course is already completed");
               continue;
             }
 
@@ -6568,27 +6527,27 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
             // ============================================================
             // PROMOTE / NOT_PROMOTE -> create/update target academic
             // ============================================================
-            const targetFilter = { studentId: sid, acYear: targetAcYear };
+            const targetFilter = { studentId: sid, acYear: safeTargetAcYear };
 
             let targetDoc = await Academic.findOne(targetFilter).session(session);
             if (!targetDoc) {
               targetDoc = new Academic({
                 studentId: sid,
-                acYear: targetAcYear,
+                acYear: safeTargetAcYear,
               });
             }
 
-            const alreadyInTarget = findCourseSlotIndex(targetDoc, targetCourse._id);
-            if (alreadyInTarget) {
-              chunkSummary.skipped++;
-              continue;
-            }
+            // If the target academic already has this target course, update that slot.
+            // Do not skip. This happens when the next academic-year record was pre-created
+            // or a previous partial attempt already inserted the same course.
+            const existingTargetSlot = findCourseSlotIndex(targetDoc, targetCourse._id);
 
-            let destSlot = srcSlot;
+            let destSlot = existingTargetSlot || srcSlot;
 
             const existingCourseAtDest = targetDoc[`courseId${destSlot}`];
 
             const canOverwriteSourceCourseInSameSlot =
+              !existingTargetSlot &&
               normalizedPolicy === "PROMOTE" &&
               isSchoolEducation &&
               existingCourseAtDest &&
@@ -6596,6 +6555,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               String(targetCourse._id) !== String(sourceCourse._id);
 
             if (
+              !existingTargetSlot &&
               existingCourseAtDest &&
               String(existingCourseAtDest) !== String(targetCourse._id) &&
               !canOverwriteSourceCourseInSameSlot
@@ -6667,7 +6627,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
               await upsertFeesDueAccount({
                 userId: st.userId,
                 schoolId: st.schoolId,
-                acYear: targetAcYear,
+                acYear: safeTargetAcYear,
                 academicId: targetDoc._id,
                 fees: totalFees,
                 receiptLabel: "Promote",
@@ -6678,7 +6638,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
 
             const existingInvoice = await FeeInvoice.findOne({
               studentId: sid,
-              acYear: targetAcYear,
+              acYear: safeTargetAcYear,
               courseId: targetCourse._id,
               source: { $ne: "CERTIFICATE" },
               status: { $in: ["ISSUED", "PARTIAL"] },
@@ -6695,7 +6655,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
                   schoolId: st.schoolId,
                   studentId: sid,
                   userId: st.userId,
-                  acYear: targetAcYear,
+                  acYear: safeTargetAcYear,
                   academicId: targetDoc._id,
                   courseId: targetCourse._id,
                   courseNamesText,
@@ -6714,6 +6674,7 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
         summary.promoted += chunkSummary.promoted;
         summary.skipped += chunkSummary.skipped;
         summary.alumniUpdated += chunkSummary.alumniUpdated;
+        summary.skippedDetails.push(...chunkSummary.skippedDetails);
         summary.errors.push(...chunkSummary.errors);
       } catch (chunkErr) {
         console.log(
@@ -6734,13 +6695,14 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
     }
 
     const adminNotification = await notifySchoolAdminsForBulkPromote({
-      schoolId,
+      schoolId: safeSchoolId,
       policy: normalizedPolicy,
       courseName: sourceCourse?.name || "Course",
       targetCourseName: notificationTargetCourse?.name || sourceCourse?.name || "Course",
       count: summary.promoted,
       skipped: summary.skipped,
       errorCount: Array.isArray(summary.errors) ? summary.errors.length : 0,
+      actorUserId: req.user?._id || req.user?.id,
     });
 
     return res.status(200).json({
