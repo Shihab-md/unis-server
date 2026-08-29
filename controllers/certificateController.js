@@ -1134,25 +1134,28 @@ const addCertificate = async (req, res) => {
         .json({ success: false, error: "Certificate Already Found. No : " + cert.code });
     }
 
-    const certificateInvoice = await FeeInvoice.findOne({
-      schoolId,
-      studentId,
-      courseId: template.courseId._id || template.courseId,
-      source: "CERTIFICATE",
-      status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
-    })
-      .select("_id status total paidTotal balance")
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .lean();
+    const isCertificateFree = safeCertificateFees <= 0;
 
-    let certificateFeesForRecord = safeCertificateFees;
+    // For free certificate templates, do not look at old CERTIFICATE invoices at all.
+    // Some students may have an old ISSUED/PARTIAL certificate invoice from before
+    // Template Master fee was changed to 0; that old invoice must not block printing.
+    const certificateInvoice = isCertificateFree
+      ? null
+      : await FeeInvoice.findOne({
+        schoolId,
+        studentId,
+        courseId: template.courseId._id || template.courseId,
+        source: "CERTIFICATE",
+        status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
+      })
+        .select("_id status total paidTotal balance")
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .lean();
+
+    let certificateFeesForRecord = isCertificateFree ? 0 : safeCertificateFees;
     let certificateInvoiceId = null;
 
-    // If Template Master certificate fee is 0, certificate printing is free.
-    // In that case do not require a CERTIFICATE invoice and do not block because of
-    // any old unpaid certificate invoice that may have been created before the fee
-    // was changed to 0.
-    if (safeCertificateFees <= 0) {
+    if (isCertificateFree) {
       certificateFeesForRecord = 0;
       certificateInvoiceId = null;
     } else if (certificateInvoice) {

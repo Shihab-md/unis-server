@@ -1724,18 +1724,23 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
       existingCertificates.map((cert) => [String(cert.studentId), cert])
     );
 
-    // Certificate invoice/payment status decides print eligibility when fee is greater than 0.
-    // If an unpaid certificate invoice exists, do not bypass it even if master fee is later changed.
-    const certificateInvoices = await FeeInvoice.find({
-      schoolId,
-      studentId: { $in: schoolStudentIds },
-      courseId: courseIdForCertificate,
-      source: "CERTIFICATE",
-      status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
-    })
-      .select("_id studentId acYear academicId status source total paidTotal balance createdAt updatedAt")
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .lean();
+    const isCertificateFree = templateCertificateFees <= 0;
+
+    // Certificate invoice/payment status is needed only when Template Master fee is greater than 0.
+    // If current template fee is 0, certificate printing is free and any old unpaid
+    // CERTIFICATE invoice must not block selection/printing.
+    const certificateInvoices = isCertificateFree
+      ? []
+      : await FeeInvoice.find({
+        schoolId,
+        studentId: { $in: schoolStudentIds },
+        courseId: courseIdForCertificate,
+        source: "CERTIFICATE",
+        status: { $in: ["ISSUED", "PARTIAL", "PAID"] },
+      })
+        .select("_id studentId acYear academicId status source total paidTotal balance createdAt updatedAt")
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .lean();
 
     const paidCertificateInvoiceMap = new Map();
     const pendingCertificateInvoiceMap = new Map();
@@ -1766,14 +1771,11 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
 
       if (existingCertificate) {
         certificateBlockReason = `Certificate already created: ${existingCertificate.code || "-"}`;
-      } else if (templateCertificateFees <= 0) {
-        // Free certificate: allow print without invoice.
-        // Also ignore any old pending CERTIFICATE invoice created before the
-        // Template Master certificate fee was changed to 0.
+      } else if (isCertificateFree) {
         certificateFees = 0;
         certificateFeePaid = true;
         canSelectCertificate = true;
-        certificateInvoiceStatus = paidInvoice ? "PAID" : "FREE";
+        certificateInvoiceStatus = "FREE";
       } else if (pendingInvoice) {
         certificateInvoiceStatus = pendingInvoice.status;
         certificateFees = Number(pendingInvoice.total || pendingInvoice.balance || templateCertificateFees || 0);
