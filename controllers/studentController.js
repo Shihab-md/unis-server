@@ -1766,6 +1766,14 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
 
       if (existingCertificate) {
         certificateBlockReason = `Certificate already created: ${existingCertificate.code || "-"}`;
+      } else if (templateCertificateFees <= 0) {
+        // Free certificate: allow print without invoice.
+        // Also ignore any old pending CERTIFICATE invoice created before the
+        // Template Master certificate fee was changed to 0.
+        certificateFees = 0;
+        certificateFeePaid = true;
+        canSelectCertificate = true;
+        certificateInvoiceStatus = paidInvoice ? "PAID" : "FREE";
       } else if (pendingInvoice) {
         certificateInvoiceStatus = pendingInvoice.status;
         certificateFees = Number(pendingInvoice.total || pendingInvoice.balance || templateCertificateFees || 0);
@@ -1773,10 +1781,6 @@ const getStudentsBySchoolAndTemplate = async (req, res) => {
       } else if (paidInvoice) {
         certificateInvoiceStatus = "PAID";
         certificateFees = Number(paidInvoice.total || paidInvoice.paidTotal || templateCertificateFees || 0);
-        certificateFeePaid = true;
-        canSelectCertificate = true;
-      } else if (templateCertificateFees <= 0) {
-        certificateFees = 0;
         certificateFeePaid = true;
         canSelectCertificate = true;
       } else {

@@ -205,7 +205,7 @@ const getCertificateCourseFolderName = (course) => {
   const fallback = course?._id ? `Course_${course._id}` : "Course";
 
   return sanitizeDriveFolderName(
-    `${code}${code && name ? "-" : ""}${name}`.trim(),
+    `${code}${code && name ? " - " : ""}${name}`.trim(),
     fallback
   );
 };
@@ -1148,7 +1148,14 @@ const addCertificate = async (req, res) => {
     let certificateFeesForRecord = safeCertificateFees;
     let certificateInvoiceId = null;
 
-    if (certificateInvoice) {
+    // If Template Master certificate fee is 0, certificate printing is free.
+    // In that case do not require a CERTIFICATE invoice and do not block because of
+    // any old unpaid certificate invoice that may have been created before the fee
+    // was changed to 0.
+    if (safeCertificateFees <= 0) {
+      certificateFeesForRecord = 0;
+      certificateInvoiceId = null;
+    } else if (certificateInvoice) {
       certificateInvoiceId = certificateInvoice._id;
       certificateFeesForRecord = Number(
         certificateInvoice.total ||
@@ -1164,7 +1171,7 @@ const addCertificate = async (req, res) => {
           error: "Certificate fee is pending for this student.",
         });
       }
-    } else if (safeCertificateFees > 0) {
+    } else {
       return res.status(400).json({
         success: false,
         error: "Certificate invoice is not created or not paid for this student.",
