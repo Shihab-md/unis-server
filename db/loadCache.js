@@ -9,6 +9,7 @@ import AcademicYear from "../models/AcademicYear.js"
 import Template from "../models/Template.js"
 import DistrictState from "../models/DistrictState.js"
 import Certificate from "../models/Certificate.js"
+import Grade from "../models/Grade.js"
 
 const loadCache = async () => {
     try {
@@ -32,6 +33,7 @@ const loadCache = async () => {
             totalAcademicYears,
             totalTemplates,
             totalDistrictStates,
+            totalGrades,
         ] = await Promise.all([
             Supervisor.countDocuments({ active: "Active" }),
             School.countDocuments(),
@@ -43,6 +45,7 @@ const loadCache = async () => {
             AcademicYear.countDocuments(),
             Template.countDocuments(),
             DistrictState.countDocuments(),
+            Grade.countDocuments(),
         ]);
 
         const totalSchools = Math.max(Number(totalSchoolsRaw) - 1, 0); // minus HQ
@@ -60,6 +63,7 @@ const loadCache = async () => {
             redisClient.set("totalAcademicYears", String(totalAcademicYears), { EX: DASHBOARD_TTL }),
             redisClient.set("totalTemplates", String(totalTemplates), { EX: DASHBOARD_TTL }),
             redisClient.set("totalDistrictStates", String(totalDistrictStates), { EX: DASHBOARD_TTL }),
+            redisClient.set("totalGrades", String(totalGrades), { EX: DASHBOARD_TTL }),
         ]);
 
         // ----------------------------
@@ -73,6 +77,7 @@ const loadCache = async () => {
             coursesList,
             templatesList,
             districtStatesList,
+            gradesList,
         ] = await Promise.all([
             Supervisor.find()
                 .sort({ supervisorId: 1 })
@@ -111,6 +116,11 @@ const loadCache = async () => {
                 .sort({ state: 1, district: 1 })
                 .select("_id district state")
                 .lean(),
+
+            Grade.find()
+                .sort({ displayOrder: 1, minMarkPercentage: -1, minAttendancePercentage: -1, grade: 1 })
+                .select("_id grade minMarkPercentage minAttendancePercentage conduct displayOrder active remarks")
+                .lean(),
         ]);
 
         // Store lists (JSON) with longer TTL
@@ -122,6 +132,7 @@ const loadCache = async () => {
             redisClient.set("courses", JSON.stringify(coursesList), { EX: LIST_TTL }),
             redisClient.set("templates", JSON.stringify(templatesList), { EX: LIST_TTL }),
             redisClient.set("districtStates", JSON.stringify(districtStatesList), { EX: LIST_TTL }),
+            redisClient.set("grades", JSON.stringify(gradesList), { EX: LIST_TTL }),
         ]);
 
         console.log("Cache loaded into Redis!");

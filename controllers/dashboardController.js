@@ -9,6 +9,7 @@ import Course from "../models/Course.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Template from "../models/Template.js";
 import DistrictState from "../models/DistrictState.js";
+import Grade from "../models/Grade.js";
 
 const SCHOOL_LINKED_ROLES = new Set([
   "admin",
@@ -209,25 +210,29 @@ const getMasterSummary = async (req, res) => {
     let totalAcademicYears = await redis.get("totalAcademicYears");
     let totalTemplates = await redis.get("totalTemplates");
     let totalDistrictStates = await redis.get("totalDistrictStates");
+    let totalGrades = await redis.get("totalGrades");
 
     if (
       totalInstitutes === null ||
       totalCourses === null ||
       totalAcademicYears === null ||
       totalTemplates === null ||
-      totalDistrictStates === null
+      totalDistrictStates === null ||
+      totalGrades === null
     ) {
       totalInstitutes = String(await Institute.countDocuments());
       totalCourses = String(await Course.countDocuments());
       totalAcademicYears = String(await AcademicYear.countDocuments());
       totalTemplates = String(await Template.countDocuments());
       totalDistrictStates = String(await DistrictState.countDocuments());
+      totalGrades = String(await Grade.countDocuments());
 
       await redis.set("totalInstitutes", totalInstitutes, { EX: 60 });
       await redis.set("totalCourses", totalCourses, { EX: 60 });
       await redis.set("totalAcademicYears", totalAcademicYears, { EX: 60 });
       await redis.set("totalTemplates", totalTemplates, { EX: 60 });
       await redis.set("totalDistrictStates", totalDistrictStates, { EX: 60 });
+      await redis.set("totalGrades", totalGrades, { EX: 60 });
     }
 
     return res.status(200).json({
@@ -237,6 +242,7 @@ const getMasterSummary = async (req, res) => {
       totalAcademicYears,
       totalTemplates,
       totalDistrictStates,
+      totalGrades,
     });
   } catch (error) {
     console.log(error.message);

@@ -36,6 +36,9 @@ import googleDriveRoutes from "./routes/googleDriveRoutes.js";
 import inspectionReportRoutes from "./routes/inspectionReportRoutes.js";
 
 import certificateBulkIhsRoutes from "./routes/certificateBulkIhsRoutes.js";
+import marksheetRouter from './routes/marksheet.js';
+import gradeRouter from './routes/grade.js';
+import examQuestionRouter from './routes/examQuestion.js';
 
 await connectToDatabase()
 await loadCache()
@@ -82,6 +85,9 @@ app.use("/api/integrations/google-drive", googleDriveRoutes);
 app.use("/api/inspection-report", inspectionReportRoutes);
 
 app.use("/api/certificate-bulk-ihs", certificateBulkIhsRoutes);
+app.use('/api/marksheet', marksheetRouter);
+app.use('/api/grade', gradeRouter);
+app.use('/api/exam-questions', examQuestionRouter);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
