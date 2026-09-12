@@ -26,17 +26,29 @@ const addSupervisor = async (req, res) => {
       contactNumber,
       routeName,
       qualification,
+      fatherGuardianName,
       dob,
       gender,
       maritalStatus,
       doj,
       salary,
+      travellingAllowance,
+      otherDesignation,
+      activitiesCarriedOut,
+      bankAccountDetails,
       password,
       jobType,
       remarks
     } = req.body;
 
     console.log("user started");
+
+    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
+      ? 0
+      : Number(travellingAllowance);
+    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
+      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
+    }
 
     if (!PASSWORD_REGEX.test(String(password || ""))) {
       return res.status(400).json({ success: false, error: "Password must be 8–64 characters with uppercase, lowercase, number and special character, with no spaces." });
@@ -73,11 +85,16 @@ const addSupervisor = async (req, res) => {
       contactNumber,
       routeName: toCamelCase(routeName),
       qualification: toCamelCase(qualification),
+      fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
       dob,
       gender,
       maritalStatus,
       doj,
       salary,
+      travellingAllowance: normalizedTravellingAllowance,
+      otherDesignation: String(otherDesignation || "").trim(),
+      activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
+      bankAccountDetails: String(bankAccountDetails || "").trim(),
       jobType,
       remarks
     });
@@ -800,7 +817,9 @@ const updateSupervisor = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, supervisorId, contactNumber, address, routeName, gender,
-      qualification, dob, maritalStatus, doj, jobType, salary, remarks, active } = req.body;
+      qualification, fatherGuardianName, dob, maritalStatus, doj, jobType, salary,
+      travellingAllowance, otherDesignation, activitiesCarriedOut, bankAccountDetails,
+      remarks, active } = req.body;
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {
@@ -814,6 +833,13 @@ const updateSupervisor = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "User not found." });
+    }
+
+    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
+      ? 0
+      : Number(travellingAllowance);
+    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
+      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
     }
 
     const normalizedSupervisorId = String(supervisorId || "").trim();
@@ -856,8 +882,13 @@ const updateSupervisor = async (req, res) => {
       routeName: toCamelCase(routeName),
       gender,
       qualification: toCamelCase(qualification),
+      fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
       dob, maritalStatus, jobType,
-      doj, salary, remarks, active
+      doj, salary, travellingAllowance: normalizedTravellingAllowance,
+      otherDesignation: String(otherDesignation || "").trim(),
+      activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
+      bankAccountDetails: String(bankAccountDetails || "").trim(),
+      remarks, active
     })
 
     if (!updateSupervisor || !updateUser) {

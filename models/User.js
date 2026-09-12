@@ -10,6 +10,11 @@ const userSchema = new mongoose.Schema({
             "teacher", "usthadh", "student", "parent", "warden", "staff"], required: true
     },
     profileImage: { type: String },
+    preferredLanguage: {
+        type: String,
+        enum: ["en", "ta", "ur", "ar", "ml", "kn", "te"],
+        default: "en",
+    },
     createAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
 })

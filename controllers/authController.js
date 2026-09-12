@@ -152,6 +152,7 @@ const getScopedSessionForUser = async (user) => {
     role,
     schoolId,
     schoolName,
+    preferredLanguage: String(user?.preferredLanguage || "en").toLowerCase(),
     ...(role === "supervisor" ? { schoolIds, schools } : {}),
   };
 
@@ -177,7 +178,7 @@ const login = async (req, res) => {
 
     if (looksLikeEmail(loginIdRaw)) {
       const email = loginIdRaw.toLowerCase();
-      user = await User.findOne({ email }).select("_id name role password").lean();
+      user = await User.findOne({ email }).select("_id name role password preferredLanguage").lean();
 
       if (user) {
         const role = String(user.role || "").toLowerCase();
@@ -204,14 +205,14 @@ const login = async (req, res) => {
         .lean();
 
       if (employee?.userId) {
-        user = await User.findById(employee.userId).select("_id name role password").lean();
+        user = await User.findById(employee.userId).select("_id name role password preferredLanguage").lean();
       } else {
         supervisor = await Supervisor.findOne({ supervisorId: loginIdRaw, active: "Active" })
           .select("_id supervisorId userId")
           .lean();
 
         if (supervisor?.userId) {
-          user = await User.findById(supervisor.userId).select("_id name role password").lean();
+          user = await User.findById(supervisor.userId).select("_id name role password preferredLanguage").lean();
         }
       }
     }
@@ -239,11 +240,43 @@ const login = async (req, res) => {
   }
 };
 
-const verify = (req, res) => res.status(200).json({ success: true, user: req.user });
+const getFreshUserForSession = async (payload) => {
+  const userId = payload?._id || payload?.id || payload?.userId;
+  if (!userId) return null;
+  return User.findById(userId).select("_id name role preferredLanguage").lean();
+};
+
+const verify = async (req, res) => {
+  try {
+    const currentUser = await getFreshUserForSession(req.user);
+    if (!currentUser) {
+      return res.status(401).json({ success: false, error: "Session expired. Please login again." });
+    }
+
+    const scoped = await getScopedSessionForUser(currentUser);
+    if (!scoped.ok) {
+      return res.status(scoped.status || 401).json({ success: false, error: scoped.error });
+    }
+
+    return res.status(200).json({ success: true, user: scoped.user });
+  } catch (error) {
+    console.log("[verify] error:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Unable to verify session." });
+  }
+};
 
 const refresh = async (req, res) => {
   try {
-    const scoped = await getScopedSessionForUser(req.user);
+    const currentUser = await getFreshUserForSession(req.user);
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        code: "SESSION_EXPIRED",
+        error: "Session expired. Please login again.",
+      });
+    }
+
+    const scoped = await getScopedSessionForUser(currentUser);
 
     if (!scoped.ok) {
       return res.status(401).json({

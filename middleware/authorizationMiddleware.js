@@ -9,7 +9,7 @@ import FeeInvoice from "../models/FeeInvoice.js";
 
 const normalizeRole = (role) => String(role || "").trim().toLowerCase();
 const HQ_ROLES = new Set(["superadmin", "hquser"]);
-const STUDENT_READ_ROLES = new Set(["superadmin", "hquser", "admin", "guest"]);
+const STUDENT_READ_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin", "guest"]);
 const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hquser", "admin"]);
 
 const deny = (res, message = "You are not authorized to access this resource.") =>

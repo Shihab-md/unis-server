@@ -102,16 +102,28 @@ const addEmployee = async (req, res) => {
       contactNumber,
       designation,
       qualification,
+      fatherGuardianName,
       dob,
       gender,
       maritalStatus,
       doj,
       salary,
+      travellingAllowance,
+      otherDesignation,
+      activitiesCarriedOut,
+      bankAccountDetails,
       password,
     } = req.body;
 
     const roleNorm = String(role || "").toLowerCase().trim();
     const emailNorm = String(email || "").toLowerCase().trim();
+
+    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
+      ? 0
+      : Number(travellingAllowance);
+    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
+      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
+    }
 
     if (!emailNorm || !password || !schoolId || !roleNorm || !name) {
       return res.status(400).json({ success: false, error: "Missing required fields." });
@@ -194,11 +206,16 @@ const addEmployee = async (req, res) => {
             address: toCamelCase(address),
             designation: toCamelCase(roleNorm),
             qualification: toCamelCase(qualification),
+            fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
             dob,
             gender,
             maritalStatus,
             doj,
             salary,
+            travellingAllowance: normalizedTravellingAllowance,
+            otherDesignation: String(otherDesignation || "").trim(),
+            activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
+            bankAccountDetails: String(bankAccountDetails || "").trim(),
             active: "Active", // ✅ ensure active set
             remarks: "Created",
           },
@@ -349,6 +366,10 @@ const importEmployeesData = async (req, res) => {
       const address = toCamelCase(safeStr(r.address));
       const role = safeStr(r.role).toLowerCase();
       const qualification = toCamelCase(safeStr(r.qualification));
+      const fatherGuardianName = toCamelCase(safeStr(r.fatherGuardianName));
+      const otherDesignation = safeStr(r.otherDesignation);
+      const activitiesCarriedOut = safeStr(r.activitiesCarriedOut);
+      const bankAccountDetails = safeStr(r.bankAccountDetails);
 
       const dob = parseDate(r.dob);
       const gender = safeStr(r.gender) || "Female";
@@ -356,6 +377,8 @@ const importEmployeesData = async (req, res) => {
       const doj = parseDate(r.doj);
 
       const salary = Number(safeStr(r.salary));
+      const travellingAllowanceRaw = safeStr(r.travellingAllowance);
+      const travellingAllowance = travellingAllowanceRaw === "" ? 0 : Number(travellingAllowanceRaw);
 
       // ✅ Required validations
       if (!isNonEmpty(schoolIdRaw)) errors.push("schoolId is missing");
@@ -367,6 +390,7 @@ const importEmployeesData = async (req, res) => {
       if (!isNonEmpty(address)) errors.push("address is missing");
       if (!isNonEmpty(role)) errors.push("role is missing");
       if (!Number.isFinite(salary)) errors.push("salary is invalid");
+      if (!Number.isFinite(travellingAllowance) || travellingAllowance < 0) errors.push("travellingAllowance is invalid");
 
       // ✅ Only admin import allowed
       if (role !== "admin") errors.push("Only role=admin allowed for this import");
@@ -422,11 +446,16 @@ const importEmployeesData = async (req, res) => {
           address,
           designation: "Admin",
           qualification,
+          fatherGuardianName,
           dob,
           gender,
           maritalStatus,
           doj,
           salary,
+          travellingAllowance,
+          otherDesignation,
+          activitiesCarriedOut,
+          bankAccountDetails,
           active: "Active",
           remarks: "Imported",
         });
@@ -786,11 +815,17 @@ const updateEmployee = async (req, res) => {
       address,
       designation,
       qualification,
+      fatherGuardianName,
       dob,
       gender,
       maritalStatus,
       doj,
-      salary, role, active } = req.body;
+      salary,
+      travellingAllowance,
+      otherDesignation,
+      activitiesCarriedOut,
+      bankAccountDetails,
+      role, active } = req.body;
 
     const employee = await Employee.findById({ _id: id });
     if (!employee) {
@@ -821,6 +856,13 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "Niswan not found" });
     }
 
+    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
+      ? 0
+      : Number(travellingAllowance);
+    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
+      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
+    }
+
     let updateUser;
     if (req.file) {
       const fileBuffer = req.file.buffer;
@@ -845,11 +887,17 @@ const updateEmployee = async (req, res) => {
       address: toCamelCase(address),
       designation: toCamelCase(role),
       qualification: toCamelCase(qualification),
+      fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
       dob,
       gender,
       maritalStatus,
       doj,
-      salary, active
+      salary,
+      travellingAllowance: normalizedTravellingAllowance,
+      otherDesignation: String(otherDesignation || "").trim(),
+      activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
+      bankAccountDetails: String(bankAccountDetails || "").trim(),
+      active
     })
 
     if (!updateEmployee || !updateUser) {

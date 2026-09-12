@@ -12,6 +12,8 @@ import { toCamelCase } from "./commonController.js";
 // Same rule as frontend: 8–64 chars, 1 upper, 1 lower, 1 number, 1 special, no spaces
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])\S{8,64}$/;
 
+const SUPPORTED_LANGUAGES = new Set(["en", "ta", "ur", "ar", "ml", "kn", "te"]);
+
 const validateNewPassword = (pw) => {
   if (!pw) return "New password is required";
   if (typeof pw !== "string") return "New password must be a string";
@@ -42,40 +44,35 @@ const getProfile = async (req, res) => {
     let user = null;
     if (role === "superadmin" || role === "hquser" || role === "admin" || role === "usthadh" || role === "warden" || role === "teacher") {
       profileData = await Employee.findOne({ userId: userId })
-        .select("_id employeeId contactNumber address designation qualification dob gender maritalStatus doj active")
-        .populate({ path: "userId", select: "name email role profileImage" })
+        .select("_id employeeId contactNumber address designation qualification fatherGuardianName dob gender maritalStatus doj salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active")
+        .populate({ path: "userId", select: "name email role profileImage preferredLanguage" })
         .lean();
     }
     if (role === "supervisor") {
       profileData = await Supervisor.findOne({ userId: userId })
         .select("_id supervisorId address contactNumber routeName designation qualification dob gender maritalStatus doj active jobType")
-        .populate({ path: "userId", select: "name email role profileImage" })
+        .populate({ path: "userId", select: "name email role profileImage preferredLanguage" })
         .lean();
     }
     if (role === "superadmin" && profileData == null) {
-      user = await User.findById(userId).select("name email role profileImage").lean();
+      user = await User.findById(userId).select("name email role profileImage preferredLanguage").lean();
     }
 
-    const isSuperadminNoProfile = role === "superadmin" && profileData == null;
-    const userPayload = isSuperadminNoProfile
-      ? {
-        _id: user?._id,
-        name: user?.name,
-        email: user?.email,
-        role: user?.role,
-        profileImage: user?.profileImage,
-      }
-      : {
-        _id: profileData?.userId?._id,
-        name: profileData?.userId?.name,
-        email: profileData?.userId?.email,
-        role: profileData?.userId?.role,
-        profileImage: profileData?.userId?.profileImage,
-      };
+    const resolvedUser = profileData?.userId || user || await User.findById(userId)
+      .select("name email role profileImage preferredLanguage")
+      .lean();
 
-    const employeePayload = isSuperadminNoProfile
-      ? null
-      : {
+    const userPayload = {
+      _id: resolvedUser?._id,
+      name: resolvedUser?.name,
+      email: resolvedUser?.email,
+      role: resolvedUser?.role,
+      profileImage: resolvedUser?.profileImage,
+      preferredLanguage: resolvedUser?.preferredLanguage || "en",
+    };
+
+    const employeePayload = profileData
+      ? {
         _id: profileData?._id,
         employeeId: profileData?.employeeId ? profileData.employeeId : profileData?.supervisorId,
         contactNumber: profileData?.contactNumber,
@@ -87,7 +84,8 @@ const getProfile = async (req, res) => {
         maritalStatus: profileData?.maritalStatus,
         doj: profileData?.doj,
         active: profileData?.active,
-      };
+      }
+      : null;
 
     return res.json({
       success: true,
@@ -99,6 +97,46 @@ const getProfile = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "get Profile server error" });
+  }
+};
+
+const updateLanguage = async (req, res) => {
+  try {
+    const payload = getAuthPayload(req);
+    const userId = payload?.id || payload?._id || payload?.userId;
+    const preferredLanguage = String(req.body?.preferredLanguage || "").trim().toLowerCase();
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "userId is required" });
+    }
+
+    if (!SUPPORTED_LANGUAGES.has(preferredLanguage)) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported language. Allowed values: en, ta, ur, ar, ml, kn",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { preferredLanguage, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    )
+      .select("_id preferredLanguage")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      preferredLanguage: user.preferredLanguage || "en",
+      message: "Language preference updated",
+    });
+  } catch (error) {
+    console.log("[updateLanguage] error:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Unable to update language preference" });
   }
 };
 
@@ -154,4 +192,4 @@ const updatePassword = async (req, res) => {
   }
 };
 
-export { upload, getProfile, updatePassword };
+export { upload, getProfile, updateLanguage, updatePassword };
