@@ -9,6 +9,7 @@ import Supervisor from "../models/Supervisor.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase, parseDate } from "./commonController.js";
+import { validateActualDate, validateActualDateOrder } from "../utils/dateRules.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -114,6 +115,25 @@ const addEmployee = async (req, res) => {
       bankAccountDetails,
       password,
     } = req.body;
+
+
+    const dobValidation = validateActualDate(dob, "Date of Birth");
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const dojValidation = validateActualDate(doj, "Date of Joining");
+    if (!dojValidation.ok) {
+      return res.status(400).json({ success: false, error: dojValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doj,
+      laterLabel: "Date of Joining",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
 
     const roleNorm = String(role || "").toLowerCase().trim();
     const emailNorm = String(email || "").toLowerCase().trim();
@@ -375,6 +395,15 @@ const importEmployeesData = async (req, res) => {
       const gender = safeStr(r.gender) || "Female";
       const maritalStatus = safeStr(r.maritalStatus) || "Single";
       const doj = parseDate(r.doj);
+
+      const dobValidation = validateActualDate(dob, "Date of Birth");
+      if (!dobValidation.ok) errors.push(dobValidation.error);
+      const dojValidation = validateActualDate(doj, "Date of Joining");
+      if (!dojValidation.ok) errors.push(dojValidation.error);
+      const dateOrderValidation = validateActualDateOrder({
+        earlierValue: dob, earlierLabel: "Date of Birth", laterValue: doj, laterLabel: "Date of Joining",
+      });
+      if (!dateOrderValidation.ok) errors.push(dateOrderValidation.error);
 
       const salary = Number(safeStr(r.salary));
       const travellingAllowanceRaw = safeStr(r.travellingAllowance);
@@ -826,6 +855,25 @@ const updateEmployee = async (req, res) => {
       activitiesCarriedOut,
       bankAccountDetails,
       role, active } = req.body;
+
+
+    const dobValidation = validateActualDate(dob, "Date of Birth");
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const dojValidation = validateActualDate(doj, "Date of Joining");
+    if (!dojValidation.ok) {
+      return res.status(400).json({ success: false, error: dojValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doj,
+      laterLabel: "Date of Joining",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
 
     const employee = await Employee.findById({ _id: id });
     if (!employee) {

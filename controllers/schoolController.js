@@ -8,6 +8,7 @@ import getRedis from "../db/redis.js"
 import mongoose from "mongoose";
 import { toCamelCase } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
+import { validateActualDate } from "../utils/dateRules.js";
 
 const upload = multer({});
 
@@ -73,6 +74,11 @@ const addSchool = async (req, res) => {
       createdAt,
       updatedAt,
     } = req.body;
+    const doeValidation = validateActualDate(doe, "Date of Establishment");
+    if (!doeValidation.ok) {
+      return res.status(400).json({ success: false, error: doeValidation.error });
+    }
+
 
     const schoolByCode = await School.findOne({ code });
     if (schoolByCode != null) {
@@ -822,6 +828,11 @@ const updateSchool = async (req, res) => {
       incharge7Number,
       designation7,
     } = req.body;
+    const doeValidation = validateActualDate(doe, "Date of Establishment");
+    if (!doeValidation.ok) {
+      return res.status(400).json({ success: false, error: doeValidation.error });
+    }
+
 
     const school = await School.findById({ _id: id });
     if (!school) {

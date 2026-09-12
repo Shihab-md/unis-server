@@ -8,6 +8,7 @@ import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 import mongoose from "mongoose";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
+import { validateActualDate, validateActualDateOrder } from "../utils/dateRules.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -40,6 +41,25 @@ const addSupervisor = async (req, res) => {
       jobType,
       remarks
     } = req.body;
+
+    const dobValidation = validateActualDate(dob, "Date of Birth");
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const dojValidation = validateActualDate(doj, "Date of Joining");
+    if (!dojValidation.ok) {
+      return res.status(400).json({ success: false, error: dojValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doj,
+      laterLabel: "Date of Joining",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
+
 
     console.log("user started");
 
@@ -820,6 +840,25 @@ const updateSupervisor = async (req, res) => {
       qualification, fatherGuardianName, dob, maritalStatus, doj, jobType, salary,
       travellingAllowance, otherDesignation, activitiesCarriedOut, bankAccountDetails,
       remarks, active } = req.body;
+
+    const dobValidation = validateActualDate(dob, "Date of Birth");
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const dojValidation = validateActualDate(doj, "Date of Joining");
+    if (!dojValidation.ok) {
+      return res.status(400).json({ success: false, error: dojValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doj,
+      laterLabel: "Date of Joining",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
+
 
     const supervisor = await Supervisor.findById({ _id: id });
     if (!supervisor) {

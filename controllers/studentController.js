@@ -20,6 +20,7 @@ import getRedis from "../db/redis.js"
 import { toCamelCase, getNextNumber, createInvoiceFromStructure, parseDate } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 import { createUserNotification } from "../services/notificationService.js";
+import { validateActualDate, validateActualDateOrder } from "../utils/dateRules.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -450,6 +451,25 @@ const addStudent = async (req, res) => {
       discount5,
 
     } = req.body;
+
+    const dobValidation = validateActualDate(dob, "Date of Birth", { required: true });
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const doaValidation = validateActualDate(doa, "Admission Date", { required: true });
+    if (!doaValidation.ok) {
+      return res.status(400).json({ success: false, error: doaValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doa,
+      laterLabel: "Admission Date",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
+
 
     const safeSchoolId = normalizeObjectIdValue(schoolId);
     if (!safeSchoolId || !OBJECT_ID_RE.test(safeSchoolId)) {
@@ -1096,6 +1116,10 @@ const importStudentsData = async (req, res) => {
           const userId = savedUser[0]._id;
 
           const dobDate = parseDate(studentData.dob);
+
+          const dobDateValidation = validateActualDate(dobDate, "Date of Birth");
+          if (!dobDateValidation.ok) throw new Error(dobDateValidation.error);
+
 
           const savedStudent = await Student.create(
             [
@@ -2594,6 +2618,25 @@ const updateStudent = async (req, res) => {
       instituteId4, courseId4, refNumber4, year4, fees4, discount4,
       instituteId5, courseId5, refNumber5, year5, fees5, discount5,
     } = req.body;
+
+    const dobValidation = validateActualDate(dob, "Date of Birth", { required: true });
+    if (!dobValidation.ok) {
+      return res.status(400).json({ success: false, error: dobValidation.error });
+    }
+    const doaValidation = validateActualDate(doa, "Admission Date", { required: true });
+    if (!doaValidation.ok) {
+      return res.status(400).json({ success: false, error: doaValidation.error });
+    }
+    const dateOrderValidation = validateActualDateOrder({
+      earlierValue: dob,
+      earlierLabel: "Date of Birth",
+      laterValue: doa,
+      laterLabel: "Admission Date",
+    });
+    if (!dateOrderValidation.ok) {
+      return res.status(400).json({ success: false, error: dateOrderValidation.error });
+    }
+
 
     const safeStudentId = normalizeObjectIdValue(id);
     const safeSchoolId = normalizeObjectIdValue(schoolId);
