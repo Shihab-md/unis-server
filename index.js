@@ -40,6 +40,7 @@ import marksheetRouter from './routes/marksheet.js';
 import gradeRouter from './routes/grade.js';
 import examQuestionRouter from './routes/examQuestion.js';
 import attendanceRouter from './routes/attendance.js';
+import tempSchoolMarksheetRoutes from "./routes/tempSchoolMarksheetRoutes.js";
 
 await connectToDatabase()
 await loadCache()
@@ -90,6 +91,7 @@ app.use('/api/marksheet', marksheetRouter);
 app.use('/api/grade', gradeRouter);
 app.use('/api/exam-questions', examQuestionRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use("/api/temp-school-marksheet", tempSchoolMarksheetRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)

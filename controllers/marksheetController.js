@@ -19,6 +19,11 @@ import {
   sanitizeMarksheetStudent,
 } from "../services/marksheetPdfService.js";
 import { downloadGeneratedMarksheetPdfFromDrive } from "../services/marksheetPdfDriveService.js";
+import {
+  fetchTemplatePdfBuffer,
+  renderMuballigaIndividualExamPdfs,
+} from "../services/muballigaIndividualMarksheetService.js";
+import { generateOfficialMuballigaIndividualMarksheets } from "../services/officialMarksheetGenerationService.js";
 
 const EXAM_TYPES = ["Quarterly", "Half Yearly", "Annual"];
 const ADMIN_EXAM_TYPES = ["Quarterly", "Half Yearly"];
@@ -834,37 +839,47 @@ export const requestMarksheetPdfGeneration = async (req, res) => {
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
     if (exam.status !== "Finalized") {
-      return res.status(400).json({ success: false, error: "Official marksheet PDF can be requested only after finalization." });
+      return res.status(400).json({ success: false, error: "Official marksheet PDF can be generated only after finalization." });
     }
 
-    const requestedAt = new Date();
-    await MarksheetExam.findByIdAndUpdate(id, {
-      $set: {
-        "marksheetPdf.status": "Pending",
-        "marksheetPdf.requestedBy": req.user?._id || null,
-        "marksheetPdf.requestedAt": requestedAt,
-        "marksheetPdf.lastError": "",
-        updatedBy: req.user?._id,
-        updatedAt: requestedAt,
-      },
+    const templateInfo = await getNormalMarksheetTemplateInfo(exam.courseId);
+    if (!templateInfo.ready) {
+      return res.status(409).json({
+        success: false,
+        error: "Normal marksheet PDF template is not uploaded for this course.",
+        marksheetPdf: getMarksheetPdfSummary(exam, templateInfo),
+      });
+    }
+
+    await generateOfficialMuballigaIndividualMarksheets({
+      examId: id,
+      requestedBy: req.user?._id || null,
     });
 
-    const [updatedExam, templateInfo] = await Promise.all([
-      MarksheetExam.findById(id).lean(),
-      getNormalMarksheetTemplateInfo(exam.courseId),
-    ]);
+    const updatedExam = await MarksheetExam.findById(id).lean();
     const marksheetPdf = getMarksheetPdfSummary(updatedExam || exam, templateInfo);
 
     return res.status(200).json({
       success: true,
-      message: templateInfo.ready
-        ? "Official marksheet PDF request recorded. Status is Pending until the automatic generator is enabled."
-        : "Official marksheet PDF request recorded. Normal marksheet template is still pending for this course.",
+      message: "Official Muballiga Individual marksheet PDFs generated successfully.",
       marksheetPdf,
     });
   } catch (error) {
     console.log("[marksheet] requestMarksheetPdfGeneration", error);
-    return res.status(500).json({ success: false, error: error.message || "Request marksheet PDF failed." });
+
+    const examId = req.params?.id;
+    let marksheetPdf = null;
+    if (isObjectId(examId)) {
+      const failedExam = await MarksheetExam.findById(examId).lean().catch(() => null);
+      if (failedExam) {
+        const templateInfo = await getNormalMarksheetTemplateInfo(failedExam.courseId).catch(() => ({}));
+        marksheetPdf = getMarksheetPdfSummary(failedExam, templateInfo);
+      }
+    }
+
+    const message = error?.message || "Generate marksheet PDF failed.";
+    const status = /already in progress/i.test(message) ? 409 : 500;
+    return res.status(status).json({ success: false, error: message, marksheetPdf });
   }
 };
 
@@ -920,8 +935,29 @@ export const downloadCombinedOfficialMarksheetPdf = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
-    if (exam.status !== "Finalized" || !exam.marksheetPdf?.combinedDriveFileId) {
+    if (
+      exam.status !== "Finalized" ||
+      exam.marksheetPdf?.status !== "Generated" ||
+      !exam.marksheetPdf?.combinedDriveFileId
+    ) {
       return res.status(409).json({ success: false, error: "Official combined marksheet PDF is not generated yet." });
+    }
+
+    const currentTemplate = await Template.findOne({
+      courseId: exam.courseId,
+      templateModule: "MARKSHEET",
+      marksheetType: "NORMAL",
+    })
+      .select("version")
+      .lean();
+    if (
+      currentTemplate &&
+      Number(currentTemplate.version || 1) !== Number(exam.marksheetPdf?.templateVersion || 0)
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: "The marksheet template was updated. Regenerate the official PDF before downloading.",
+      });
     }
 
     const buffer = await downloadGeneratedMarksheetPdfFromDrive(exam.marksheetPdf.combinedDriveFileId);
@@ -949,8 +985,25 @@ export const downloadStudentOfficialMarksheetPdf = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
-    if (exam.status !== "Finalized") {
-      return res.status(409).json({ success: false, error: "Official marksheet PDF is available only for finalized exams." });
+    if (exam.status !== "Finalized" || exam.marksheetPdf?.status !== "Generated") {
+      return res.status(409).json({ success: false, error: "Official marksheet PDF is not generated yet." });
+    }
+
+    const currentTemplate = await Template.findOne({
+      courseId: exam.courseId,
+      templateModule: "MARKSHEET",
+      marksheetType: "NORMAL",
+    })
+      .select("version")
+      .lean();
+    if (
+      currentTemplate &&
+      Number(currentTemplate.version || 1) !== Number(exam.marksheetPdf?.templateVersion || 0)
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: "The marksheet template was updated. Regenerate the official PDF before downloading.",
+      });
     }
 
     const record = await MarksheetStudent.findOne({ _id: recordId, marksheetExamId: id }).lean();
@@ -1188,52 +1241,6 @@ const getFileSafeText = (value, fallback = "marksheet") =>
     .replace(/[^\w.-]/g, "")
     .slice(0, 80) || fallback;
 
-const drawNormalMarksheetRecord = ({ page, fonts, exam, record, index }) => {
-  const school = exam.schoolId || {};
-  const course = exam.courseId || {};
-  const acYear = exam.acYear || {};
-  const student = record.studentId || {};
-  const studentName = student.userId?.name || "-";
-
-  drawPdfCentered({ page, text: `STATEMENT OF MARKS - ${exam.examType} EXAMINATION`, yFromTop: 72, size: 12, font: fonts.bold, color: PDF_BLUE });
-  drawPdfText({ page, text: `Name of the Student: ${studentName}`, x: 52, yFromTop: 112, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Register Number: ${student.rollNumber || "-"}`, x: 330, yFromTop: 112, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Name of the Course: ${course.name || "-"}`, x: 52, yFromTop: 132, size: 9, font: fonts.regular });
-  drawPdfText({ page, text: `Year of Study: ${getYearLabel(exam.studyingYear)}`, x: 330, yFromTop: 132, size: 9, font: fonts.regular });
-  drawPdfText({ page, text: `Name of the Niswan: ${school.nameEnglish || "-"}`, x: 52, yFromTop: 152, size: 9, font: fonts.regular });
-  drawPdfText({ page, text: `Niswan Code: ${school.code || "-"}`, x: 330, yFromTop: 152, size: 9, font: fonts.regular });
-  drawPdfText({ page, text: `Academic Year: ${acYear.acYear || "-"}`, x: 52, yFromTop: 172, size: 9, font: fonts.regular });
-  drawPdfText({ page, text: `Date of Issue: ${new Date().toLocaleDateString("en-GB")}`, x: 330, yFromTop: 172, size: 9, font: fonts.regular });
-
-  let y = 220;
-  drawPdfText({ page, text: "Subject Code", x: 52, yFromTop: y, size: 8, font: fonts.bold, color: PDF_BLUE });
-  drawPdfText({ page, text: "Title of the Paper", x: 145, yFromTop: y, size: 8, font: fonts.bold, color: PDF_BLUE });
-  drawPdfText({ page, text: "Marks Obtained", x: 365, yFromTop: y, size: 8, font: fonts.bold, color: PDF_BLUE });
-  drawPdfText({ page, text: "Result P/F", x: 470, yFromTop: y, size: 8, font: fonts.bold, color: PDF_BLUE });
-
-  y += 20;
-  (record.papers || []).forEach((paper) => {
-    drawPdfText({ page, text: paper.subjectCode || "-", x: 52, yFromTop: y, size: 8, font: fonts.regular });
-    drawPdfText({ page, text: paper.titleOfPaper || "-", x: 145, yFromTop: y, size: 8, font: fonts.regular, maxWidth: 200 });
-    drawPdfText({ page, text: `${paper.obtainedMarks ?? "-"} / ${paper.maxMarks ?? "-"}`, x: 380, yFromTop: y, size: 8, font: fonts.regular });
-    drawPdfText({ page, text: paper.result || "-", x: 492, yFromTop: y, size: 8, font: fonts.bold });
-    y += 17;
-  });
-
-  y += 8;
-  drawPdfText({ page, text: `Total: ${record.totalObtainedMarks || 0} / ${record.totalMaxMarks || 0}`, x: 52, yFromTop: y, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Mark %: ${record.percentage || 0}%`, x: 190, yFromTop: y, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Attendance: ${record.attendancePercentage === null || record.attendancePercentage === undefined ? "-" : `${record.attendancePercentage}%`}`, x: 305, yFromTop: y, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Result: ${record.result || "-"}`, x: 455, yFromTop: y, size: 9, font: fonts.bold });
-  y += 18;
-  drawPdfText({ page, text: `Grade: ${getOverallGrade(record.grade, record.result) || "-"}`, x: 52, yFromTop: y, size: 9, font: fonts.bold });
-  drawPdfText({ page, text: `Conduct / Behaviour: ${record.conduct || "-"}`, x: 190, yFromTop: y, size: 9, font: fonts.bold });
-  if (cleanString(record.remarks)) {
-    y += 18;
-    drawPdfText({ page, text: `Remarks: ${record.remarks}`, x: 52, yFromTop: y, size: 8, font: fonts.regular, maxWidth: 500 });
-  }
-  drawPdfText({ page, text: `Page Record: ${index + 1}`, x: 52, yFromTop: page.getHeight() - 35, size: 7, font: fonts.regular, color: rgb(0.45, 0.45, 0.45) });
-};
 
 export const printMarksheetExam = async (req, res) => {
   try {
@@ -1244,38 +1251,52 @@ export const printMarksheetExam = async (req, res) => {
     if (!isObjectId(id)) return res.status(400).json({ success: false, error: "Invalid marksheet exam id." });
 
     const exam = await MarksheetExam.findById(id)
-      .populate("schoolId", "code nameEnglish address")
+      .populate("schoolId", "code nameEnglish address pincode")
       .populate("acYear", "acYear active")
       .populate("courseId")
       .lean();
 
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId?._id || exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (exam.status !== "Finalized") {
+      return res.status(409).json({ success: false, error: "Finalized marksheets only can be printed." });
+    }
 
-    const records = await MarksheetStudent.find({ marksheetExamId: id })
+    const records = await MarksheetStudent.find({ marksheetExamId: id, status: "Finalized" })
       .populate({ path: "studentId", select: "rollNumber userId active", populate: { path: "userId", select: "name" } })
       .sort({ createdAt: 1 })
       .lean();
 
     if (records.length === 0) {
-      return res.status(400).json({ success: false, error: "No marksheet records found to print." });
+      return res.status(400).json({ success: false, error: "No finalized marksheet records found to print." });
     }
 
-    const templatePdf = await loadMarksheetTemplatePdf({ courseId: exam.courseId?._id || exam.courseId, marksheetType: "NORMAL" });
-    const outputPdf = await PDFDocument.create();
-    const fonts = {
-      regular: await outputPdf.embedFont(StandardFonts.Helvetica),
-      bold: await outputPdf.embedFont(StandardFonts.HelveticaBold),
-    };
-
-    for (let i = 0; i < records.length; i++) {
-      const [basePage] = await outputPdf.copyPages(templatePdf, [0]);
-      outputPdf.addPage(basePage);
-      drawNormalMarksheetRecord({ page: basePage, fonts, exam, record: records[i], index: i });
+    if (Number(exam.totalStudents || 0) > 0 && records.length !== Number(exam.totalStudents || 0)) {
+      return res.status(409).json({
+        success: false,
+        error: "Finalized student count does not match the exam total. Printing stopped for safety.",
+      });
     }
 
-    const pdfBytes = Buffer.from(await outputPdf.save());
-    const fileName = `${getFileSafeText(exam.courseId?.code || exam.courseId?.name)}_${getFileSafeText(exam.examType)}_${getFileSafeText(exam.acYear?.acYear)}.pdf`;
+    const template = await Template.findOne({
+      courseId: exam.courseId?._id || exam.courseId,
+      templateModule: "MARKSHEET",
+      marksheetType: "NORMAL",
+    })
+      .select("template version")
+      .lean();
+
+    if (!template || !cleanString(template.template) || template.template === "-") {
+      return res.status(409).json({
+        success: false,
+        error: "Normal marksheet PDF template not found for this course. Please upload it in Templates module.",
+      });
+    }
+
+    const templateBuffer = await fetchTemplatePdfBuffer(template.template);
+    const rendered = await renderMuballigaIndividualExamPdfs({ templateBuffer, exam, records });
+    const pdfBytes = rendered.combinedBuffer;
+    const fileName = `${getFileSafeText(exam.courseId?.code || exam.courseId?.name)}_${getFileSafeText(exam.examType)}_${getFileSafeText(exam.acYear?.acYear)}_ALL.pdf`;
 
     return res.status(200).json({
       success: true,
@@ -1283,6 +1304,7 @@ export const printMarksheetExam = async (req, res) => {
       file: pdfBytes.toString("base64"),
       fileName,
       mimeType: "application/pdf",
+      templateVersion: Number(template.version || 1),
     });
   } catch (error) {
     console.log("[marksheet] printMarksheetExam", error);
