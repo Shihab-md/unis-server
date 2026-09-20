@@ -41,6 +41,7 @@ import gradeRouter from './routes/grade.js';
 import examQuestionRouter from './routes/examQuestion.js';
 import attendanceRouter from './routes/attendance.js';
 import tempSchoolMarksheetRoutes from "./routes/tempSchoolMarksheetRoutes.js";
+import demoTutorialRoutes from "./routes/demoTutorialRoutes.js";
 
 await connectToDatabase()
 await loadCache()
@@ -49,7 +50,7 @@ const app = express()
 //app.use(cors()) 
 //app.options("*", cors())
 //const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors({ origin: '*', credentials: true, exposedHeaders: ['Content-Disposition'] }));
 
 app.use(express.json())
 app.use(express.static('public/uploads'))
@@ -92,6 +93,7 @@ app.use('/api/grade', gradeRouter);
 app.use('/api/exam-questions', examQuestionRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use("/api/temp-school-marksheet", tempSchoolMarksheetRoutes);
+app.use("/api/demo-tutorial", demoTutorialRoutes);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)
