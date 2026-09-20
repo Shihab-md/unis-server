@@ -5,6 +5,7 @@ import { validateDemoTutorialSignatureBytes } from "./demoTutorialFileValidation
 
 export const DEMO_TUTORIAL_DRIVE_PATH = Object.freeze(["UNIS", "Demo-Tutorial"]);
 export const DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+export const DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
 
 const escapeDriveQuery = (value) => String(value || "").replace(/'/g, "\\'");
 
@@ -109,6 +110,159 @@ const getDriveContext = async () => {
   } catch (error) {
     throw normalizeDriveError(error);
   }
+};
+
+const getOAuthBearerToken = async (client) => {
+  try {
+    const response = await client.getAccessToken();
+    const token = typeof response === "string" ? response : response?.token;
+    if (!token) {
+      throw new Error("Google Drive is not connected. Please connect Google Drive.");
+    }
+    return token;
+  } catch (error) {
+    throw normalizeDriveError(error);
+  }
+};
+
+const parseResumeRange = (value) => {
+  const match = /^bytes=(\d+)-(\d+)$/i.exec(String(value || "").trim());
+  if (!match) return 0;
+  const end = Number(match[2]);
+  return Number.isSafeInteger(end) && end >= 0 ? end + 1 : 0;
+};
+
+const parseGoogleJson = async (response) => {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+};
+
+const normalizeResumableUploadResponseError = async (response) => {
+  if (response.status === 404 || response.status === 410) {
+    return Object.assign(
+      new Error("Upload session expired or is invalid. Please try again."),
+      { status: 400 }
+    );
+  }
+
+  let detail = "";
+  try {
+    const data = await response.clone().json();
+    detail = String(data?.error?.message || data?.error || "");
+  } catch {
+    try {
+      detail = await response.clone().text();
+    } catch {
+      detail = "";
+    }
+  }
+
+  const error = new Error(detail || "Unable to upload Demo - Tutorial file.");
+  error.status = response.status >= 400 && response.status < 500 ? 400 : 502;
+  return error;
+};
+
+const queryDemoTutorialResumableStatus = async ({
+  sessionUrl,
+  total,
+  bearerToken,
+}) => {
+  const response = await fetch(sessionUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      "Content-Range": `bytes */${total}`,
+    },
+    redirect: "manual",
+  });
+
+  if (response.status === 308) {
+    return {
+      completed: false,
+      nextOffset: parseResumeRange(response.headers.get("range")),
+      file: null,
+    };
+  }
+
+  if (response.status === 200 || response.status === 201) {
+    return {
+      completed: true,
+      nextOffset: total,
+      file: await parseGoogleJson(response),
+    };
+  }
+
+  throw await normalizeResumableUploadResponseError(response);
+};
+
+export const uploadDemoTutorialResumableChunk = async ({
+  sessionUrl,
+  mimeType,
+  chunk,
+  start,
+  end,
+  total,
+}) => {
+  if (!Buffer.isBuffer(chunk) || chunk.length <= 0) {
+    throw Object.assign(
+      new Error("Upload session expired or is invalid. Please try again."),
+      { status: 400 }
+    );
+  }
+
+  const { client } = await getDriveContext();
+  const bearerToken = await getOAuthBearerToken(client);
+
+  // Query Drive first. If the previous Vercel response was lost after Google
+  // accepted a chunk, this makes retrying the same browser chunk idempotent.
+  const current = await queryDemoTutorialResumableStatus({
+    sessionUrl,
+    total,
+    bearerToken,
+  });
+
+  if (current.completed) return current;
+  if (current.nextOffset > start) return current;
+  if (current.nextOffset !== start) {
+    throw Object.assign(
+      new Error("Upload session expired or is invalid. Please try again."),
+      { status: 409 }
+    );
+  }
+
+  const response = await fetch(sessionUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      "Content-Type": mimeType || "application/octet-stream",
+      "Content-Range": `bytes ${start}-${end}/${total}`,
+    },
+    body: chunk,
+    redirect: "manual",
+  });
+
+  if (response.status === 308) {
+    return {
+      completed: false,
+      nextOffset: parseResumeRange(response.headers.get("range")),
+      file: null,
+    };
+  }
+
+  if (response.status === 200 || response.status === 201) {
+    return {
+      completed: true,
+      nextOffset: total,
+      file: await parseGoogleJson(response),
+    };
+  }
+
+  throw await normalizeResumableUploadResponseError(response);
 };
 
 export const createDemoTutorialResumableSession = async ({

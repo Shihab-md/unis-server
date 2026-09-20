@@ -11,6 +11,7 @@ import {
   getDemoTutorial,
   listDemoTutorials,
   updateDemoTutorial,
+  uploadDemoTutorialChunk,
 } from "../controllers/demoTutorialController.js";
 
 const router = express.Router();
@@ -27,8 +28,9 @@ const requireSuperadmin = (req, res, next) => {
 
 router.get("/", authMiddleware, listDemoTutorials);
 
-// Large files are uploaded directly from the browser to a Google Drive resumable
-// session. Only small JSON metadata passes through Vercel.
+// Large files use Google Drive resumable upload sessions, but the browser never
+// calls the Google session URL directly. The browser sends <=2 MB raw chunks to
+// Vercel and the server forwards each chunk server-to-server to Google Drive.
 router.post(
   "/upload-session",
   authMiddleware,
@@ -40,6 +42,14 @@ router.post(
   authMiddleware,
   requireSuperadmin,
   createDemoTutorialReplacementSession
+);
+
+router.put(
+  "/upload-chunk",
+  authMiddleware,
+  requireSuperadmin,
+  express.raw({ type: "application/octet-stream", limit: "2.25mb" }),
+  uploadDemoTutorialChunk
 );
 
 router.get("/:id/download", authMiddleware, downloadDemoTutorial);

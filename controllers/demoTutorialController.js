@@ -3,10 +3,12 @@ import mongoose from "mongoose";
 import DemoTutorial, { DEMO_TUTORIAL_VIEW_ROLES } from "../models/DemoTutorial.js";
 import {
   DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES,
+  DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES,
   createDemoTutorialResumableSession,
   deleteDemoTutorialFileFromDrive,
   getDemoTutorialDownloadRange,
   getDemoTutorialDownloadStream,
+  uploadDemoTutorialResumableChunk,
   verifyCompletedDemoTutorialUpload,
 } from "../services/demoTutorialDriveService.js";
 import { validateDemoTutorialUploadMetadata } from "../services/demoTutorialFileValidationService.js";
@@ -129,6 +131,7 @@ const signUploadToken = ({ req, mode, tutorialId = null, metadata, session }) =>
       existingFileId: mode === "update" ? String(session.existingFileId || "") : null,
       driveFolderId: session.driveFolderId || null,
       uploadNonce: session.uploadNonce || "",
+      sessionUrl: session.sessionUrl || "",
       originalFileName: metadata.originalFileName,
       driveFileName: session.driveFileName,
       mimeType: metadata.mimeType,
@@ -159,8 +162,70 @@ const verifyUploadToken = ({ req, rawToken, mode, tutorialId = null }) => {
   }
 };
 
+const verifyChunkUploadToken = ({ req, rawToken }) => {
+  try {
+    const decoded = jwt.verify(clean(rawToken), process.env.JWT_SECRET);
+    const mode = clean(decoded?.mode).toLowerCase();
+    const sessionUrl = clean(decoded?.sessionUrl);
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(sessionUrl);
+    } catch {
+      parsedUrl = null;
+    }
+
+    if (
+      decoded?.purpose !== UPLOAD_TOKEN_PURPOSE ||
+      !["create", "update"].includes(mode) ||
+      String(decoded?.uid || "") !== String(req.user?._id || "") ||
+      !parsedUrl ||
+      parsedUrl.protocol !== "https:" ||
+      parsedUrl.hostname !== "www.googleapis.com" ||
+      !parsedUrl.pathname.startsWith("/upload/drive/v3/files")
+    ) {
+      throw new Error("invalid token scope");
+    }
+    return decoded;
+  } catch {
+    throw Object.assign(
+      new Error("Upload session expired or is invalid. Please try again."),
+      { status: 400 }
+    );
+  }
+};
+
+const parseUploadContentRange = ({ header, expectedTotal, bodyLength }) => {
+  const match = /^bytes\s+(\d+)-(\d+)\/(\d+)$/i.exec(clean(header));
+  if (!match) throw badRequest("Upload session expired or is invalid. Please try again.");
+
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const total = Number(match[3]);
+  const expectedLength = end - start + 1;
+  const isFinalChunk = end + 1 === total;
+  const alignment = 256 * 1024;
+
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    !Number.isSafeInteger(total) ||
+    start < 0 ||
+    end < start ||
+    total !== Number(expectedTotal || 0) ||
+    expectedLength !== Number(bodyLength || 0) ||
+    expectedLength <= 0 ||
+    expectedLength > DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES ||
+    start % alignment !== 0 ||
+    (!isFinalChunk && expectedLength % alignment !== 0)
+  ) {
+    throw badRequest("Upload session expired or is invalid. Please try again.");
+  }
+
+  return { start, end, total };
+};
+
 const validateMetadataBeforeUpload = (body) => {
-  // Validate the form before a potentially large direct-to-Drive transfer so a
+  // Validate the form before creating the resumable Drive session so a
   // title/role error does not waste the user's upload time.
   validateTextFields(body || {});
   normalizeVisibleRoles(body?.visibleRoles);
@@ -280,8 +345,8 @@ export const createDemoTutorialUploadSession = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      sessionUrl: session.sessionUrl,
       uploadToken,
+      uploadChunkBytes: DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES,
       driveFileName: session.driveFileName,
       mimeType: metadata.mimeType,
       fileSize: metadata.fileSize,
@@ -331,8 +396,8 @@ export const createDemoTutorialReplacementSession = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      sessionUrl: session.sessionUrl,
       uploadToken,
+      uploadChunkBytes: DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES,
       driveFileName: session.driveFileName,
       driveFileId: tutorial.driveFileId,
       mimeType: metadata.mimeType,
@@ -341,6 +406,47 @@ export const createDemoTutorialReplacementSession = async (req, res) => {
     });
   } catch (error) {
     return sendError(res, error, "Unable to update Demo - Tutorial file.");
+  }
+};
+
+export const uploadDemoTutorialChunk = async (req, res) => {
+  try {
+    if (!isSuperadmin(req)) {
+      return res.status(403).json({
+        success: false,
+        error: "Only Superadmin can upload Demo - Tutorial files.",
+      });
+    }
+
+    const decoded = verifyChunkUploadToken({
+      req,
+      rawToken: req.headers?.["x-demo-upload-token"],
+    });
+
+    const chunk = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const { start, end, total } = parseUploadContentRange({
+      header: req.headers?.["content-range"],
+      expectedTotal: decoded.fileSize,
+      bodyLength: chunk.length,
+    });
+
+    const result = await uploadDemoTutorialResumableChunk({
+      sessionUrl: decoded.sessionUrl,
+      mimeType: decoded.mimeType,
+      chunk,
+      start,
+      end,
+      total,
+    });
+
+    return res.status(200).json({
+      success: true,
+      completed: Boolean(result.completed),
+      nextOffset: Number(result.nextOffset || 0),
+      driveFileId: clean(result.file?.id),
+    });
+  } catch (error) {
+    return sendError(res, error, "Unable to upload Demo - Tutorial file.");
   }
 };
 
