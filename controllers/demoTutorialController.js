@@ -357,15 +357,28 @@ export const listDemoTutorials = async (req, res) => {
       Math.max(1, Number.parseInt(req.query?.limit, 10) || 20)
     );
     const search = clean(req.query?.search);
+    const requestedType = clean(req.query?.type).toUpperCase();
+    const fileType = ["PDF", "VIDEO"].includes(requestedType) ? requestedType : "";
 
     const query = role === SUPERADMIN_ROLE ? {} : { visibleRoles: role };
+    if (fileType) query.fileKind = fileType;
+
     if (search) {
       const regex = new RegExp(escapeRegex(search), "i");
+      const compactSearch = search.toLowerCase().replace(/[\s_-]+/g, "");
+      const matchedRoles = DEMO_TUTORIAL_VIEW_ROLES.filter((value) =>
+        value.replace(/[\s_-]+/g, "").includes(compactSearch)
+      );
+
       query.$or = [
         { title: regex },
         { description: regex },
         { driveFileName: regex },
         { originalFileName: regex },
+        { fileKind: regex },
+        { mimeType: regex },
+        { visibleRoles: regex },
+        ...(matchedRoles.length ? [{ visibleRoles: { $in: matchedRoles } }] : []),
       ];
     }
 
