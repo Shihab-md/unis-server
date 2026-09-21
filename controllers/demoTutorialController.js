@@ -17,6 +17,8 @@ const SUPERADMIN_ROLE = "superadmin";
 const VIEW_ROLE_SET = new Set(DEMO_TUTORIAL_VIEW_ROLES);
 const UPLOAD_TOKEN_PURPOSE = "demo_tutorial_resumable_upload";
 const UPLOAD_TOKEN_TTL = process.env.DEMO_TUTORIAL_UPLOAD_TOKEN_TTL || "2h";
+const VIEW_TOKEN_PURPOSE = "demo_tutorial_view";
+const VIEW_TOKEN_TTL = process.env.DEMO_TUTORIAL_VIEW_TOKEN_TTL || "2h";
 
 const clean = (value) =>
   value === undefined || value === null ? "" : String(value).trim();
@@ -192,6 +194,107 @@ const verifyChunkUploadToken = ({ req, rawToken }) => {
       { status: 400 }
     );
   }
+};
+
+
+const signViewToken = ({ req, tutorial }) =>
+  jwt.sign(
+    {
+      purpose: VIEW_TOKEN_PURPOSE,
+      tutorialId: String(tutorial._id || ""),
+      uid: String(req.user?._id || ""),
+      role: roleOf(req),
+      driveFileId: clean(tutorial.driveFileId),
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: VIEW_TOKEN_TTL }
+  );
+
+const verifyViewToken = ({ rawToken, tutorialId }) => {
+  try {
+    const decoded = jwt.verify(clean(rawToken), process.env.JWT_SECRET);
+    if (
+      decoded?.purpose !== VIEW_TOKEN_PURPOSE ||
+      String(decoded?.tutorialId || "") !== String(tutorialId || "") ||
+      !clean(decoded?.uid) ||
+      !clean(decoded?.role) ||
+      !clean(decoded?.driveFileId)
+    ) {
+      throw new Error("invalid token scope");
+    }
+    return decoded;
+  } catch {
+    throw Object.assign(
+      new Error("Demo - Tutorial viewing session expired. Please reopen the file."),
+      { status: 401 }
+    );
+  }
+};
+
+const parseViewRange = ({ header, total }) => {
+  const raw = clean(header);
+  if (!raw) return null;
+  if (!raw.toLowerCase().startsWith("bytes=") || raw.includes(",")) return false;
+
+  const value = raw.slice(6).trim();
+  const match = /^(\d*)-(\d*)$/.exec(value);
+  if (!match) return false;
+
+  let start;
+  let end;
+  const rawStart = match[1];
+  const rawEnd = match[2];
+
+  if (!rawStart && !rawEnd) return false;
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return false;
+    const boundedSuffix = Math.min(total, suffixLength, DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES);
+    start = Math.max(0, total - boundedSuffix);
+    end = total - 1;
+  } else {
+    start = Number(rawStart);
+    if (!Number.isSafeInteger(start) || start < 0 || start >= total) return false;
+
+    if (rawEnd) {
+      end = Number(rawEnd);
+      if (!Number.isSafeInteger(end) || end < start) return false;
+      end = Math.min(end, total - 1);
+    } else {
+      end = total - 1;
+    }
+
+    end = Math.min(end, start + DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES - 1);
+  }
+
+  return { start, end };
+};
+
+const safeInlineFileName = (tutorial) => {
+  const downloadName = clean(
+    tutorial?.driveFileName || tutorial?.originalFileName || "tutorial-file"
+  );
+  const asciiName = downloadName
+    .replace(/[^\x20-\x7E]+/g, "_")
+    .replace(/["\\]/g, "_");
+  return { downloadName, asciiName };
+};
+
+const setViewerHeaders = ({ res, tutorial, contentLength = null, contentRange = null }) => {
+  const { downloadName, asciiName } = safeInlineFileName(tutorial);
+  res.setHeader("Content-Type", tutorial.mimeType || "application/octet-stream");
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+  );
+  if (contentLength !== null) res.setHeader("Content-Length", String(contentLength));
+  if (contentRange) res.setHeader("Content-Range", contentRange);
 };
 
 const parseUploadContentRange = ({ header, expectedTotal, bodyLength }) => {
@@ -664,24 +767,142 @@ export const deleteDemoTutorial = async (req, res) => {
   }
 };
 
-const loadDownloadableTutorial = async (req) => {
-  if (!isObjectId(req.params?.id)) {
+const loadAccessibleTutorial = async ({ id, role, action = "view" }) => {
+  if (!isObjectId(id)) {
     throw Object.assign(new Error("Invalid Demo - Tutorial ID."), { status: 400 });
   }
 
-  const tutorial = await DemoTutorial.findById(req.params.id).lean();
+  const tutorial = await DemoTutorial.findById(id).lean();
   if (!tutorial) {
     throw Object.assign(new Error("Demo - Tutorial file not found."), { status: 404 });
   }
 
-  const role = roleOf(req);
-  if (!canView(tutorial, role)) {
+  if (!canView(tutorial, clean(role).toLowerCase())) {
     throw Object.assign(
-      new Error("You are not allowed to download this Demo - Tutorial file."),
+      new Error(
+        action === "download"
+          ? "You are not allowed to download this Demo - Tutorial file."
+          : "You are not allowed to view this Demo - Tutorial file."
+      ),
       { status: 403 }
     );
   }
   return tutorial;
+};
+
+const loadDownloadableTutorial = async (req) =>
+  loadAccessibleTutorial({
+    id: req.params?.id,
+    role: roleOf(req),
+    action: "download",
+  });
+
+export const createDemoTutorialViewToken = async (req, res) => {
+  try {
+    const tutorial = await loadAccessibleTutorial({
+      id: req.params?.id,
+      role: roleOf(req),
+      action: "view",
+    });
+    const viewToken = signViewToken({ req, tutorial });
+
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    return res.status(200).json({
+      success: true,
+      viewToken,
+    });
+  } catch (error) {
+    return sendError(res, error, "Unable to load Demo - Tutorial file.");
+  }
+};
+
+const loadStreamableTutorial = async (req) => {
+  if (!isObjectId(req.params?.id)) {
+    throw Object.assign(new Error("Invalid Demo - Tutorial ID."), { status: 400 });
+  }
+
+  const decoded = verifyViewToken({
+    rawToken: req.query?.token,
+    tutorialId: req.params.id,
+  });
+
+  const tutorial = await loadAccessibleTutorial({
+    id: req.params.id,
+    role: decoded.role,
+    action: "view",
+  });
+
+  if (clean(tutorial.driveFileId) !== clean(decoded.driveFileId)) {
+    throw Object.assign(
+      new Error("Demo - Tutorial viewing session expired. Please reopen the file."),
+      { status: 401 }
+    );
+  }
+
+  return tutorial;
+};
+
+export const headDemoTutorialStream = async (req, res) => {
+  try {
+    const tutorial = await loadStreamableTutorial(req);
+    const total = Number(tutorial.fileSize || 0);
+    if (!Number.isSafeInteger(total) || total <= 0) {
+      throw badRequest("Unable to load Demo - Tutorial file.");
+    }
+
+    setViewerHeaders({ res, tutorial, contentLength: total });
+    return res.status(200).end();
+  } catch (error) {
+    return sendError(res, error, "Unable to load Demo - Tutorial file.");
+  }
+};
+
+export const streamDemoTutorial = async (req, res) => {
+  try {
+    const tutorial = await loadStreamableTutorial(req);
+    const total = Number(tutorial.fileSize || 0);
+    if (!Number.isSafeInteger(total) || total <= 0) {
+      throw badRequest("Unable to load Demo - Tutorial file.");
+    }
+
+    const parsedRange = parseViewRange({
+      header: req.headers?.range,
+      total,
+    });
+    if (parsedRange === false) {
+      res.setHeader("Content-Range", `bytes */${total}`);
+      return res.status(416).end();
+    }
+
+    const hasRange = Boolean(parsedRange);
+    const start = hasRange ? parsedRange.start : 0;
+    const end = hasRange
+      ? parsedRange.end
+      : Math.min(total - 1, DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES - 1);
+
+    const data = await getDemoTutorialDownloadRange({
+      fileId: tutorial.driveFileId,
+      start,
+      end,
+    });
+    const expectedLength = end - start + 1;
+    if (data.length !== expectedLength) {
+      throw Object.assign(new Error("Unable to download file from Google Drive."), {
+        status: 502,
+      });
+    }
+
+    const partial = hasRange || expectedLength < total;
+    setViewerHeaders({
+      res,
+      tutorial,
+      contentLength: data.length,
+      contentRange: partial ? `bytes ${start}-${end}/${total}` : null,
+    });
+    return res.status(partial ? 206 : 200).send(data);
+  } catch (error) {
+    return sendError(res, error, "Unable to load Demo - Tutorial file.");
+  }
 };
 
 export const downloadDemoTutorial = async (req, res) => {

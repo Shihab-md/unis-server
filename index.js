@@ -50,7 +50,7 @@ const app = express()
 //app.use(cors()) 
 //app.options("*", cors())
 //const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
-app.use(cors({ origin: '*', credentials: true, exposedHeaders: ['Content-Disposition'] }));
+app.use(cors({ origin: '*', credentials: true, exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges', 'Content-Length'] }));
 
 app.use(express.json())
 app.use(express.static('public/uploads'))

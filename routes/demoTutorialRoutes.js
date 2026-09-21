@@ -5,11 +5,14 @@ import {
   createDemoTutorial,
   createDemoTutorialReplacementSession,
   createDemoTutorialUploadSession,
+  createDemoTutorialViewToken,
   deleteDemoTutorial,
   downloadDemoTutorial,
   downloadDemoTutorialChunk,
   getDemoTutorial,
+  headDemoTutorialStream,
   listDemoTutorials,
+  streamDemoTutorial,
   updateDemoTutorial,
   uploadDemoTutorialChunk,
 } from "../controllers/demoTutorialController.js";
@@ -51,6 +54,10 @@ router.put(
   express.raw({ type: "application/octet-stream", limit: "2.25mb" }),
   uploadDemoTutorialChunk
 );
+
+router.post("/:id/view-token", authMiddleware, createDemoTutorialViewToken);
+router.head("/:id/stream", headDemoTutorialStream);
+router.get("/:id/stream", streamDemoTutorial);
 
 router.get("/:id/download", authMiddleware, downloadDemoTutorial);
 router.get("/:id/download-chunk", authMiddleware, downloadDemoTutorialChunk);
