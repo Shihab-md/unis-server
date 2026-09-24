@@ -42,17 +42,37 @@ import examQuestionRouter from './routes/examQuestion.js';
 import attendanceRouter from './routes/attendance.js';
 import tempSchoolMarksheetRoutes from "./routes/tempSchoolMarksheetRoutes.js";
 import demoTutorialRoutes from "./routes/demoTutorialRoutes.js";
+import { SERVER_VERSION, getAppEnvironment, getCorsAllowedOrigins, validateRuntimeEnvironment } from "./utils/runtimeEnvironment.js";
+
+const runtime = validateRuntimeEnvironment();
+console.log(`[environment] ${runtime.environment} | DB=${runtime.databaseName} | server=${SERVER_VERSION}`);
 
 await connectToDatabase()
 await loadCache()
  
 const app = express()
-//app.use(cors()) 
-//app.options("*", cors())
-//const allowedDomains = ['https://www.unis.org.in', 'https://unis-frontend.vercel.app']
-app.use(cors({ origin: '*', credentials: true, exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges', 'Content-Length'] }));
+const allowedOrigins = new Set(getCorsAllowedOrigins());
+app.use(cors({
+    origin: (origin, callback) => {
+        // Native/mobile/server-to-server requests may not send an Origin header.
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.has(origin)) return callback(null, true);
+        const error = new Error("CORS origin not allowed");
+        error.code = "UNIS_CORS_BLOCKED";
+        return callback(error);
+    },
+    credentials: true,
+    exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges', 'Content-Length']
+}));
 
 app.use(express.json())
+app.get('/api/health', (req, res) => {
+    return res.status(200).json({
+        status: 'ok',
+        environment: getAppEnvironment(),
+        version: SERVER_VERSION,
+    });
+});
 app.use(express.static('public/uploads'))
 app.use('/api/auth', authRouter)
 app.use('/api/supervisor', supervisorRouter)
@@ -94,6 +114,13 @@ app.use('/api/exam-questions', examQuestionRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use("/api/temp-school-marksheet", tempSchoolMarksheetRoutes);
 app.use("/api/demo-tutorial", demoTutorialRoutes);
+
+app.use((err, req, res, next) => {
+    if (err?.code === "UNIS_CORS_BLOCKED") {
+        return res.status(403).json({ success: false, error: "Origin is not allowed." });
+    }
+    return next(err);
+});
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is Running on port ${process.env.PORT}`)

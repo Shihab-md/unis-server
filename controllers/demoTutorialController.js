@@ -11,6 +11,7 @@ import {
   uploadDemoTutorialResumableChunk,
   verifyCompletedDemoTutorialUpload,
 } from "../services/demoTutorialDriveService.js";
+import { buildEnvironmentDrivePath } from "../services/driveFolderService.js";
 import { validateDemoTutorialUploadMetadata } from "../services/demoTutorialFileValidationService.js";
 
 const SUPERADMIN_ROLE = "superadmin";
@@ -103,7 +104,7 @@ const serializeTutorial = (tutorial, { includeRoles = true } = {}) => {
     driveFileName: obj.driveFileName,
     mimeType: obj.mimeType,
     fileSize: Number(obj.fileSize || 0),
-    driveFolderPath: obj.driveFolderPath || "UNIS/Demo-Tutorial",
+    driveFolderPath: obj.driveFolderPath || buildEnvironmentDrivePath(["Demo-Tutorial"]),
     createdAt: obj.createdAt,
     updatedAt: obj.updatedAt,
   };

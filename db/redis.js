@@ -1,13 +1,11 @@
 import { createClient } from "redis";
-
-const REDIS_URL = process.env.REDIS_URL;
-if (!REDIS_URL) throw new Error("REDIS_URL is not set");
+import { getRedisUrl } from "../utils/runtimeEnvironment.js";
 
 const g = globalThis;
 
 function buildClient() {
   const c = createClient({
-    url: REDIS_URL,
+    url: getRedisUrl(),
     socket: {
       connectTimeout: 10_000,
       reconnectStrategy: (retries) => Math.min(retries * 200, 2000),

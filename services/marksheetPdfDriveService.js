@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { buildOAuthClient } from "./googleDriveService.js";
+import { assertDriveFileWithinEnvironmentRoot, ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 
 const safeFolderName = (value, fallback = "Unknown") => {
   const cleaned = String(value || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ");
@@ -34,44 +35,6 @@ const getDrive = async () => {
   }
 };
 
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const safeName = String(folderName).replace(/'/g, "\\'");
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${safeName}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const response = await drive.files.list({ q, fields: "files(id,name)", spaces: "drive", pageSize: 1 });
-  return response.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const response = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-  return response.data.id;
-};
-
-const ensureFolderPath = async (drive, parts) => {
-  let parentId = null;
-  for (const rawName of parts) {
-    const name = safeFolderName(rawName);
-    let folderId = await findChildFolderId(drive, parentId, name);
-    if (!folderId) folderId = await createFolder(drive, parentId, name);
-    parentId = folderId;
-  }
-  return parentId;
-};
-
 export const buildMarksheetResultFolderParts = ({
   academicYear,
   schoolCode,
@@ -80,7 +43,6 @@ export const buildMarksheetResultFolderParts = ({
   examType,
   artifactType,
 }) => [
-  "UNIS",
   "Exams",
   "Results",
   safeFolderName(academicYear, "Academic-Year"),
@@ -100,8 +62,9 @@ export const uploadGeneratedMarksheetPdfToDrive = async ({ buffer, fileName, fol
   }
 
   const drive = await getDrive();
-  const parts = Array.isArray(folderParts) && folderParts.length > 0 ? folderParts : ["UNIS", "Exams", "Results"];
-  const folderId = await ensureFolderPath(drive, parts);
+  const parts = Array.isArray(folderParts) && folderParts.length > 0 ? folderParts : ["Exams", "Results"];
+  const folderContext = await ensureEnvironmentDriveFolderPath(drive, parts);
+  const folderId = folderContext.folderId;
   const finalFileName = safeFileName(fileName);
 
   const response = await drive.files.create({
@@ -115,13 +78,14 @@ export const uploadGeneratedMarksheetPdfToDrive = async ({ buffer, fileName, fol
     fileName: response.data.name,
     fileSize: Number(response.data.size || buffer.length || 0),
     mimeType: response.data.mimeType || "application/pdf",
-    folderPath: parts.join("/"),
+    folderPath: folderContext.folderPath,
   };
 };
 
 export const downloadGeneratedMarksheetPdfFromDrive = async (fileId) => {
   if (!fileId) throw new Error("Marksheet Drive file id is missing.");
   const drive = await getDrive();
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   const response = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
   return Buffer.from(response.data);
 };
@@ -129,5 +93,6 @@ export const downloadGeneratedMarksheetPdfFromDrive = async (fileId) => {
 export const deleteGeneratedMarksheetPdfFromDrive = async (fileId) => {
   if (!fileId) return;
   const drive = await getDrive();
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   await drive.files.delete({ fileId });
 };

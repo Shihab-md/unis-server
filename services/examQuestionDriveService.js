@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { buildOAuthClient } from "./googleDriveService.js";
+import { assertDriveFileWithinEnvironmentRoot, ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 
 const safeFolderName = (value, fallback = "Unknown") => {
   const cleaned = String(value || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ");
@@ -14,44 +15,6 @@ const safeFileBase = (value, fallback = "question-paper") => {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
   return cleaned || fallback;
-};
-
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const safeName = String(folderName).replace(/'/g, "\\'");
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${safeName}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const response = await drive.files.list({ q, fields: "files(id,name)", spaces: "drive", pageSize: 1 });
-  return response.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const response = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-  return response.data.id;
-};
-
-const ensureFolderPath = async (drive, parts) => {
-  let parentId = null;
-  for (const rawName of parts) {
-    const name = safeFolderName(rawName);
-    let folderId = await findChildFolderId(drive, parentId, name);
-    if (!folderId) folderId = await createFolder(drive, parentId, name);
-    parentId = folderId;
-  }
-  return parentId;
 };
 
 const getDrive = async () => {
@@ -88,7 +51,6 @@ export const uploadQuestionPaperToDrive = async ({
 }) => {
   const drive = await getDrive();
   const parts = [
-    "UNIS",
     "Exams",
     "QuestionPapers",
     safeFolderName(academicYear, "Academic-Year"),
@@ -96,7 +58,8 @@ export const uploadQuestionPaperToDrive = async ({
     `Year-${Number(studyingYear || 0)}`,
     safeFolderName(examType, "Exam"),
   ];
-  const folderId = await ensureFolderPath(drive, parts);
+  const folderContext = await ensureEnvironmentDriveFolderPath(drive, parts);
+  const folderId = folderContext.folderId;
   const driveFileName = `${safeFileBase(`${subjectCode}_${examType}_${examDate}`)}_${timestamp()}.pdf`;
 
   const response = await drive.files.create({
@@ -110,12 +73,13 @@ export const uploadQuestionPaperToDrive = async ({
     fileName: response.data.name,
     fileSize: Number(response.data.size || file.size || 0),
     mimeType: response.data.mimeType || "application/pdf",
-    folderPath: parts.join("/"),
+    folderPath: folderContext.folderPath,
   };
 };
 
 export const downloadQuestionPaperFromDrive = async (fileId) => {
   const drive = await getDrive();
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   const response = await drive.files.get(
     { fileId, alt: "media" },
     { responseType: "arraybuffer" }
@@ -126,5 +90,6 @@ export const downloadQuestionPaperFromDrive = async (fileId) => {
 export const deleteQuestionPaperFromDrive = async (fileId) => {
   if (!fileId) return;
   const drive = await getDrive();
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   await drive.files.delete({ fileId });
 };

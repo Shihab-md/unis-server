@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import { decryptText } from "../utils/cryptoHelper.js";
+import { ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 
 export const buildOAuthClient = async () => {
   const client = new google.auth.OAuth2(
@@ -19,63 +20,27 @@ export const buildOAuthClient = async () => {
   return { client, folderId: cred.folderId };
 };
 
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const q = [
-    `mimeType='application/vnd.google-apps.folder'`,
-    `name='${folderName.replace(/'/g, "\\'")}'`,
-    `trashed=false`,
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const res = await drive.files.list({
-    q,
-    fields: "files(id,name)",
-    spaces: "drive",
-    pageSize: 1,
-  });
-
-  return res.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const res = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-  return res.data.id;
-};
-
-// Ensure folder path exists: UNIS/PaymentProofs
+// Backward-compatible function name. The actual root is environment-aware:
+// production -> UNIS, staging -> configured UNIS-STAGING root folder.
 export const ensureUNISPaymentProofsFolder = async (oauthClient) => {
   const drive = google.drive({ version: "v3", auth: oauthClient });
-
-  let unisId = await findChildFolderId(drive, null, "UNIS");
-  if (!unisId) unisId = await createFolder(drive, null, "UNIS");
-
-  let proofsId = await findChildFolderId(drive, unisId, "PaymentProofs");
-  if (!proofsId) proofsId = await createFolder(drive, unisId, "PaymentProofs");
-
-  return proofsId;
+  const { folderId } = await ensureEnvironmentDriveFolderPath(drive, ["PaymentProofs"]);
+  return folderId;
 };
 
 export const uploadProofToDrive = async ({ file }) => {
-  const { client, folderId } = await buildOAuthClient();
+  const { client } = await buildOAuthClient();
   const drive = google.drive({ version: "v3", auth: client });
 
-  // ✅ Convert Buffer to stream so googleapis multipart upload works
-  const stream = Readable.from(file.buffer);
+  // Resolve the folder on every upload so a stale/copy-pasted IntegrationCredential
+  // can never silently point staging at a production folder.
+  const { folderId } = await ensureEnvironmentDriveFolderPath(drive, ["PaymentProofs"]);
 
   const driveFileName = buildTimestampedName(file.originalname);
 
   const res = await drive.files.create({
     requestBody: {
-      name: driveFileName,          // ✅ abc_03012026112233.png
+      name: driveFileName,
       parents: [folderId],
     },
     media: {
@@ -108,7 +73,6 @@ const buildTimestampedName = (originalName = "file") => {
   const dot = originalName.lastIndexOf(".");
   const base = dot > 0 ? originalName.slice(0, dot) : originalName;
   const ext = dot > 0 ? originalName.slice(dot) : "";
-  // remove risky chars for filenames
   const safeBase = base.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
   return `${safeBase || "file"}_${formatTs()}${ext}`;
 };

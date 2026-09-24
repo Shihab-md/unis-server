@@ -13,6 +13,7 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import { decryptText } from "../utils/cryptoHelper.js";
+import { assertDriveFileWithinEnvironmentRoot, ensureEnvironmentDriveFolderPath } from "../services/driveFolderService.js";
 
 import * as fs from "fs";
 import * as path from "path";
@@ -142,50 +143,6 @@ const runWithDriveRetry = async (fn) => {
     const { drive } = await buildDriveClient();
     return await fn(drive);
   }
-};
-
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const safeName = String(folderName).replace(/'/g, "\\'");
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${safeName}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const res = await drive.files.list({
-    q,
-    fields: "files(id,name)",
-    spaces: "drive",
-    pageSize: 1,
-  });
-
-  return res.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const res = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-
-  return res.data.id;
-};
-
-const ensureFolderPath = async (drive, parts = []) => {
-  let parentId = null;
-  for (const name of parts) {
-    let id = await findChildFolderId(drive, parentId, name);
-    if (!id) id = await createFolder(drive, parentId, name);
-    parentId = id;
-  }
-  return parentId;
 };
 
 const sanitizeDriveFolderName = (value, fallback = "Course") => {
@@ -1403,11 +1360,10 @@ const addCertificate = async (req, res) => {
     const courseFolderName = getCertificateCourseFolderName(template?.courseId);
 
     const uploaded = await runWithDriveRetry(async (drive) => {
-      const folderId = await ensureFolderPath(drive, [
-        "UNIS",
+      const folderId = (await ensureEnvironmentDriveFolderPath(drive, [
         "Certificates",
         courseFolderName,
-      ]);
+      ])).folderId;
 
       return await uploadBufferToDrive(
         drive,
@@ -1606,6 +1562,7 @@ const getIssueDateMetaFromStoredValue = (value) => {
 };
 
 const overwriteBufferInDrive = async (drive, fileId, fileName, buffer, mimeType) => {
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   const stream = Readable.from(buffer);
 
   const res = await drive.files.update({
@@ -1632,6 +1589,7 @@ const overwriteBufferInDrive = async (drive, fileId, fileName, buffer, mimeType)
 };
 
 const downloadDriveFileBuffer = async (drive, fileId) => {
+  await assertDriveFileWithinEnvironmentRoot(drive, fileId);
   const res = await drive.files.get(
     {
       fileId,

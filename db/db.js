@@ -1,10 +1,5 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URL;
-if (!MONGODB_URI) {
-  throw new Error("MONGODB_URL is not set");
-}
-
 // Cache across warm Vercel invocations
 let cached = globalThis.__mongoose;
 if (!cached) {
@@ -12,13 +7,14 @@ if (!cached) {
 }
 
 export default async function connectToDatabase() {
-  // Already connected
+  const mongoUrl = String(process.env.MONGODB_URL || "").trim();
+  if (!mongoUrl) throw new Error("MONGODB_URL is not set");
+
   if (cached.conn) return cached.conn;
 
-  // Create one shared connect promise
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
-      maxPoolSize: 5,  // keep small for serverless
+    cached.promise = mongoose.connect(mongoUrl, {
+      maxPoolSize: 5,
     });
   }
 

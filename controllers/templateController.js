@@ -1,5 +1,6 @@
 import multer from "multer";
 import { put } from "@vercel/blob";
+import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import Template from "../models/Template.js";
 import getRedis from "../db/redis.js";
 import { toCamelCase } from "./commonController.js";
@@ -142,7 +143,7 @@ const addTemplate = async (req, res) => {
       const blob = await put(`templates/${moduleFolder}/${newTemplate._id}.${ext}`, fileBuffer, {
         access: "public",
         contentType,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: getBlobReadWriteToken(),
         allowOverwrite: true,
       });
 
@@ -303,7 +304,7 @@ const updateTemplate = async (req, res) => {
       const blob = await put(`templates/${moduleFolder}/${id}.${ext}`, fileBuffer, {
         access: "public",
         contentType,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: getBlobReadWriteToken(),
         allowOverwrite: true,
       });
 

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getGoogleDriveRootFolderName } from "../utils/runtimeEnvironment.js";
 const { Schema } = mongoose;
 
 export const DEMO_TUTORIAL_VIEW_ROLES = [
@@ -31,7 +32,7 @@ const demoTutorialSchema = new Schema(
     originalFileName: { type: String, required: true, trim: true },
     driveFileName: { type: String, required: true, trim: true },
     driveFileId: { type: String, required: true, trim: true, unique: true },
-    driveFolderPath: { type: String, default: "UNIS/Demo-Tutorial", trim: true },
+    driveFolderPath: { type: String, default: () => `${getGoogleDriveRootFolderName()}/Demo-Tutorial`, trim: true },
     mimeType: { type: String, required: true, trim: true },
     fileSize: { type: Number, default: 0, min: 0 },
 

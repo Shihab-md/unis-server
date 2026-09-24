@@ -2,20 +2,11 @@ import crypto from "crypto";
 import { google } from "googleapis";
 import { buildOAuthClient } from "./googleDriveService.js";
 import { validateDemoTutorialSignatureBytes } from "./demoTutorialFileValidationService.js";
+import { assertDriveFileWithinEnvironmentRoot, buildEnvironmentDrivePath, ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 
-export const DEMO_TUTORIAL_DRIVE_PATH = Object.freeze(["UNIS", "Demo-Tutorial"]);
+export const DEMO_TUTORIAL_DRIVE_PATH = Object.freeze(["Demo-Tutorial"]);
 export const DEMO_TUTORIAL_DOWNLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
 export const DEMO_TUTORIAL_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
-
-const escapeDriveQuery = (value) => String(value || "").replace(/'/g, "\\'");
-
-const safeFolderName = (value, fallback = "Folder") => {
-  const cleaned = String(value || "")
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, " ");
-  return cleaned || fallback;
-};
 
 export const safeDemoTutorialDriveFileName = (value, fallback = "tutorial-file") => {
   const cleaned = String(value || "")
@@ -31,49 +22,6 @@ export const safeDemoTutorialDriveFileName = (value, fallback = "tutorial-file")
   const base = dot > 0 ? cleaned.slice(0, dot) : cleaned;
   const maxBaseLength = Math.max(1, 180 - extension.length);
   return `${base.slice(0, maxBaseLength).trim() || "tutorial-file"}${extension}`;
-};
-
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${escapeDriveQuery(folderName)}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const response = await drive.files.list({
-    q,
-    fields: "files(id,name)",
-    spaces: "drive",
-    pageSize: 1,
-  });
-
-  return response.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const response = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-  return response.data.id;
-};
-
-const ensureFolderPath = async (drive, parts) => {
-  let parentId = null;
-  for (const rawPart of parts) {
-    const folderName = safeFolderName(rawPart);
-    let folderId = await findChildFolderId(drive, parentId, folderName);
-    if (!folderId) folderId = await createFolder(drive, parentId, folderName);
-    parentId = folderId;
-  }
-  return parentId;
 };
 
 const normalizeDriveError = (error) => {
@@ -274,9 +222,14 @@ export const createDemoTutorialResumableSession = async ({
   const { client, drive } = await getDriveContext();
   const driveFileName = safeDemoTutorialDriveFileName(originalFileName);
   const uploadNonce = crypto.randomBytes(16).toString("hex");
-  const folderId = existingFileId
+  const folderContext = existingFileId
     ? null
-    : await ensureFolderPath(drive, DEMO_TUTORIAL_DRIVE_PATH);
+    : await ensureEnvironmentDriveFolderPath(drive, DEMO_TUTORIAL_DRIVE_PATH);
+  const folderId = folderContext?.folderId || null;
+
+  if (existingFileId) {
+    await assertDriveFileWithinEnvironmentRoot(drive, existingFileId);
+  }
 
   const baseUrl = existingFileId
     ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}`
@@ -312,7 +265,7 @@ export const createDemoTutorialResumableSession = async ({
       driveFileName,
       uploadNonce,
       driveFolderId: folderId,
-      driveFolderPath: DEMO_TUTORIAL_DRIVE_PATH.join("/"),
+      driveFolderPath: folderContext?.folderPath || buildEnvironmentDrivePath(DEMO_TUTORIAL_DRIVE_PATH),
     };
   } catch (error) {
     throw normalizeDriveError(error);
@@ -322,6 +275,7 @@ export const createDemoTutorialResumableSession = async ({
 export const getDemoTutorialDriveFileMetadata = async (fileId) => {
   const { drive } = await getDriveContext();
   try {
+    await assertDriveFileWithinEnvironmentRoot(drive, fileId);
     const response = await drive.files.get({
       fileId,
       fields: "id,name,size,mimeType,parents,trashed,appProperties",
@@ -435,7 +389,7 @@ export const verifyCompletedDemoTutorialUpload = async ({
     fileSize: actualSize,
     mimeType: metadata.mimeType,
     fileKind,
-    driveFolderPath: DEMO_TUTORIAL_DRIVE_PATH.join("/"),
+    driveFolderPath: buildEnvironmentDrivePath(DEMO_TUTORIAL_DRIVE_PATH),
   };
 };
 
@@ -443,6 +397,7 @@ export const getDemoTutorialDownloadStream = async (fileId) => {
   const { drive } = await getDriveContext();
 
   try {
+    await assertDriveFileWithinEnvironmentRoot(drive, fileId);
     const response = await drive.files.get(
       { fileId, alt: "media" },
       { responseType: "stream" }
@@ -454,9 +409,10 @@ export const getDemoTutorialDownloadStream = async (fileId) => {
 };
 
 export const getDemoTutorialDownloadRange = async ({ fileId, start, end }) => {
-  const { client } = await getDriveContext();
+  const { client, drive } = await getDriveContext();
   const expectedLength = end - start + 1;
   try {
+    await assertDriveFileWithinEnvironmentRoot(drive, fileId);
     const response = await client.request({
       url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
       method: "GET",
@@ -522,6 +478,7 @@ export const deleteDemoTutorialFileFromDrive = async (fileId) => {
   const { drive } = await getDriveContext();
 
   try {
+    await assertDriveFileWithinEnvironmentRoot(drive, fileId);
     await drive.files.delete({ fileId });
     return true;
   } catch (error) {

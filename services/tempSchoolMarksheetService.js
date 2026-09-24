@@ -2,11 +2,12 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 
 import { buildOAuthClient } from "./googleDriveService.js";
+import { buildEnvironmentDrivePath, ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 import { buildTempSchoolMarksheetPdf } from "./tempSchoolMarksheetPdfService.js";
 import { resolveTempSchoolMarksheetTemplate } from "./tempSchoolMarksheetTemplateService.js";
 import { normalizeTempSchoolMarksheetRow } from "../utils/tempSchoolMarksheetHelper.js";
 
-const DRIVE_FOLDER_PATH = ["UNIS", "Marksheets", "Temp-School"];
+const DRIVE_FOLDER_PATH = ["Marksheets", "Temp-School"];
 
 const escapeDriveQueryValue = (value) =>
   String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -26,49 +27,6 @@ const getDrive = async () => {
     }
     throw error;
   }
-};
-
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const safeName = escapeDriveQueryValue(folderName);
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${safeName}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const response = await drive.files.list({
-    q,
-    fields: "files(id,name)",
-    spaces: "drive",
-    pageSize: 10,
-  });
-
-  return response.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const response = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-  return response.data.id;
-};
-
-const ensureFolderPath = async (drive, parts) => {
-  let parentId = null;
-  for (const folderName of parts) {
-    let folderId = await findChildFolderId(drive, parentId, folderName);
-    if (!folderId) folderId = await createFolder(drive, parentId, folderName);
-    parentId = folderId;
-  }
-  return parentId;
 };
 
 const findFilesByExactName = async (drive, folderId, fileName) => {
@@ -193,7 +151,7 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
   const getDriveContext = async () => {
     if (drive && folderId) return { drive, folderId };
     drive = await getDrive();
-    folderId = await ensureFolderPath(drive, DRIVE_FOLDER_PATH);
+    folderId = (await ensureEnvironmentDriveFolderPath(drive, DRIVE_FOLDER_PATH)).folderId;
     return { drive, folderId };
   };
 
@@ -309,7 +267,7 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
       success: created + replaced,
     },
     rows: results,
-    drivePath: DRIVE_FOLDER_PATH.join("/"),
+    drivePath: buildEnvironmentDrivePath(DRIVE_FOLDER_PATH),
     template: templateContext.info,
   };
 };

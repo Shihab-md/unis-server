@@ -9,13 +9,14 @@ import IntegrationCredential from "../models/IntegrationCredential.js";
 import IhsBulkCertificate from "../models/IhsBulkCertificate.js";
 
 import { decryptText } from "../utils/cryptoHelper.js";
+import { ensureEnvironmentDriveFolderPath } from "./driveFolderService.js";
 import {
   IHS_TEMPLATE_MAP,
   normalizeBulkIhsRow,
 } from "../utils/ihsBulkTemplateHelper.js";
 
 const PDF_COLOR_BODY_BLUE = rgb(14 / 255, 56 / 255, 194 / 255);
-const BULK_IHS_DRIVE_FOLDER_PATH = ["UNIS", "Certificates", "IHS Bulk Temporary"];
+const BULK_IHS_DRIVE_FOLDER_PATH = ["Certificates", "IHS Bulk Temporary"];
 
 const SPECIAL_CERTIFICATE_LAYOUT = {
   studentName: {
@@ -173,50 +174,6 @@ const runWithDriveRetry = async (fn) => {
     const { drive } = await buildDriveClient();
     return await fn(drive);
   }
-};
-
-const findChildFolderId = async (drive, parentId, folderName) => {
-  const safeName = String(folderName).replace(/'/g, "\\'");
-  const q = [
-    "mimeType='application/vnd.google-apps.folder'",
-    `name='${safeName}'`,
-    "trashed=false",
-    parentId ? `'${parentId}' in parents` : null,
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const res = await drive.files.list({
-    q,
-    fields: "files(id,name)",
-    spaces: "drive",
-    pageSize: 1,
-  });
-
-  return res.data.files?.[0]?.id || null;
-};
-
-const createFolder = async (drive, parentId, folderName) => {
-  const res = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id",
-  });
-
-  return res.data.id;
-};
-
-const ensureFolderPath = async (drive, parts = []) => {
-  let parentId = null;
-  for (const name of parts) {
-    let id = await findChildFolderId(drive, parentId, name);
-    if (!id) id = await createFolder(drive, parentId, name);
-    parentId = id;
-  }
-  return parentId;
 };
 
 const drivePreviewUrl = (fileId) => `https://drive.google.com/uc?export=view&id=${fileId}`;
@@ -520,8 +477,8 @@ export const processBulkIhsExcelRows = async ({ rows = [], createdBy = null }) =
     if (bulkDriveContext) return bulkDriveContext;
 
     bulkDriveContext = await runWithDriveRetry(async (drive) => {
-      const folderId = await ensureFolderPath(drive, BULK_IHS_DRIVE_FOLDER_PATH);
-      return { drive, folderId };
+      const folderContext = await ensureEnvironmentDriveFolderPath(drive, BULK_IHS_DRIVE_FOLDER_PATH);
+      return { drive, folderId: folderContext.folderId };
     });
 
     return bulkDriveContext;

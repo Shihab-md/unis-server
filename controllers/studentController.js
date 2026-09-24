@@ -1,6 +1,7 @@
 import multer from "multer";
 import jwt from "jsonwebtoken";
 import { put } from "@vercel/blob";
+import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import mongoose from "mongoose";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
@@ -674,7 +675,7 @@ const addStudent = async (req, res) => {
       const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
         access: 'public',
         contentType: req.file.mimetype || 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: getBlobReadWriteToken(),
         allowOverwrite: true,
       });
 
@@ -2667,7 +2668,7 @@ const updateStudent = async (req, res) => {
         const blob = await put(`profiles/${profileOwnerId}.png`, req.file.buffer, {
           access: "public",
           contentType: req.file.mimetype || "image/png",
-          token: process.env.BLOB_READ_WRITE_TOKEN,
+          token: getBlobReadWriteToken(),
           allowOverwrite: true,
         });
         profileUrl = blob?.downloadUrl || null;

@@ -1,9 +1,20 @@
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import multer from "multer";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import { encryptText } from "../utils/cryptoHelper.js";
 import { google } from "googleapis";
 import { ensureUNISPaymentProofsFolder, uploadProofToDrive } from "../services/googleDriveService.js";
+
+
+const buildGoogleOauthFingerprint = () => {
+  const raw = [
+    process.env.GOOGLE_CLIENT_ID || "",
+    process.env.GOOGLE_CLIENT_SECRET || "",
+    process.env.GOOGLE_REDIRECT_URI || "",
+  ].join("|");
+  return crypto.createHash("sha256").update(raw).digest("hex");
+};
 
 const requireRole = (role, allowed) => {
   if (!allowed.includes(role)) {
@@ -87,6 +98,11 @@ export const callback = async (req, res) => {
         folderId,
         connectedBy: decoded.uid,
         connectedAt: new Date(),
+        status: "ACTIVE",
+        lastError: "",
+        lastValidatedAt: new Date(),
+        oauthFingerprint: buildGoogleOauthFingerprint(),
+        updatedAt: new Date(),
       },
       { upsert: true, new: true }
     );

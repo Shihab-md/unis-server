@@ -8,6 +8,7 @@ import InspectionReport from "../models/InspectionReport.js";
 import School from "../models/School.js";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import { decryptText } from "../utils/cryptoHelper.js";
+import { ensureEnvironmentDriveFolderPath } from "../services/driveFolderService.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const { v1: speechV1 } = speechPkg;
@@ -210,47 +211,8 @@ const buildDriveClient = async () => {
   });
 };
 
-const findFolderByName = async (drive, name, parentId = null) => {
-  const safeName = String(name).replace(/'/g, "\\'");
-  const parentClause = parentId ? `'${parentId}' in parents and ` : "";
-
-  const response = await drive.files.list({
-    q: `${parentClause}mimeType='application/vnd.google-apps.folder' and trashed=false and name='${safeName}'`,
-    fields: "files(id, name)",
-    pageSize: 10,
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  });
-
-  return response.data.files?.[0] || null;
-};
-
-const createFolder = async (drive, name, parentId = null) => {
-  const response = await drive.files.create({
-    requestBody: {
-      name,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: "id, name",
-    supportsAllDrives: true,
-  });
-
-  return response.data;
-};
-
-const ensureFolder = async (drive, name, parentId = null) => {
-  const existing = await findFolderByName(drive, name, parentId);
-  if (existing) return existing.id;
-
-  const created = await createFolder(drive, name, parentId);
-  return created.id;
-};
-
 const ensureInspectionReportsFolder = async (drive) => {
-  const unisFolderId = await ensureFolder(drive, "UNIS");
-  const reportsFolderId = await ensureFolder(drive, "InspectionReports", unisFolderId);
-  return reportsFolderId;
+  return (await ensureEnvironmentDriveFolderPath(drive, ["InspectionReports"])).folderId;
 };
 
 const buildTimestampedFileName = (originalName = "") => {

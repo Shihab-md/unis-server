@@ -1,5 +1,6 @@
 import multer from "multer";
 import { put } from "@vercel/blob";
+import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
@@ -129,7 +130,7 @@ const addSupervisor = async (req, res) => {
       const blob = await put("profiles/" + savedUser._id + ".png", fileBuffer, {
         access: 'public',
         contentType: req.file?.mimetype || 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: getBlobReadWriteToken(),
         allowOverwrite: true,
       });
 
@@ -899,7 +900,7 @@ const updateSupervisor = async (req, res) => {
       const blob = await put("profiles/" + user._id + ".png", fileBuffer, {
         access: 'public',
         contentType: req.file?.mimetype || 'image/png',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: getBlobReadWriteToken(),
         allowOverwrite: true,
       });
 
