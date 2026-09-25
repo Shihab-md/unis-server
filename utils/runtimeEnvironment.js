@@ -1,6 +1,6 @@
 const trim = (value) => String(value ?? "").trim();
 
-export const SERVER_VERSION = "9_20_9";
+export const SERVER_VERSION = "9_20_10";
 
 const hasStagingRuntimeSignal = () => {
   const values = [
@@ -72,7 +72,15 @@ export const getBlobReadWriteToken = () => {
   return token;
 };
 
-export const getGoogleDriveRootFolderId = () => trim(process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID);
+export const getGoogleDriveRootFolderId = () => {
+  // Staging deliberately ignores any configured root id. With the restricted
+  // drive.file scope, a manually-created/pre-existing folder id may be invisible
+  // to the OAuth app even when the signed-in account owns it. More importantly,
+  // ignoring a stale value prevents staging from ever being pinned to a production
+  // or manually-created Drive folder. Staging resolves/creates UNIS-STAGING by name.
+  if (isStagingEnvironment()) return "";
+  return trim(process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID);
+};
 
 export const getGoogleDriveRootFolderName = () => {
   const configured = trim(process.env.GOOGLE_DRIVE_ROOT_FOLDER_NAME);
