@@ -90,10 +90,10 @@ export const resolveEnvironmentDriveRoot = async (drive) => {
     return { id: metadata.id, name: metadata.name };
   }
 
-  if (isStagingEnvironment()) {
-    throw new Error("STAGING SAFETY BLOCK: GOOGLE_DRIVE_ROOT_FOLDER_ID is required.");
-  }
-
+  // With the restricted drive.file OAuth scope, a manually-created folder may not
+  // be visible to the app even when the signed-in Google account owns it. When no
+  // explicit root id is configured, resolve/create an app-visible environment root.
+  // Staging remains isolated by getGoogleDriveRootFolderName() -> UNIS-STAGING.
   let rootId = await findChildFolderId(drive, null, expectedRootName);
   if (!rootId) rootId = await createFolder(drive, null, expectedRootName);
   return { id: rootId, name: expectedRootName };

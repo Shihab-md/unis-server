@@ -1,6 +1,6 @@
 const trim = (value) => String(value ?? "").trim();
 
-export const SERVER_VERSION = "9_20_8";
+export const SERVER_VERSION = "9_20_9";
 
 const hasStagingRuntimeSignal = () => {
   const values = [
@@ -169,8 +169,10 @@ export const validateRuntimeEnvironment = () => {
 
     requireValue("GOOGLE_CLIENT_ID");
     requireValue("GOOGLE_CLIENT_SECRET");
-    requireValue("GOOGLE_DRIVE_ROOT_FOLDER_ID");
 
+    // GOOGLE_DRIVE_ROOT_FOLDER_ID is intentionally optional in staging.
+    // With drive.file scope, the app can safely create/find its own UNIS-STAGING
+    // root when a pre-created folder is not visible to the OAuth application.
     const expectedRootName = getGoogleDriveRootFolderName();
     if (expectedRootName !== "UNIS-STAGING") {
       throw new Error(
