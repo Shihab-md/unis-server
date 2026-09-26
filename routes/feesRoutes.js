@@ -13,12 +13,22 @@ import {
   requireAccountSchoolQueryAccess,
 } from "../middleware/authorizationMiddleware.js";
 import { notifyOnSuccess } from "../middleware/notificationMiddleware.js";
+import { requirePermission } from "../middleware/permissionMiddleware.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
 
 const router = express.Router();
-router.get("/invoices/:schoolId/:acYear", authMiddleware, requireAccountsRole, requireAccountSchoolParamAccess("schoolId"), listDueInvoicesForSchool);
+router.get(
+  "/invoices/:schoolId/:acYear",
+  authMiddleware,
+  requirePermission(PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW, "You do not have permission to view invoice payments."),
+  requireAccountsRole,
+  requireAccountSchoolParamAccess("schoolId"),
+  listDueInvoicesForSchool
+);
 router.post(
   "/payment-batches",
   authMiddleware,
+  requirePermission(PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT, "You do not have permission to submit payment batches."),
   requireAccountsRole,
   requireAccountSchoolBodyAccess("schoolId"),
   notifyOnSuccess({
@@ -32,6 +42,20 @@ router.post(
   }),
   createPaymentBatch
 );
-router.get("/dashboard/school", authMiddleware, requireAccountsRole, requireAccountSchoolQueryAccess("schoolId"), schoolFeesDashboard);
-router.get("/batches/sent/:schoolId/:acYear/:status?", authMiddleware, requireAccountsRole, requireAccountSchoolParamAccess("schoolId", { allowAllForHQ: true }), listBatchesSentToHQForSchool);
+router.get(
+  "/dashboard/school",
+  authMiddleware,
+  requirePermission(PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW, "You do not have permission to view invoice payments."),
+  requireAccountsRole,
+  requireAccountSchoolQueryAccess("schoolId"),
+  schoolFeesDashboard
+);
+router.get(
+  "/batches/sent/:schoolId/:acYear/:status?",
+  authMiddleware,
+  requirePermission(PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW, "You do not have permission to view payment-batch history."),
+  requireAccountsRole,
+  requireAccountSchoolParamAccess("schoolId", { allowAllForHQ: true }),
+  listBatchesSentToHQForSchool
+);
 export default router;

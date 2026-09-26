@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 4;
+export const PERMISSION_CATALOG_VERSION = 5;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -57,6 +57,28 @@ export const PERMISSIONS = Object.freeze({
 
   INSPECTION_VIEW: "inspection.view",
   INSPECTION_CREATE: "inspection.create",
+
+  ACCOUNTS_VIEW: "accounts.view",
+  ACCOUNTS_SCHOOL_INVOICES_VIEW: "accounts.school_invoices.view",
+  ACCOUNTS_PAYMENT_BATCH_SUBMIT: "accounts.payment_batch.submit",
+  ACCOUNTS_BATCH_HISTORY_VIEW: "accounts.payment_batch.history.view",
+  ACCOUNTS_HQ_REVIEW_VIEW: "accounts.hq_review.view",
+  ACCOUNTS_HQ_APPROVE: "accounts.hq_review.approve",
+  ACCOUNTS_HQ_REJECT: "accounts.hq_review.reject",
+  ACCOUNTS_HQ_PENDING_INVOICES_VIEW: "accounts.hq_pending_invoices.view",
+  ACCOUNTS_HQ_MIGRATION_RUN: "accounts.hq_migration.run",
+
+  REPORTS_VIEW: "reports.view",
+  REPORTS_EXPORT: "reports.export",
+
+  NOTIFICATIONS_VIEW: "notifications.view",
+  NOTIFICATIONS_SEND: "notifications.send",
+  NOTIFICATIONS_SENT_HISTORY_VIEW: "notifications.sent_history.view",
+
+  HELP_DESK_VIEW: "helpdesk.view",
+  HELP_DESK_CREATE: "helpdesk.create",
+  HELP_DESK_REPLY: "helpdesk.reply",
+  HELP_DESK_STATUS_MANAGE: "helpdesk.status.manage",
 
   MARKSHEET_VIEW: "marksheet.view",
   MARKSHEET_ENTER: "marksheet.enter",
@@ -142,6 +164,30 @@ const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
 
 const INSPECTION_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor"]);
 const INSPECTION_CREATE_SCOPE_ROLES = Object.freeze(["supervisor"]);
+
+// Phase 2.4 preserves the current Accounts, Reports, Notifications and Help Desk
+// scope boundaries. These arrays define which existing role scopes can safely
+// enforce a permission; MongoDB remains the source of truth for assignments.
+const ACCOUNTS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const ACCOUNTS_HQ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+const REPORTS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor", "admin", "guest"]);
+const ALL_CURRENT_ROLES = Object.freeze([
+  "superadmin",
+  "hquser",
+  "supervisor",
+  "admin",
+  "employee",
+  "teacher",
+  "usthadh",
+  "student",
+  "parent",
+  "warden",
+  "staff",
+  "guest",
+]);
+const NOTIFICATION_BROADCAST_SCOPE_ROLES = Object.freeze(["superadmin"]);
+const HELP_DESK_SELF_SCOPE_ROLES = ALL_CURRENT_ROLES;
+const HELP_DESK_STATUS_SCOPE_ROLES = Object.freeze(["superadmin"]);
 
 const MARKSHEET_SCOPE_ROLES = Object.freeze([
   "superadmin",
@@ -564,6 +610,172 @@ export const PERMISSION_CATALOG = Object.freeze([
   },
 
   {
+    key: PERMISSIONS.ACCOUNTS_VIEW,
+    category: "Accounts",
+    label: "Open Accounts",
+    description: "Open the Accounts module within the existing HQ or own-Niswan Accounts scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    category: "Accounts",
+    label: "View Invoice Payments",
+    description: "View due invoices and school-fee dashboard data within the existing Accounts Niswan scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    category: "Accounts",
+    label: "Submit Payment Batches",
+    description: "Upload payment proof and submit invoice payment batches using the existing Accounts scope and validation rules.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    category: "Accounts",
+    label: "View Sent / Received Batches",
+    description: "View payment-batch history within the existing HQ-global or own-Niswan scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW,
+    category: "Accounts",
+    label: "View Batches for Approval",
+    description: "View pending payment batches and batch details within the existing HQ Accounts scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_APPROVE,
+    category: "Accounts",
+    label: "Approve Payment Batches",
+    description: "Approve pending payment batches using the existing HQ Accounts validation and audit workflow.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_REJECT,
+    category: "Accounts",
+    label: "Reject Payment Batches",
+    description: "Reject pending payment batches with the existing required-reason and audit workflow.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_PENDING_INVOICES_VIEW,
+    category: "Accounts",
+    label: "View Pending HQ Invoices",
+    description: "View invoices not yet sent to HQ within the existing HQ Accounts scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_MIGRATION_RUN,
+    category: "Accounts",
+    label: "Run Invoice Batch Migration",
+    description: "Run the existing HQ migration that creates payment batches from eligible invoices.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.REPORTS_VIEW,
+    category: "Reports",
+    label: "View Reports",
+    description: "View dashboard, Niswan, Student, Employee and Muavin reports within the existing report scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: REPORTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.REPORTS_EXPORT,
+    category: "Reports",
+    label: "Export Reports",
+    description: "Export permitted reports as CSV/XLSX using the same existing report data scope.",
+    requires: [PERMISSIONS.REPORTS_VIEW],
+    editable: true,
+    allowedRoles: REPORTS_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.NOTIFICATIONS_VIEW,
+    category: "Notifications",
+    label: "View Notifications",
+    description: "View and mark the signed-in user's own notification feed and maintain that user's push subscription.",
+    requires: [],
+    editable: true,
+    allowedRoles: ALL_CURRENT_ROLES,
+  },
+  {
+    key: PERMISSIONS.NOTIFICATIONS_SENT_HISTORY_VIEW,
+    category: "Notifications",
+    label: "View Sent Notification History",
+    description: "View broadcast-notification delivery history. Current server scope is SuperAdmin only.",
+    requires: [PERMISSIONS.NOTIFICATIONS_VIEW],
+    editable: true,
+    allowedRoles: NOTIFICATION_BROADCAST_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.NOTIFICATIONS_SEND,
+    category: "Notifications",
+    label: "Send Notifications",
+    description: "Send broadcast notifications using the current SuperAdmin-only targeting workflow.",
+    requires: [PERMISSIONS.NOTIFICATIONS_VIEW, PERMISSIONS.NOTIFICATIONS_SENT_HISTORY_VIEW],
+    editable: true,
+    allowedRoles: NOTIFICATION_BROADCAST_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.HELP_DESK_VIEW,
+    category: "Help Desk",
+    label: "View Help Desk",
+    description: "View Help Desk queries within the current role scope: own queries for normal users and received queries for SuperAdmin.",
+    requires: [],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_CREATE,
+    category: "Help Desk",
+    label: "Create Help Desk Queries",
+    description: "Create a new Help Desk query. SuperAdmin keeps the existing reply-only behavior.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_REPLY,
+    category: "Help Desk",
+    label: "Reply to Help Desk Queries",
+    description: "Reply within the existing Help Desk scope: own queries for normal users and received queries for SuperAdmin.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_STATUS_MANAGE,
+    category: "Help Desk",
+    label: "Manage Help Desk Status",
+    description: "Change Help Desk query status using the current SuperAdmin-only workflow.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_STATUS_SCOPE_ROLES,
+  },
+
+  {
     key: PERMISSIONS.MARKSHEET_VIEW,
     category: "Exams / Results",
     label: "View Marksheets",
@@ -817,14 +1029,105 @@ const PHASE_2_3_PERMISSIONS_BY_ROLE = Object.freeze({
   ],
 });
 
+const PHASE_2_4_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_APPROVE,
+    PERMISSIONS.ACCOUNTS_HQ_REJECT,
+    PERMISSIONS.ACCOUNTS_HQ_PENDING_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_MIGRATION_RUN,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  supervisor: [
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  admin: [
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  employee: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  teacher: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  usthadh: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  warden: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  staff: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  student: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  parent: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  guest: [
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+});
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser],
+  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser],
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_3_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_4_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -833,19 +1136,20 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_3_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_4_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest],
 });
 
 // Versioned permission-catalog migrations are used only when a release introduces
@@ -868,6 +1172,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 4,
     label: "Phase 2.3 Exams Questions, Certificates and Inspections permissions",
     permissionsByRole: PHASE_2_3_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 5,
+    label: "Phase 2.4 Accounts, Reports, Notifications and Help Desk permissions",
+    permissionsByRole: PHASE_2_4_PERMISSIONS_BY_ROLE,
   },
 ]);
 
