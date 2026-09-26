@@ -49,7 +49,7 @@ const frontendRedirect = (qs) => {
 
 export const getAuthUrl = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
+    requireRole(req.user?.role, ["superadmin"]);
 
     const state = jwt.sign(
       { uid: req.user?._id, role: req.user?.role },
@@ -78,7 +78,9 @@ export const callback = async (req, res) => {
     if (!state) return res.redirect(frontendRedirect("?status=fail&reason=missing_state"));
 
     const decoded = jwt.verify(state, process.env.JWT_SECRET);
-    if (!decoded?.uid) return res.redirect(frontendRedirect("?status=fail&reason=invalid_state"));
+    if (!decoded?.uid || String(decoded?.role || "").toLowerCase() !== "superadmin") {
+      return res.redirect(frontendRedirect("?status=fail&reason=invalid_state"));
+    }
 
     const oAuth2Client = buildRawOAuthClient();
     const { tokens } = await oAuth2Client.getToken(code);
@@ -116,7 +118,7 @@ export const callback = async (req, res) => {
 
 export const status = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
+    requireRole(req.user?.role, ["superadmin"]);
 
     const cred = await IntegrationCredential.findOne({ key: "google_drive" }).lean();
     return res.status(200).json({
@@ -132,7 +134,7 @@ export const status = async (req, res) => {
 
 export const disconnect = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
+    requireRole(req.user?.role, ["superadmin"]);
     await IntegrationCredential.deleteOne({ key: "google_drive" });
     return res.status(200).json({ success: true });
   } catch (e) {
