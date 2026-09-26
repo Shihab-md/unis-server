@@ -54,6 +54,7 @@ const notifyOnlyOnMobileFinalChunk = (notifier) => (req, res, next) =>
 router.post('/importEmp', authMiddleware,
     auditMutation({ action: 'EMPLOYEE_IMPORT', resourceType: 'EmployeeImport' }),
     notifyOnlyOnMobileFinalChunk(notifyEmployeeImportComplete),
+    requirePermission(PERMISSIONS.EMPLOYEE_IMPORT, 'You do not have permission to import Employees.'),
     requireEmployeeImport, importEmployeesData)
 
 router.get('/:id', authMiddleware,

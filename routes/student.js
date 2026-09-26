@@ -83,8 +83,8 @@ router.get('/promote/candidates/:schoolId/:targetAcYear/:courseId', authMiddlewa
   requirePermission(PERMISSIONS.STUDENT_PROMOTE, 'You do not have permission to promote Students.'),
   requireSchoolParamAccess('schoolId'), listPromoteCandidates)
 
-// Import/remove/fees utilities stay on their current HQ-only behavior until the
-// Bulk Operations / Accounts permission subphases.
+// Phase 2.5.2 puts Student import/cleanup behind database-managed permissions while
+// preserving the existing HQ-only business boundary. The finance utility remains unchanged.
 const notifyStudentImportComplete = notifyOnSuccess({
   type: 'student.import', title: 'Student import completed', message: 'A Student Excel import batch completed successfully.',
   resourceType: 'StudentImport', webPath: () => '/dashboard/students', mobilePath: () => '/(app)/bulk/student-import',
@@ -95,6 +95,7 @@ const notifyOnlyOnMobileFinalChunk = (notifier) => (req, res, next) =>
 router.post('/import', authMiddleware,
   auditMutation({ action: 'STUDENT_IMPORT', resourceType: 'StudentImport' }),
   notifyOnlyOnMobileFinalChunk(notifyStudentImportComplete),
+  requirePermission(PERMISSIONS.STUDENT_IMPORT, 'You do not have permission to import Students.'),
   requireStudentManageRole, requireHQ, importStudentsData)
 router.post('/markFeesPaid', authMiddleware, requireStudentManageRole, requireHQ, markFeesPaid)
 router.post('/removeStudents', authMiddleware,
@@ -103,6 +104,7 @@ router.post('/removeStudents', authMiddleware,
     type: 'student.cleanup', title: 'Student cleanup completed', message: 'A bulk Student cleanup operation completed successfully.',
     resourceType: 'StudentCleanup', webPath: () => '/dashboard/students', mobilePath: () => '/(app)/bulk/student-cleanup',
   }),
+  requirePermission(PERMISSIONS.STUDENT_CLEANUP, 'You do not have permission to remove Students in bulk.'),
   requireStudentManageRole, requireHQ, removeStudents)
 
 router.post('/promote/bulk', authMiddleware,

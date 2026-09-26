@@ -55,7 +55,17 @@ const migrateRolePermissionRecord = async (record) => {
   let currentVersion = Number(current.catalogVersion || 1);
 
   for (const migration of getRolePermissionMigrationsAfter(currentVersion)) {
-    const additions = sanitizePermissionsForRole(role, migration.permissionsByRole?.[role] || []);
+    // Validate new keys against the role's CURRENT saved permissions as well as
+    // the migration additions. This matters when a newly introduced permission
+    // depends on a capability from an older catalog version. Only the new keys
+    // are added; previously removed permissions are never restored by migration.
+    const requestedAdditions = sanitizePermissions(migration.permissionsByRole?.[role] || []).filter(
+      (key) => isPermissionAllowedForRole(key, role)
+    );
+    const validCombined = new Set(
+      sanitizePermissionsForRole(role, [...(current.permissions || []), ...requestedAdditions])
+    );
+    const additions = requestedAdditions.filter((key) => validCombined.has(key));
 
     const update = {
       $set: {
