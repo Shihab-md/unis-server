@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 3;
+export const PERMISSION_CATALOG_VERSION = 4;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -42,6 +42,21 @@ export const PERMISSIONS = Object.freeze({
 
   STUDENT_ATTENDANCE_REPORT_VIEW: "attendance.student.report.view",
   STAFF_ATTENDANCE_REPORT_VIEW: "attendance.staff.report.view",
+
+  EXAM_QUESTION_VIEW: "exam.question.view",
+  EXAM_QUESTION_CREATE: "exam.question.create",
+  EXAM_QUESTION_EDIT: "exam.question.edit",
+  EXAM_QUESTION_DELETE: "exam.question.delete",
+  EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW: "exam.question.download_tracking.view",
+
+  CERTIFICATE_VIEW: "certificate.view",
+  CERTIFICATE_GENERATE: "certificate.generate",
+  CERTIFICATE_REPRINT: "certificate.reprint",
+  CERTIFICATE_DUPLICATE_PRINT: "certificate.duplicate_print",
+  CERTIFICATE_BULK_IHS: "certificate.bulk_ihs",
+
+  INSPECTION_VIEW: "inspection.view",
+  INSPECTION_CREATE: "inspection.create",
 
   MARKSHEET_VIEW: "marksheet.view",
   MARKSHEET_ENTER: "marksheet.enter",
@@ -118,6 +133,15 @@ const STAFF_SELF_SCOPE_ROLES = Object.freeze([
   "staff",
 ]);
 const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+
+const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const EXAM_QUESTION_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+
+const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
+const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+
+const INSPECTION_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor"]);
+const INSPECTION_CREATE_SCOPE_ROLES = Object.freeze(["supervisor"]);
 
 const MARKSHEET_SCOPE_ROLES = Object.freeze([
   "superadmin",
@@ -429,6 +453,117 @@ export const PERMISSION_CATALOG = Object.freeze([
   },
 
   {
+    key: PERMISSIONS.EXAM_QUESTION_VIEW,
+    category: "Exams / Questions",
+    label: "View Question Papers",
+    description: "View Exam Question Papers using the existing HQ-global or Niswan-targeted Question Paper scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_CREATE,
+    category: "Exams / Questions",
+    label: "Create Question Papers",
+    description: "Create and upload new Question Paper PDFs using the existing HQ Question Paper management scope.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_EDIT,
+    category: "Exams / Questions",
+    label: "Edit Question Papers",
+    description: "Edit Question Papers using the existing download-lock and publication-status business rules.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_DELETE,
+    category: "Exams / Questions",
+    label: "Delete Question Papers",
+    description: "Delete only Question Papers allowed by the existing Draft/download-lock rules.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW,
+    category: "Exams / Questions",
+    label: "View Question Download Tracking",
+    description: "View per-Niswan Question Paper download tracking within the existing HQ manager scope.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.CERTIFICATE_VIEW,
+    category: "Certificates",
+    label: "View Certificates",
+    description: "View Certificate list and Certificate details using the current Certificate read scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: CERTIFICATE_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_GENERATE,
+    category: "Certificates",
+    label: "Generate Certificates",
+    description: "Generate a new Certificate after the existing course-completion and Certificate-fee checks pass.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_REPRINT,
+    category: "Certificates",
+    label: "Reprint Certificates",
+    description: "Use the existing Certificate reprint workflow.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_DUPLICATE_PRINT,
+    category: "Certificates",
+    label: "Duplicate Print Certificates",
+    description: "Generate an existing Certificate's duplicate-print PDF using the current HQ Certificate scope.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_BULK_IHS,
+    category: "Certificates",
+    label: "Bulk IHS Certificates",
+    description: "Create legacy IHS Certificates in bulk using the existing HQ-only bulk workflow.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.INSPECTION_VIEW,
+    category: "Inspections",
+    label: "View Inspection Reports",
+    description: "View Inspection Reports using the existing HQ-global or Supervisor-own-report scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: INSPECTION_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.INSPECTION_CREATE,
+    category: "Inspections",
+    label: "Submit Inspection Reports",
+    description: "Submit an Inspection Report. Existing active-Muavin and assigned-Niswan checks remain mandatory.",
+    requires: [PERMISSIONS.INSPECTION_VIEW],
+    editable: true,
+    allowedRoles: INSPECTION_CREATE_SCOPE_ROLES,
+  },
+
+  {
     key: PERMISSIONS.MARKSHEET_VIEW,
     category: "Exams / Results",
     label: "View Marksheets",
@@ -649,13 +784,47 @@ const PHASE_2_2_PERMISSIONS_BY_ROLE = Object.freeze({
   guest: [],
 });
 
+const PHASE_2_3_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.EXAM_QUESTION_VIEW,
+    PERMISSIONS.EXAM_QUESTION_CREATE,
+    PERMISSIONS.EXAM_QUESTION_EDIT,
+    PERMISSIONS.EXAM_QUESTION_DELETE,
+    PERMISSIONS.EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW,
+    PERMISSIONS.CERTIFICATE_VIEW,
+    PERMISSIONS.CERTIFICATE_GENERATE,
+    PERMISSIONS.CERTIFICATE_REPRINT,
+    PERMISSIONS.CERTIFICATE_DUPLICATE_PRINT,
+    PERMISSIONS.CERTIFICATE_BULK_IHS,
+    PERMISSIONS.INSPECTION_VIEW,
+  ],
+  supervisor: [
+    PERMISSIONS.INSPECTION_VIEW,
+    PERMISSIONS.INSPECTION_CREATE,
+  ],
+  admin: [
+    PERMISSIONS.EXAM_QUESTION_VIEW,
+  ],
+  employee: [],
+  teacher: [],
+  usthadh: [],
+  warden: [],
+  staff: [],
+  student: [],
+  parent: [],
+  guest: [
+    PERMISSIONS.CERTIFICATE_VIEW,
+  ],
+});
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser],
+  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser],
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_3_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -663,19 +832,20 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
   admin: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_3_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest],
 });
 
 // Versioned permission-catalog migrations are used only when a release introduces
@@ -693,6 +863,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 3,
     label: "Phase 2.2 Attendance and Leave permissions",
     permissionsByRole: PHASE_2_2_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 4,
+    label: "Phase 2.3 Exams Questions, Certificates and Inspections permissions",
+    permissionsByRole: PHASE_2_3_PERMISSIONS_BY_ROLE,
   },
 ]);
 

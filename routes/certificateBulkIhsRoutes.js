@@ -4,6 +4,8 @@ import { createBulkIhsCertificates } from "../controllers/certificateBulkIhsCont
 import { requireHQ } from "../middleware/authorizationMiddleware.js";
 import { auditMutation } from "../middleware/auditMiddleware.js";
 import { notifyOnSuccess } from "../middleware/notificationMiddleware.js";
+import { requirePermission } from "../middleware/permissionMiddleware.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
 
 const router = express.Router();
 
@@ -15,6 +17,7 @@ const notifyOnlyOnMobileFinalChunk = (notifier) => (req, res, next) =>
   String(req.headers["x-unis-final-chunk"] || "").toLowerCase() === "true" ? notifier(req, res, next) : next();
 
 router.post("/create", authMiddleware,
+  requirePermission(PERMISSIONS.CERTIFICATE_BULK_IHS, "You do not have permission to create bulk IHS Certificates."),
   auditMutation({ action: "CERTIFICATE_BULK_IHS", resourceType: "BulkIhsCertificate" }),
   notifyOnlyOnMobileFinalChunk(notifyBulkIhsComplete),
   requireHQ, createBulkIhsCertificates);

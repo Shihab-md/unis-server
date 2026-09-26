@@ -200,6 +200,7 @@ const getSummary = async (req, res) => {
     if (!permissionSet.has(PERMISSIONS.SUPERVISOR_LIST)) visibleSummary.totalSupervisors = "0";
     if (!permissionSet.has(PERMISSIONS.NISWAN_VIEW)) visibleSummary.totalSchools = "0";
     if (!permissionSet.has(PERMISSIONS.STUDENT_VIEW)) visibleSummary.totalStudents = "0";
+    if (!permissionSet.has(PERMISSIONS.CERTIFICATE_VIEW)) visibleSummary.totalCertificates = "0";
 
     return res.status(200).json({
       success: true,
