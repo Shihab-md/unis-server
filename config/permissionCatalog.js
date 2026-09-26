@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 2;
+export const PERMISSION_CATALOG_VERSION = 3;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -24,6 +24,24 @@ export const PERMISSIONS = Object.freeze({
   STUDENT_EDIT: "student.edit",
   STUDENT_DELETE: "student.delete",
   STUDENT_PROMOTE: "student.promote",
+
+  STUDENT_ATTENDANCE_VIEW: "attendance.student.view",
+  STUDENT_ATTENDANCE_ENTER: "attendance.student.enter",
+  STUDENT_ATTENDANCE_FINALIZE: "attendance.student.finalize",
+
+  STAFF_ATTENDANCE_SELF_VIEW: "attendance.staff.self.view",
+  STAFF_ATTENDANCE_VIEW: "attendance.staff.view",
+  STAFF_ATTENDANCE_ENTER: "attendance.staff.enter",
+  STAFF_ATTENDANCE_FINALIZE: "attendance.staff.finalize",
+
+  STUDENT_LEAVE_VIEW: "leave.student.view",
+  STUDENT_LEAVE_MANAGE: "leave.student.manage",
+  STAFF_LEAVE_SELF_VIEW: "leave.staff.self.view",
+  STAFF_LEAVE_SELF_APPLY: "leave.staff.self.apply",
+  STAFF_LEAVE_APPROVE: "leave.staff.approve",
+
+  STUDENT_ATTENDANCE_REPORT_VIEW: "attendance.student.report.view",
+  STAFF_ATTENDANCE_REPORT_VIEW: "attendance.staff.report.view",
 
   MARKSHEET_VIEW: "marksheet.view",
   MARKSHEET_ENTER: "marksheet.enter",
@@ -78,6 +96,28 @@ const STUDENT_READ_SCOPE_ROLES = Object.freeze([
   "guest",
 ]);
 const STUDENT_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+
+// Phase 2.2 keeps the existing Attendance/Leave data-scope rules intact.
+// These arrays only define which existing role scopes are technically capable
+// of enforcing each permission; they are not role-permission assignments.
+const STUDENT_ATTENDANCE_SCOPE_ROLES = Object.freeze([
+  "superadmin",
+  "admin",
+  "teacher",
+  "usthadh",
+]);
+const STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const STAFF_SELF_SCOPE_ROLES = Object.freeze([
+  "hquser",
+  "supervisor",
+  "admin",
+  "employee",
+  "teacher",
+  "usthadh",
+  "warden",
+  "staff",
+]);
+const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
 
 const MARKSHEET_SCOPE_ROLES = Object.freeze([
   "superadmin",
@@ -259,6 +299,136 @@ export const PERMISSION_CATALOG = Object.freeze([
   },
 
   {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    category: "Student Attendance",
+    label: "View Student Attendance",
+    description: "View daily and monthly Student attendance within the existing Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    category: "Student Attendance",
+    label: "Enter Student Attendance",
+    description: "Create or edit non-finalized Student attendance within the existing Niswan Attendance scope.",
+    requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    category: "Student Attendance",
+    label: "Finalize Student Attendance",
+    description: "Finalize a Student attendance sheet. Finalized attendance remains locked by the existing business rules.",
+    requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_ENTER],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    category: "Staff Attendance",
+    label: "View Own Staff Attendance",
+    description: "View only the logged-in staff member's own monthly attendance when the login is linked to a staff record.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    category: "Staff Attendance",
+    label: "View Staff Attendance",
+    description: "View staff attendance rosters within the existing HQ or Niswan attendance-management scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    category: "Staff Attendance",
+    label: "Enter Staff Attendance",
+    description: "Create or edit non-finalized Staff attendance within the existing HQ or Niswan scope.",
+    requires: [PERMISSIONS.STAFF_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    category: "Staff Attendance",
+    label: "Finalize Staff Attendance",
+    description: "Finalize a Staff attendance sheet. Finalized attendance remains locked by the existing business rules.",
+    requires: [PERMISSIONS.STAFF_ATTENDANCE_VIEW, PERMISSIONS.STAFF_ATTENDANCE_ENTER],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_LEAVE_VIEW,
+    category: "Student Leave",
+    label: "View Student Leave",
+    description: "View Student leave records within the existing Student Attendance Niswan scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    category: "Student Leave",
+    label: "Manage Student Leave",
+    description: "Record and update Student leave using the existing approval/finalized-attendance rules.",
+    requires: [PERMISSIONS.STUDENT_LEAVE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    category: "Staff Leave",
+    label: "View Own Leave",
+    description: "View only the logged-in staff member's own leave history when linked to a staff record.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    category: "Staff Leave",
+    label: "Apply / Cancel Own Leave",
+    description: "Apply for own staff leave and cancel the user's own Pending or Approved leave using the existing leave rules.",
+    requires: [PERMISSIONS.STAFF_LEAVE_SELF_VIEW],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_APPROVE,
+    category: "Staff Leave",
+    label: "Approve / Reject Staff Leave",
+    description: "Review Staff leave within the existing HQ/Niswan approval scope. Self-approval and Admin escalation rules remain enforced.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_LEAVE_APPROVE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+    category: "Attendance Reports",
+    label: "View Student Attendance Reports",
+    description: "View monthly Student attendance reports within the existing Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+    category: "Attendance Reports",
+    label: "View Staff Attendance Reports",
+    description: "View monthly Staff attendance reports within the existing HQ or Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+
+  {
     key: PERMISSIONS.MARKSHEET_VIEW,
     category: "Exams / Results",
     label: "View Marksheets",
@@ -405,31 +575,107 @@ const PHASE_2_1_PERMISSIONS_BY_ROLE = Object.freeze({
   ],
 });
 
+const PHASE_2_2_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STAFF_LEAVE_APPROVE,
+    PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+  ],
+  supervisor: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  admin: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STAFF_LEAVE_APPROVE,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+  ],
+  employee: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  teacher: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+  ],
+  usthadh: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+  ],
+  warden: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  staff: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  student: [],
+  parent: [],
+  guest: [],
+});
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser],
+  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser],
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
   ],
   admin: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_2_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest],
 });
 
 // Versioned permission-catalog migrations are used only when a release introduces
@@ -442,6 +688,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 2,
     label: "Phase 2.1 core operational permissions",
     permissionsByRole: PHASE_2_1_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 3,
+    label: "Phase 2.2 Attendance and Leave permissions",
+    permissionsByRole: PHASE_2_2_PERMISSIONS_BY_ROLE,
   },
 ]);
 

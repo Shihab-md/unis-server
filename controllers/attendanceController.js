@@ -25,6 +25,8 @@ import {
   staffBelongsToScope,
 } from "../services/attendanceAccessService.js";
 import { validateNotFutureDateKey } from "../utils/dateRules.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { getRequestPermissions } from "../services/permissionService.js";
 
 const STUDENT_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const STAFF_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
@@ -41,6 +43,18 @@ const sendError = (res, error) => {
 };
 
 const cleanText = (value, max = 1000) => String(value ?? "").trim().slice(0, max);
+
+const hasRequestPermission = async (req, permission) => {
+  const permissions = await getRequestPermissions(req);
+  return permissions.includes(String(permission || ""));
+};
+
+const assertRequestPermission = async (req, permission, message) => {
+  if (await hasRequestPermission(req, permission)) return;
+  const error = new Error(message || "You do not have permission to perform this action.");
+  error.status = 403;
+  throw error;
+};
 
 const validDateKey = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 const validMonthKey = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
@@ -454,6 +468,11 @@ export const saveStudentAttendance = async (req, res) => {
 
     const finalize = Boolean(req.body?.finalize);
     if (finalize) {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+        "You do not have permission to finalize Student attendance."
+      );
       const rosterIds = roster.map((student) => String(student._id));
       const submittedSet = new Set(submittedIds);
       if (submittedIds.length !== rosterIds.length || rosterIds.some((id) => !submittedSet.has(id))) {
@@ -866,6 +885,11 @@ export const saveStaffAttendance = async (req, res) => {
     }
     const finalize = Boolean(req.body?.finalize);
     if (finalize) {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+        "You do not have permission to finalize Staff attendance."
+      );
       const rosterKeys = [...rosterMap.keys()];
       const submittedSet = new Set(submittedKeys);
       if (submittedKeys.length !== rosterKeys.length || rosterKeys.some((key) => !submittedSet.has(key))) {
@@ -1239,7 +1263,18 @@ export const updateStaffLeaveStatus = async (req, res) => {
     }
 
     if (nextStatus === "Cancelled") {
-      if (String(leave.userId) !== String(req.user?._id)) {
+      if (String(leave.userId) === String(req.user?._id)) {
+        await assertRequestPermission(
+          req,
+          PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+          "You do not have permission to cancel your own staff leave."
+        );
+      } else {
+        await assertRequestPermission(
+          req,
+          PERMISSIONS.STAFF_LEAVE_APPROVE,
+          "You do not have permission to cancel this staff leave."
+        );
         const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
         if (!allowed) {
           const error = new Error("You are not authorized to cancel this staff leave.");
@@ -1248,6 +1283,11 @@ export const updateStaffLeaveStatus = async (req, res) => {
         }
       }
     } else {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STAFF_LEAVE_APPROVE,
+        "You do not have permission to approve/reject Staff leave."
+      );
       const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
       if (!allowed) {
         const error = new Error("You are not authorized to approve/reject this staff leave.");
@@ -1582,6 +1622,7 @@ export const getAttendanceOverview = async (req, res) => {
   try {
     const dateKey = requireAttendanceDateKey(req.query.date);
     const access = await getAttendanceAccess(req.user);
+    const permissionSet = new Set(await getRequestPermissions(req));
     const result = {
       dateKey,
       student: null,
@@ -1592,7 +1633,10 @@ export const getAttendanceOverview = async (req, res) => {
     const schoolId = String(req.query.schoolId || "");
     const scopeType = normalizeScopeType(req.query.scopeType);
 
-    if (access.canManageAnyStudents || access.canManageOwnNiswanStudents) {
+    if (
+      permissionSet.has(PERMISSIONS.STUDENT_ATTENDANCE_VIEW) &&
+      (access.canManageAnyStudents || access.canManageOwnNiswanStudents)
+    ) {
       try {
         const studentScope = await resolveStudentScope({ user: req.user, schoolId, requireManage: true });
         const studentQuery = { schoolId: studentScope.schoolId, active: "Active" };
@@ -1621,7 +1665,10 @@ export const getAttendanceOverview = async (req, res) => {
       }
     }
 
-    if (access.canManageHqStaff || access.canManageOwnNiswanStaff || access.isSuperAdmin) {
+    if (
+      permissionSet.has(PERMISSIONS.STAFF_ATTENDANCE_VIEW) &&
+      (access.canManageHqStaff || access.canManageOwnNiswanStaff || access.isSuperAdmin)
+    ) {
       try {
         const staffScope = await resolveStaffScope({
           user: req.user,
@@ -1665,14 +1712,14 @@ export const getAttendanceOverview = async (req, res) => {
       }
     }
 
-    if (access.isSuperAdmin) {
+    if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.isSuperAdmin) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({ status: "Pending" });
-    } else if (access.canManageHqStaff) {
+    } else if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.canManageHqStaff) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({
         status: "Pending",
         organizationType: "HQ",
       });
-    } else if (access.canManageOwnNiswanStaff) {
+    } else if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.canManageOwnNiswanStaff) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({
         status: "Pending",
         organizationType: "NISWAN",
@@ -1693,6 +1740,11 @@ export const getMonthlyAttendanceReport = async (req, res) => {
     const { fromDateKey, toDateKey } = monthRange(monthKey);
 
     if (kind === "student") {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+        "You do not have permission to view Student attendance reports."
+      );
       const scope = await resolveStudentScope({
         user: req.user,
         schoolId: req.query.schoolId,
@@ -1744,6 +1796,11 @@ export const getMonthlyAttendanceReport = async (req, res) => {
       return res.json({ success: true, kind: "student", monthKey, school: scope.school, rows });
     }
 
+    await assertRequestPermission(
+      req,
+      PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+      "You do not have permission to view Staff attendance reports."
+    );
     const scope = await resolveStaffScope({
       user: req.user,
       scopeType: req.query.scopeType,
