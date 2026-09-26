@@ -9,6 +9,7 @@ import FeeInvoice from "../models/FeeInvoice.js";
 
 const normalizeRole = (role) => String(role || "").trim().toLowerCase();
 const HQ_ROLES = new Set(["superadmin", "hquser"]);
+const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
 const STUDENT_READ_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin", "guest"]);
 const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hquser", "admin"]);
 
@@ -132,6 +133,35 @@ export const requireHQ = (req, res, next) => {
     return deny(res, "This global operation is available only to HQ users.");
   }
   return next();
+};
+
+// Special HQ utilities may also be used by the existing HQ Admin account. HQ Admin
+// is still the normal `admin` role, distinguished by its active Employee record
+// being linked to the configured HQ Niswan. This does NOT turn normal Niswan Admin
+// into an HQ role and intentionally does not change access.isHQ elsewhere.
+export const requireHQOrHqAdmin = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (HQ_ROLES.has(role)) return next();
+    if (role !== "admin") {
+      return deny(res, "This HQ operation is available only to SuperAdmin, HQ User, or HQ Admin.");
+    }
+
+    const employee = await Employee.findOne({ userId: req.user?._id, active: "Active" })
+      .select("schoolId")
+      .populate({ path: "schoolId", select: "code active" })
+      .lean();
+
+    const schoolCode = String(employee?.schoolId?.code || "").trim();
+    if (schoolCode !== HQ_SCHOOL_CODE) {
+      return deny(res, "This HQ operation is not available to a normal Niswan Admin.");
+    }
+
+    return next();
+  } catch (error) {
+    console.log("[authorization] requireHQOrHqAdmin:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Authorization check failed." });
+  }
 };
 
 // Global read is intentionally available to HQ and the existing read-only Guest role.

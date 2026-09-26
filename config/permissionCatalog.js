@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 7;
+export const PERMISSION_CATALOG_VERSION = 8;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -57,6 +57,7 @@ export const PERMISSIONS = Object.freeze({
   CERTIFICATE_REPRINT: "certificate.reprint",
   CERTIFICATE_DUPLICATE_PRINT: "certificate.duplicate_print",
   CERTIFICATE_BULK_IHS: "certificate.bulk_ihs",
+  TEMP_SCHOOL_MARKSHEET_CREATE: "marksheet.temp_school.create",
 
   INSPECTION_VIEW: "inspection.view",
   INSPECTION_CREATE: "inspection.create",
@@ -196,6 +197,11 @@ const EXAM_QUESTION_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"])
 
 const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
 const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+// The legacy IHS utility is also available to the Admin role only when that
+// account is linked to the HQ Niswan. The route keeps that HQ-Admin scope
+// separate from the role-level permission assignment.
+const CERTIFICATE_BULK_IHS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
 
 const INSPECTION_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor"]);
 const INSPECTION_CREATE_SCOPE_ROLES = Object.freeze(["supervisor"]);
@@ -652,11 +658,11 @@ export const PERMISSION_CATALOG = Object.freeze([
   {
     key: PERMISSIONS.CERTIFICATE_BULK_IHS,
     category: "Certificates",
-    label: "Bulk IHS Certificates",
-    description: "Create legacy IHS Certificates in bulk using the existing HQ-only bulk workflow.",
-    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    label: "Create IHS Old Certificates",
+    description: "Create legacy IHS Certificates in bulk. For the Admin role this is effective only for the HQ Admin linked to the HQ Niswan; normal Niswan Admin remains blocked by server scope.",
+    requires: [],
     editable: true,
-    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+    allowedRoles: CERTIFICATE_BULK_IHS_SCOPE_ROLES,
   },
 
   {
@@ -1121,6 +1127,16 @@ export const PERMISSION_CATALOG = Object.freeze([
     allowedRoles: MARKSHEET_SCOPE_ROLES,
   },
   {
+    key: PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+    category: "Marks / Results",
+    label: "Create Temp School Marksheets",
+    description: "Generate temporary school marksheets from the existing Excel workflow. For the Admin role this is effective only for the HQ Admin linked to the HQ Niswan; normal Niswan Admin remains blocked by server scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES,
+  },
+
+  {
     key: PERMISSIONS.ROLE_PERMISSIONS_MANAGE,
     category: "System Security",
     label: "Manage Role Permissions",
@@ -1438,10 +1454,24 @@ const PHASE_2_5_2_PERMISSIONS_BY_ROLE = Object.freeze({
   supervisor: [], admin: [], employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
 });
 
+const PHASE_2_5_2A_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+  ],
+  supervisor: [],
+  // Admin is a shared role. These assignments preserve the requested HQ Admin
+  // access, while requireHQOrHqAdmin keeps normal Niswan Admin blocked.
+  admin: [
+    PERMISSIONS.CERTIFICATE_BULK_IHS,
+    PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+  ],
+  employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
+});
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.hquser],
+  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.hquser],
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
@@ -1449,6 +1479,7 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_4_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -1460,26 +1491,27 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_4_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.guest],
 });
 
-// Versioned permission-catalog migrations are used only when a release introduces
-// NEW permission keys. They preserve the behavior that already existed before the
-// permission key was introduced. A migration never resets or changes previously
-// configurable permissions. After it runs, MongoDB remains the only assignment
-// source and subsequent UI changes are never overwritten by deployments.
+// Versioned permission-catalog migrations preserve intended access when a release
+// introduces a new permission key or explicitly extends an existing permission to
+// a newly supported server scope. They never reset or change previously configurable
+// permissions. After a migration runs, MongoDB remains the only assignment source
+// and subsequent UI changes are never overwritten by deployments.
 export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
   {
     version: 2,
@@ -1510,6 +1542,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 7,
     label: "Phase 2.5.2 Bulk Operations permissions",
     permissionsByRole: PHASE_2_5_2_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 8,
+    label: "Phase 2.5.2A HQ Masters utility permissions",
+    permissionsByRole: PHASE_2_5_2A_PERMISSIONS_BY_ROLE,
   },
 ]);
 
