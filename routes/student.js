@@ -17,17 +17,21 @@ import {
   requireStudentReadAccess,
   requireStudentAccess,
 } from '../middleware/authorizationMiddleware.js'
+import { requirePermission } from '../middleware/permissionMiddleware.js'
+import { PERMISSIONS } from '../config/permissionCatalog.js'
 import { auditMutation } from '../middleware/auditMiddleware.js'
 import { notifyOnSuccess } from '../middleware/notificationMiddleware.js'
 
 const router = express.Router()
 
 // IMPORTANT: keep static/multi-segment routes before /:id routes.
-// Existing production compatibility:
-// - HQ: global Student read/write.
-// - Guest: global/Niswan Student read-only, matching current web screens.
-// - Admin: read/write only within the active Employee->schoolId Niswan scope.
-router.get('/', authMiddleware, requireStudentReadRole, requireGlobalStudentRead, getStudents)
+// Phase 2.1 moves core Student operations to DB-managed permissions while retaining
+// all existing global/assigned/own-Niswan access checks. Bulk import/cleanup and
+// finance utilities remain on their legacy guards until their later subphases.
+router.get('/', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireGlobalStudentRead, getStudents)
+
 router.post('/add', authMiddleware,
   auditMutation({ action: 'STUDENT_CREATE', resourceType: 'Student' }),
   notifyOnSuccess({
@@ -37,10 +41,17 @@ router.post('/add', authMiddleware,
     webPath: (_req, payload) => payload?.resourceId ? `/dashboard/students/${payload.resourceId}` : '/dashboard/students',
     mobilePath: (_req, payload) => payload?.resourceId ? `/(app)/students/${payload.resourceId}` : '/(app)/(tabs)/students',
   }),
-  requireStudentManageRole, upload.single('file'), requireBodySchoolAccess('schoolId'), addStudent)
+  requirePermission(PERMISSIONS.STUDENT_CREATE, 'You do not have permission to create Students.'),
+  upload.single('file'), requireBodySchoolAccess('schoolId'), addStudent)
 
-router.get('/edit/:id', authMiddleware, requireStudentManageRole, requireStudentAccess('id'), getStudentForEdit)
-router.get('/promote/:id', authMiddleware, requireStudentManageRole, requireStudentAccess('id'), getStudentForPromote)
+router.get('/edit/:id', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_EDIT, 'You do not have permission to edit Students.'),
+  requireStudentAccess('id'), getStudentForEdit)
+
+router.get('/promote/:id', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_PROMOTE, 'You do not have permission to promote Students.'),
+  requireStudentAccess('id'), getStudentForPromote)
+
 router.put('/promote/:id', authMiddleware,
   auditMutation({ action: 'STUDENT_PROMOTE_SINGLE', resourceType: 'Student' }),
   notifyOnSuccess({
@@ -49,16 +60,31 @@ router.put('/promote/:id', authMiddleware,
     webPath: (req) => `/dashboard/students/${req.params.id}`,
     mobilePath: (req) => `/(app)/students/${req.params.id}`,
   }),
-  requireStudentManageRole, upload.single('file'), requireStudentAccess('id'), requireBodySchoolAccess('schoolId'), promoteStudent)
+  requirePermission(PERMISSIONS.STUDENT_PROMOTE, 'You do not have permission to promote Students.'),
+  upload.single('file'), requireStudentAccess('id'), requireBodySchoolAccess('schoolId'), promoteStudent)
 
-router.get('/bySchoolId/:schoolId', authMiddleware, requireStudentReadRole, requireSchoolParamReadAccess('schoolId'), getStudentsBySchool)
-router.get('/bySchoolIdAndCourse/:schoolId/:templateId', authMiddleware, requireStudentReadRole, requireSchoolParamReadAccess('schoolId'), getStudentsBySchoolAndTemplate)
-router.get('/studCount', authMiddleware, requireStudentReadRole, requireGlobalStudentRead, getStudentsCount)
-router.get('/byFilter/:schoolId/:courseId/:status/:acYear/:maritalStatus/:hosteller/:year/:instituteId/:courseStatus', authMiddleware, requireStudentReadRole, requireSchoolParamReadAccess('schoolId'), getByFilter)
-router.get('/promote/candidates/:schoolId/:targetAcYear/:courseId', authMiddleware, requireStudentManageRole, requireSchoolParamAccess('schoolId'), listPromoteCandidates)
+router.get('/bySchoolId/:schoolId', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireSchoolParamReadAccess('schoolId'), getStudentsBySchool)
 
-// Import/remove/fees utilities remain HQ-only. Bulk promotion remains available to Admin
-// for its own Niswan, preserving the existing web workflow while preventing forged schoolId.
+router.get('/bySchoolIdAndCourse/:schoolId/:templateId', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireSchoolParamReadAccess('schoolId'), getStudentsBySchoolAndTemplate)
+
+router.get('/studCount', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireGlobalStudentRead, getStudentsCount)
+
+router.get('/byFilter/:schoolId/:courseId/:status/:acYear/:maritalStatus/:hosteller/:year/:instituteId/:courseStatus', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireSchoolParamReadAccess('schoolId'), getByFilter)
+
+router.get('/promote/candidates/:schoolId/:targetAcYear/:courseId', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_PROMOTE, 'You do not have permission to promote Students.'),
+  requireSchoolParamAccess('schoolId'), listPromoteCandidates)
+
+// Import/remove/fees utilities stay on their current HQ-only behavior until the
+// Bulk Operations / Accounts permission subphases.
 const notifyStudentImportComplete = notifyOnSuccess({
   type: 'student.import', title: 'Student import completed', message: 'A Student Excel import batch completed successfully.',
   resourceType: 'StudentImport', webPath: () => '/dashboard/students', mobilePath: () => '/(app)/bulk/student-import',
@@ -78,6 +104,7 @@ router.post('/removeStudents', authMiddleware,
     resourceType: 'StudentCleanup', webPath: () => '/dashboard/students', mobilePath: () => '/(app)/bulk/student-cleanup',
   }),
   requireStudentManageRole, requireHQ, removeStudents)
+
 router.post('/promote/bulk', authMiddleware,
   auditMutation({ action: 'STUDENT_PROMOTE_BULK', resourceType: 'Student' }),
   notifyOnSuccess({
@@ -86,10 +113,17 @@ router.post('/promote/bulk', authMiddleware,
     webPath: () => '/dashboard/students',
     mobilePath: () => '/(app)/students/promotion',
   }),
-  requireStudentManageRole, requireBodySchoolAccess('schoolId'), promoteStudentsBulkByCourse)
+  requirePermission(PERMISSIONS.STUDENT_PROMOTE, 'You do not have permission to promote Students.'),
+  requireBodySchoolAccess('schoolId'), promoteStudentsBulkByCourse)
 
-router.get('/:studentId/:acaYear', authMiddleware, requireStudentReadRole, requireStudentReadAccess('studentId'), getAcademic)
-router.get('/:id', authMiddleware, requireStudentReadRole, requireStudentReadAccess('id'), getStudent)
+router.get('/:studentId/:acaYear', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireStudentReadAccess('studentId'), getAcademic)
+
+router.get('/:id', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_VIEW, 'You do not have permission to view Students.'),
+  requireStudentReadAccess('id'), getStudent)
+
 router.put('/:id', authMiddleware,
   auditMutation({ action: 'STUDENT_UPDATE', resourceType: 'Student' }),
   notifyOnSuccess({
@@ -98,8 +132,12 @@ router.put('/:id', authMiddleware,
     webPath: (req) => `/dashboard/students/${req.params.id}`,
     mobilePath: (req) => `/(app)/students/${req.params.id}`,
   }),
-  requireStudentManageRole, upload.single('file'), requireStudentAccess('id'), requireBodySchoolAccess('schoolId'), updateStudent)
-// Preserve production Admin delete behavior, but enforce own-Niswan ownership on the server.
-router.delete('/:id', authMiddleware, auditMutation({ action: 'STUDENT_DELETE', resourceType: 'Student' }), requireStudentManageRole, requireStudentAccess('id'), deleteStudent)
+  requirePermission(PERMISSIONS.STUDENT_EDIT, 'You do not have permission to edit Students.'),
+  upload.single('file'), requireStudentAccess('id'), requireBodySchoolAccess('schoolId'), updateStudent)
+
+router.delete('/:id', authMiddleware,
+  auditMutation({ action: 'STUDENT_DELETE', resourceType: 'Student' }),
+  requirePermission(PERMISSIONS.STUDENT_DELETE, 'You do not have permission to delete Students.'),
+  requireStudentAccess('id'), deleteStudent)
 
 export default router

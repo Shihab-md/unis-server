@@ -281,8 +281,9 @@ const requireActiveEmployeeActor = (access, role, res) => {
 
 export const requireEmployeeReadRole = async (req, res, next) => {
   try {
+    // Phase 2.1: role -> permission assignment is enforced by requirePermission()
+    // in the route. This middleware now prepares/validates the actor scope only.
     const role = normalizeRole(req.user?.role);
-    if (!EMPLOYEE_READ_ROLES.has(role)) return deny(res, "Employee data is not available for this role.");
     const access = await getRequestAccess(req);
     if (!requireActiveEmployeeActor(access, role, res)) return;
     return next();
@@ -295,7 +296,6 @@ export const requireEmployeeReadRole = async (req, res, next) => {
 export const requireEmployeeCreateRole = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (!EMPLOYEE_CREATE_ROLES.has(role)) return deny(res, "Employee creation is not available for this role.");
     const access = await getRequestAccess(req);
     if (!requireActiveEmployeeActor(access, role, res)) return;
     return next();
@@ -308,7 +308,6 @@ export const requireEmployeeCreateRole = async (req, res, next) => {
 export const requireEmployeeUpdateRole = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (!EMPLOYEE_UPDATE_ROLES.has(role)) return deny(res, "Employee update is not available for this role.");
     const access = await getRequestAccess(req);
     if (!requireActiveEmployeeActor(access, role, res)) return;
     return next();
@@ -321,7 +320,6 @@ export const requireEmployeeUpdateRole = async (req, res, next) => {
 export const requireEmployeeDeleteRole = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (!EMPLOYEE_DELETE_ROLES.has(role)) return deny(res, "Employee delete is not available for this role.");
     const access = await getRequestAccess(req);
     if (!requireActiveEmployeeActor(access, role, res)) return;
     return next();
@@ -832,6 +830,22 @@ export const requireSuperAdmin = (req, res, next) => {
     return deny(res, 'This operation is available only to Super Admin.');
   }
   return next();
+};
+
+export const requireSchoolReadScope = async (req, res, next) => {
+  try {
+    // Permission membership is checked in the route. This middleware only resolves
+    // the existing Niswan scope and preserves inactive Admin/Muavin protection.
+    const role = normalizeRole(req.user?.role);
+    const access = await getRequestAccess(req);
+    if (["admin", "supervisor"].includes(role) && !access.isActive) {
+      return deny(res, "Your account is inactive or is not linked to an active UNIS scope record.");
+    }
+    return next();
+  } catch (error) {
+    console.log("[authorization] requireSchoolReadScope:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Authorization check failed." });
+  }
 };
 
 export const requireSchoolReadRole = async (req, res, next) => {

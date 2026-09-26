@@ -18,6 +18,11 @@ const rolePermissionSchema = new mongoose.Schema({
     default: 1,
     min: 1,
   },
+  catalogVersion: {
+    type: Number,
+    default: 1,
+    min: 1,
+  },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",

@@ -10,6 +10,8 @@ import AcademicYear from "../models/AcademicYear.js";
 import Template from "../models/Template.js";
 import DistrictState from "../models/DistrictState.js";
 import Grade from "../models/Grade.js";
+import { getRolePermissions } from "../services/permissionService.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
 
 const SCHOOL_LINKED_ROLES = new Set([
   "admin",
@@ -188,9 +190,20 @@ const getSummary = async (req, res) => {
       summary = buildEmptySummary();
     }
 
+    // Phase 2.1: keep the dashboard endpoint shared by all authenticated roles,
+    // but do not return core-module counts after that module's view permission
+    // has been removed. Scope is still calculated exactly as before above.
+    const permissionSet = new Set(await getRolePermissions(role));
+    const visibleSummary = { ...summary };
+
+    if (!permissionSet.has(PERMISSIONS.EMPLOYEE_VIEW)) visibleSummary.totalEmployees = "0";
+    if (!permissionSet.has(PERMISSIONS.SUPERVISOR_LIST)) visibleSummary.totalSupervisors = "0";
+    if (!permissionSet.has(PERMISSIONS.NISWAN_VIEW)) visibleSummary.totalSchools = "0";
+    if (!permissionSet.has(PERMISSIONS.STUDENT_VIEW)) visibleSummary.totalStudents = "0";
+
     return res.status(200).json({
       success: true,
-      ...summary,
+      ...visibleSummary,
     });
   } catch (e) {
     console.log("[getSummary] error:", e?.message || e);

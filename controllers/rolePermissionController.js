@@ -113,6 +113,12 @@ export const updateRolePermissions = async (req, res) => {
       return res.status(400).json({ success: false, error: "expectedRevision must be a positive integer." });
     }
 
+    // Apply any pending permission-catalog migration before accepting a write.
+    // If a stale screen/API client loaded the role before this server release, the
+    // migration increments revision and the normal optimistic-lock check below
+    // safely returns 409 instead of allowing the stale payload to erase new keys.
+    await getRolePermissionSnapshot(role);
+
     const current = await RolePermission.findOne({ role }).select("_id revision").lean();
     if (!current?._id) {
       return res.status(409).json({

@@ -1,11 +1,13 @@
 import RolePermission from "../models/RolePermission.js";
 import {
+  PERMISSION_CATALOG_VERSION,
   PERMISSION_KEYS,
   PERMISSION_KEY_SET,
   ROLE_DEFINITIONS,
   ROLE_KEY_SET,
   getInitialRolePermissionsForBootstrap,
   getPermissionDefinition,
+  getRolePermissionMigrationsAfter,
   isPermissionAllowedForRole,
 } from "../config/permissionCatalog.js";
 
@@ -42,18 +44,65 @@ export const sanitizePermissionsForRole = (role, permissions = []) => {
 
 const findRolePermissionRecord = (role) =>
   RolePermission.findOne({ role })
-    .select("role permissions revision updatedAt updatedBy createdAt")
+    .select("role permissions revision catalogVersion updatedAt updatedBy createdAt")
     .lean();
+
+const migrateRolePermissionRecord = async (record) => {
+  if (!record?._id) return record;
+
+  const role = normalizeRole(record.role);
+  let current = record;
+  let currentVersion = Number(current.catalogVersion || 1);
+
+  for (const migration of getRolePermissionMigrationsAfter(currentVersion)) {
+    const additions = sanitizePermissionsForRole(role, migration.permissionsByRole?.[role] || []);
+
+    const update = {
+      $set: {
+        catalogVersion: migration.version,
+        updatedAt: new Date(),
+      },
+      $inc: { revision: 1 },
+    };
+
+    if (additions.length > 0) {
+      update.$addToSet = { permissions: { $each: additions } };
+    }
+
+    const migrated = await RolePermission.findOneAndUpdate(
+      {
+        _id: current._id,
+        $or: [
+          { catalogVersion: { $exists: false } },
+          { catalogVersion: null },
+          { catalogVersion: { $lt: migration.version } },
+        ],
+      },
+      update,
+      { new: true }
+    )
+      .select("role permissions revision catalogVersion updatedAt updatedBy createdAt")
+      .lean();
+
+    // Another serverless invocation may have applied this migration first.
+    current = migrated || (await findRolePermissionRecord(role));
+    if (!current?._id) return null;
+    currentVersion = Number(current.catalogVersion || 1);
+  }
+
+  return current;
+};
 
 // Creates the database source-of-truth row only when a role has never been
 // configured. $setOnInsert guarantees that a later deployment never overwrites
-// permissions already saved by SuperAdmin.
+// permissions already saved by SuperAdmin. Existing rows receive only versioned
+// migrations for permission keys that did not exist in earlier releases.
 export const ensureRolePermissionRecord = async (role) => {
   const normalizedRole = normalizeRole(role);
   if (!ROLE_KEY_SET.has(normalizedRole) || normalizedRole === "superadmin") return null;
 
   const existing = await findRolePermissionRecord(normalizedRole);
-  if (existing?._id) return existing;
+  if (existing?._id) return migrateRolePermissionRecord(existing);
 
   const now = new Date();
   const initialPermissions = sanitizePermissionsForRole(
@@ -62,13 +111,14 @@ export const ensureRolePermissionRecord = async (role) => {
   );
 
   try {
-    return await RolePermission.findOneAndUpdate(
+    const created = await RolePermission.findOneAndUpdate(
       { role: normalizedRole },
       {
         $setOnInsert: {
           role: normalizedRole,
           permissions: initialPermissions,
           revision: 1,
+          catalogVersion: PERMISSION_CATALOG_VERSION,
           updatedBy: null,
           createdAt: now,
           updatedAt: now,
@@ -76,12 +126,17 @@ export const ensureRolePermissionRecord = async (role) => {
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     )
-      .select("role permissions revision updatedAt updatedBy createdAt")
+      .select("role permissions revision catalogVersion updatedAt updatedBy createdAt")
       .lean();
+
+    return migrateRolePermissionRecord(created);
   } catch (error) {
     // Two serverless invocations can race to create the same unique role row.
-    // If another invocation won, use the row it created; never overwrite it.
-    if (error?.code === 11000) return findRolePermissionRecord(normalizedRole);
+    // If another invocation won, use/migrate the row it created; never overwrite it.
+    if (error?.code === 11000) {
+      const winner = await findRolePermissionRecord(normalizedRole);
+      return migrateRolePermissionRecord(winner);
+    }
     throw error;
   }
 };
@@ -112,6 +167,7 @@ export const getRolePermissionSnapshot = async (role) => {
       permissions: [...PERMISSION_KEYS],
       storage: "locked",
       revision: 0,
+      catalogVersion: PERMISSION_CATALOG_VERSION,
       updatedAt: null,
     };
   }
@@ -122,6 +178,7 @@ export const getRolePermissionSnapshot = async (role) => {
     permissions: record?._id ? sanitizePermissionsForRole(normalizedRole, record.permissions) : [],
     storage: "database",
     revision: Number(record?.revision || 0),
+    catalogVersion: Number(record?.catalogVersion || PERMISSION_CATALOG_VERSION),
     updatedAt: record?.updatedAt || null,
   };
 };
