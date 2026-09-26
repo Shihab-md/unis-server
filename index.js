@@ -42,6 +42,7 @@ import examQuestionRouter from './routes/examQuestion.js';
 import attendanceRouter from './routes/attendance.js';
 import tempSchoolMarksheetRoutes from "./routes/tempSchoolMarksheetRoutes.js";
 import demoTutorialRoutes from "./routes/demoTutorialRoutes.js";
+import rolePermissionRouter from "./routes/rolePermission.js";
 import { SERVER_VERSION, getAppEnvironment, getCorsAllowedOrigins, validateRuntimeEnvironment } from "./utils/runtimeEnvironment.js";
 
 const runtime = validateRuntimeEnvironment();
@@ -114,6 +115,7 @@ app.use('/api/exam-questions', examQuestionRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use("/api/temp-school-marksheet", tempSchoolMarksheetRoutes);
 app.use("/api/demo-tutorial", demoTutorialRoutes);
+app.use("/api/role-permissions", rolePermissionRouter);
 
 app.use((err, req, res, next) => {
     if (err?.code === "UNIS_CORS_BLOCKED") {

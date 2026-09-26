@@ -3,7 +3,6 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import Academic from "../models/Academic.js";
 import AcademicYear from "../models/AcademicYear.js";
 import Course from "../models/Course.js";
-import Employee from "../models/Employee.js";
 import MarksheetExam from "../models/MarksheetExam.js";
 import MarksheetStudent from "../models/MarksheetStudent.js";
 import School from "../models/School.js";
@@ -24,6 +23,9 @@ import {
   renderMuballigaIndividualExamPdfs,
 } from "../services/muballigaIndividualMarksheetService.js";
 import { generateOfficialMuballigaIndividualMarksheets } from "../services/officialMarksheetGenerationService.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { getRequestPermissions } from "../services/permissionService.js";
 
 const EXAM_TYPES = ["Quarterly", "Half Yearly", "Annual"];
 const ADMIN_EXAM_TYPES = ["Quarterly", "Half Yearly"];
@@ -59,65 +61,47 @@ const normalizeExamType = (examType) => {
 const deny = (res, message = "You are not authorized to access marksheet module.") =>
   res.status(403).json({ success: false, error: message });
 
-const getAdminSchool = async (userId) => {
-  if (!userId) return null;
-  const employee = await Employee.findOne({ userId })
-    .select("_id schoolId active")
-    .lean();
-
-  if (!employee?._id || cleanString(employee.active).toLowerCase() !== "active" || !employee.schoolId) {
-    return null;
-  }
-
-  return String(employee.schoolId);
-};
-
 const getMarksheetAccess = async (req) => {
   const role = normalizeRole(req.user?.role);
-  const userId = req.user?._id;
+  const [scope, permissions] = await Promise.all([
+    getAccessContext(req.user),
+    getRequestPermissions(req),
+  ]);
 
-  if (role === "superadmin") {
-    return {
-      role,
-      isSuperadmin: true,
-      isAdmin: false,
-      schoolIds: [],
-      canUseModule: true,
-      examTypes: EXAM_TYPES,
-      canAnnual: true,
-      canConsolidated: true,
-    };
-  }
+  const permissionSet = new Set(permissions);
+  const canView = permissionSet.has(PERMISSIONS.MARKSHEET_VIEW);
+  const canEnter = permissionSet.has(PERMISSIONS.MARKSHEET_ENTER);
+  const canFinalize = permissionSet.has(PERMISSIONS.MARKSHEET_FINALIZE);
+  const canAnnual = permissionSet.has(PERMISSIONS.MARKSHEET_ANNUAL);
+  const canConsolidated = permissionSet.has(PERMISSIONS.MARKSHEET_CONSOLIDATED_VIEW);
+  const canPdf = permissionSet.has(PERMISSIONS.MARKSHEET_PDF);
 
-  if (role === "admin") {
-    const schoolId = await getAdminSchool(userId);
-    return {
-      role,
-      isSuperadmin: false,
-      isAdmin: true,
-      schoolIds: schoolId ? [schoolId] : [],
-      canUseModule: Boolean(schoolId),
-      examTypes: ADMIN_EXAM_TYPES,
-      canAnnual: false,
-      canConsolidated: false,
-    };
-  }
+  const isGlobalScope = Boolean(scope?.isHQ);
+  const isActive = isGlobalScope || Boolean(scope?.isActive);
+  const schoolIds = Array.isArray(scope?.schoolIds) ? scope.schoolIds.map(String) : [];
 
   return {
     role,
-    isSuperadmin: false,
-    isAdmin: false,
-    schoolIds: [],
-    canUseModule: false,
-    examTypes: [],
-    canAnnual: false,
-    canConsolidated: false,
+    isSuperadmin: role === "superadmin",
+    isAdmin: role === "admin",
+    isSupervisor: role === "supervisor",
+    isGlobalScope,
+    isActive,
+    schoolIds,
+    canUseModule: Boolean(isActive && canView),
+    canView: Boolean(isActive && canView),
+    canEnter: Boolean(isActive && canEnter),
+    canFinalize: Boolean(isActive && canFinalize),
+    canAnnual: Boolean(isActive && canAnnual),
+    canConsolidated: Boolean(isActive && canConsolidated),
+    canPdf: Boolean(isActive && canPdf),
+    examTypes: canAnnual ? EXAM_TYPES : ADMIN_EXAM_TYPES,
   };
 };
 
 const assertSchoolAccess = (access, schoolId) => {
   const sid = String(schoolId || "");
-  if (access.isSuperadmin) return true;
+  if (access.isGlobalScope) return true;
   return Boolean(sid && access.schoolIds.includes(sid));
 };
 
@@ -340,7 +324,7 @@ export const getMarksheetOptions = async (req, res) => {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
 
-    const schoolQuery = access.isSuperadmin
+    const schoolQuery = access.isGlobalScope
       ? { active: "Active" }
       : { _id: { $in: access.schoolIds }, active: "Active" };
 
@@ -358,6 +342,9 @@ export const getMarksheetOptions = async (req, res) => {
         examTypes: access.examTypes,
         canAnnual: access.canAnnual,
         canConsolidated: access.canConsolidated,
+        canEnter: access.canEnter,
+        canFinalize: access.canFinalize,
+        canPdf: access.canPdf,
       },
       schools,
       academicYears,
@@ -506,6 +493,13 @@ export const saveBulkMarksheet = async (req, res) => {
     const studyingYear = Number(req.body.studyingYear);
     const examType = normalizeExamType(req.body.examType);
     const status = cleanString(req.body.status) === "Finalized" ? "Finalized" : "Draft";
+
+    if (!access.canEnter) {
+      return deny(res, "You do not have permission to enter or edit marksheets.");
+    }
+    if (status === "Finalized" && !access.canFinalize) {
+      return deny(res, "You do not have permission to finalize marksheets.");
+    }
     const students = Array.isArray(req.body.students) ? req.body.students : [];
 
     if (!isObjectId(schoolId) || !isObjectId(acYear) || !isObjectId(courseId) || !Number.isFinite(studyingYear)) {
@@ -751,8 +745,8 @@ export const listMarksheetExams = async (req, res) => {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
 
-    const query = {};
-    if (!access.isSuperadmin) query.schoolId = { $in: access.schoolIds };
+    const query = { examType: { $in: access.examTypes } };
+    if (!access.isGlobalScope) query.schoolId = { $in: access.schoolIds };
 
     const schoolId = cleanString(req.query.schoolId);
     const acYear = cleanString(req.query.acYear);
@@ -767,7 +761,10 @@ export const listMarksheetExams = async (req, res) => {
     if (acYear && isObjectId(acYear)) query.acYear = acYear;
     if (courseId && isObjectId(courseId)) query.courseId = courseId;
     if (Number.isFinite(studyingYear) && studyingYear > 0) query.studyingYear = studyingYear;
-    if (examType) query.examType = examType;
+    if (examType) {
+      if (!assertExamTypeAccess(access, examType)) return deny(res, "You are not allowed to access this exam type.");
+      query.examType = examType;
+    }
 
     const exams = await MarksheetExam.find(query)
       .populate("schoolId", "code nameEnglish")
@@ -808,6 +805,7 @@ export const getMarksheetExam = async (req, res) => {
 
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId?._id || exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
 
     const records = await MarksheetStudent.find({ marksheetExamId: id })
       .populate({ path: "studentId", select: "rollNumber userId active", populate: { path: "userId", select: "name" } })
@@ -831,6 +829,7 @@ export const requestMarksheetPdfGeneration = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
+    if (!access.canPdf) return deny(res, "You do not have permission to access official marksheet PDFs.");
 
     const { id } = req.params;
     if (!isObjectId(id)) return res.status(400).json({ success: false, error: "Invalid marksheet exam id." });
@@ -838,6 +837,7 @@ export const requestMarksheetPdfGeneration = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
     if (exam.status !== "Finalized") {
       return res.status(400).json({ success: false, error: "Official marksheet PDF can be generated only after finalization." });
     }
@@ -887,6 +887,7 @@ export const listMarksheetPdfFiles = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
+    if (!access.canPdf) return deny(res, "You do not have permission to access official marksheet PDFs.");
 
     const { id } = req.params;
     if (!isObjectId(id)) return res.status(400).json({ success: false, error: "Invalid marksheet exam id." });
@@ -894,6 +895,7 @@ export const listMarksheetPdfFiles = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
     if (exam.status !== "Finalized") {
       return res.status(400).json({ success: false, error: "Official marksheet PDFs are available only for finalized exams." });
     }
@@ -928,6 +930,7 @@ export const downloadCombinedOfficialMarksheetPdf = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
+    if (!access.canPdf) return deny(res, "You do not have permission to access official marksheet PDFs.");
 
     const { id } = req.params;
     if (!isObjectId(id)) return res.status(400).json({ success: false, error: "Invalid marksheet exam id." });
@@ -935,6 +938,7 @@ export const downloadCombinedOfficialMarksheetPdf = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
     if (
       exam.status !== "Finalized" ||
       exam.marksheetPdf?.status !== "Generated" ||
@@ -976,6 +980,7 @@ export const downloadStudentOfficialMarksheetPdf = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
+    if (!access.canPdf) return deny(res, "You do not have permission to access official marksheet PDFs.");
 
     const { id, recordId } = req.params;
     if (!isObjectId(id) || !isObjectId(recordId)) {
@@ -985,6 +990,7 @@ export const downloadStudentOfficialMarksheetPdf = async (req, res) => {
     const exam = await MarksheetExam.findById(id).lean();
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
     if (exam.status !== "Finalized" || exam.marksheetPdf?.status !== "Generated") {
       return res.status(409).json({ success: false, error: "Official marksheet PDF is not generated yet." });
     }
@@ -1042,7 +1048,7 @@ const isStudentCourseCompleted = (_student, academics, courseId) => {
 export const listConsolidatedStudents = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
-    if (!access.canConsolidated) return deny(res, "Consolidated marksheet is available only to Superadmin.");
+    if (!access.canConsolidated) return deny(res, "You do not have permission to view consolidated marksheets.");
 
     const courseId = cleanString(req.query.courseId);
     const schoolId = cleanString(req.query.schoolId);
@@ -1079,6 +1085,7 @@ export const listConsolidatedStudents = async (req, res) => {
 
     const studentQuery = { _id: { $in: studentIds } };
     if (schoolId) studentQuery.schoolId = schoolId;
+    else if (!access.isGlobalScope) studentQuery.schoolId = { $in: access.schoolIds };
 
     const students = await Student.find(studentQuery)
       .select("_id rollNumber active schoolId userId")
@@ -1108,7 +1115,7 @@ export const listConsolidatedStudents = async (req, res) => {
 export const getConsolidatedMarksheet = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
-    if (!access.canConsolidated) return deny(res, "Consolidated marksheet is available only to Superadmin.");
+    if (!access.canConsolidated) return deny(res, "You do not have permission to view consolidated marksheets.");
 
     const studentId = cleanString(req.query.studentId);
     const courseId = cleanString(req.query.courseId);
@@ -1125,6 +1132,9 @@ export const getConsolidatedMarksheet = async (req, res) => {
     ]);
 
     if (!student || !course) return res.status(404).json({ success: false, error: "Student or course not found." });
+    if (!assertSchoolAccess(access, student.schoolId?._id || student.schoolId)) {
+      return deny(res, "Selected student is outside your permitted Niswan scope.");
+    }
 
     const academics = await Academic.find({ studentId }).populate("acYear", "acYear").sort({ createdAt: 1 }).lean();
     if (!isStudentCourseCompleted(student, academics, courseId)) {
@@ -1246,6 +1256,7 @@ export const printMarksheetExam = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
     if (!access.canUseModule) return deny(res);
+    if (!access.canPdf) return deny(res, "You do not have permission to access official marksheet PDFs.");
 
     const { id } = req.params;
     if (!isObjectId(id)) return res.status(400).json({ success: false, error: "Invalid marksheet exam id." });
@@ -1258,6 +1269,7 @@ export const printMarksheetExam = async (req, res) => {
 
     if (!exam) return res.status(404).json({ success: false, error: "Marksheet exam not found." });
     if (!assertSchoolAccess(access, exam.schoolId?._id || exam.schoolId)) return deny(res, "Selected Niswan is outside your permission.");
+    if (!assertExamTypeAccess(access, exam.examType)) return deny(res, "You are not allowed to access this exam type.");
     if (exam.status !== "Finalized") {
       return res.status(409).json({ success: false, error: "Finalized marksheets only can be printed." });
     }
@@ -1419,7 +1431,7 @@ const getConsolidatedData = async ({ studentId, courseId }) => {
 export const printConsolidatedMarksheet = async (req, res) => {
   try {
     const access = await getMarksheetAccess(req);
-    if (!access.canConsolidated) return deny(res, "Consolidated marksheet is available only to Superadmin.");
+    if (!access.canConsolidated) return deny(res, "You do not have permission to view consolidated marksheets.");
 
     const studentId = cleanString(req.query.studentId);
     const courseId = cleanString(req.query.courseId);
@@ -1428,6 +1440,9 @@ export const printConsolidatedMarksheet = async (req, res) => {
     }
 
     const data = await getConsolidatedData({ studentId, courseId });
+    if (!assertSchoolAccess(access, data.student?.schoolId?._id || data.student?.schoolId)) {
+      return deny(res, "Selected student is outside your permitted Niswan scope.");
+    }
     const templatePdf = await loadMarksheetTemplatePdf({ courseId, marksheetType: "CONSOLIDATED" });
     const outputPdf = await PDFDocument.create();
     const fonts = {

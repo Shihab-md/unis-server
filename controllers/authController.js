@@ -6,6 +6,7 @@ import Employee from "../models/Employee.js";
 import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
+import { getRolePermissions } from "../services/permissionService.js";
 
 const looksLikeEmail = (v) => typeof v === "string" && v.includes("@");
 
@@ -146,17 +147,20 @@ const getScopedSessionForUser = async (user) => {
   const tokenPayload = { _id: user._id, role, schoolId, schoolName };
   if (role === "supervisor") tokenPayload.schoolIds = schoolIds;
 
+  const permissions = await getRolePermissions(role);
+
   const responseUser = {
     _id: user._id,
     name: user.name,
     role,
     schoolId,
     schoolName,
+    permissions,
     preferredLanguage: String(user?.preferredLanguage || "en").toLowerCase(),
     ...(role === "supervisor" ? { schoolIds, schools } : {}),
   };
 
-  return { ok: true, role, schoolId, schoolName, schoolIds, schools, tokenPayload, user: responseUser };
+  return { ok: true, role, schoolId, schoolName, schoolIds, schools, permissions, tokenPayload, user: responseUser };
 };
 
 const login = async (req, res) => {
