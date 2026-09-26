@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 5;
+export const PERMISSION_CATALOG_VERSION = 6;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -79,6 +79,36 @@ export const PERMISSIONS = Object.freeze({
   HELP_DESK_CREATE: "helpdesk.create",
   HELP_DESK_REPLY: "helpdesk.reply",
   HELP_DESK_STATUS_MANAGE: "helpdesk.status.manage",
+
+  MASTER_INSTITUTE_VIEW: "master.institute.view",
+  MASTER_INSTITUTE_CREATE: "master.institute.create",
+  MASTER_INSTITUTE_EDIT: "master.institute.edit",
+  MASTER_INSTITUTE_DELETE: "master.institute.delete",
+
+  MASTER_COURSE_VIEW: "master.course.view",
+  MASTER_COURSE_CREATE: "master.course.create",
+  MASTER_COURSE_EDIT: "master.course.edit",
+  MASTER_COURSE_DELETE: "master.course.delete",
+
+  MASTER_ACADEMIC_YEAR_VIEW: "master.academic_year.view",
+  MASTER_ACADEMIC_YEAR_CREATE: "master.academic_year.create",
+  MASTER_ACADEMIC_YEAR_EDIT: "master.academic_year.edit",
+  MASTER_ACADEMIC_YEAR_DELETE: "master.academic_year.delete",
+
+  MASTER_TEMPLATE_VIEW: "master.template.view",
+  MASTER_TEMPLATE_CREATE: "master.template.create",
+  MASTER_TEMPLATE_EDIT: "master.template.edit",
+  MASTER_TEMPLATE_DELETE: "master.template.delete",
+
+  MASTER_DISTRICT_STATE_VIEW: "master.district_state.view",
+  MASTER_DISTRICT_STATE_CREATE: "master.district_state.create",
+  MASTER_DISTRICT_STATE_EDIT: "master.district_state.edit",
+  MASTER_DISTRICT_STATE_DELETE: "master.district_state.delete",
+
+  MASTER_GRADE_VIEW: "master.grade.view",
+  MASTER_GRADE_CREATE: "master.grade.create",
+  MASTER_GRADE_EDIT: "master.grade.edit",
+  MASTER_GRADE_DELETE: "master.grade.delete",
 
   MARKSHEET_VIEW: "marksheet.view",
   MARKSHEET_ENTER: "marksheet.enter",
@@ -188,6 +218,13 @@ const ALL_CURRENT_ROLES = Object.freeze([
 const NOTIFICATION_BROADCAST_SCOPE_ROLES = Object.freeze(["superadmin"]);
 const HELP_DESK_SELF_SCOPE_ROLES = ALL_CURRENT_ROLES;
 const HELP_DESK_STATUS_SCOPE_ROLES = Object.freeze(["superadmin"]);
+
+// Phase 2.5.1 converts the six existing Masters maintenance resources to the
+// central permission model while preserving the V0.6 scope boundary:
+// SuperAdmin/HQ User can manage; legacy Guest is read-only. Shared /fromCache
+// lookup endpoints intentionally remain authenticated but permission-independent.
+const MASTER_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
+const MASTER_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
 
 const MARKSHEET_SCOPE_ROLES = Object.freeze([
   "superadmin",
@@ -776,6 +813,228 @@ export const PERMISSION_CATALOG = Object.freeze([
   },
 
   {
+    key: PERMISSIONS.MASTER_INSTITUTE_VIEW,
+    category: "Masters - Institutes",
+    label: "View Institutes",
+    description: "Open the Institute maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_CREATE,
+    category: "Masters - Institutes",
+    label: "Create Institute",
+    description: "Create Institute master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_EDIT,
+    category: "Masters - Institutes",
+    label: "Edit Institute",
+    description: "Edit Institute master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_DELETE,
+    category: "Masters - Institutes",
+    label: "Delete Institute",
+    description: "Delete Institute master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_COURSE_VIEW,
+    category: "Masters - Courses",
+    label: "View Courses",
+    description: "Open the Course maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_CREATE,
+    category: "Masters - Courses",
+    label: "Create Course",
+    description: "Create Course master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_EDIT,
+    category: "Masters - Courses",
+    label: "Edit Course",
+    description: "Edit Course master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_DELETE,
+    category: "Masters - Courses",
+    label: "Delete Course",
+    description: "Delete Course master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW,
+    category: "Masters - Academic Years",
+    label: "View Academic Years",
+    description: "Open the Academic Year maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_CREATE,
+    category: "Masters - Academic Years",
+    label: "Create Academic Year",
+    description: "Create Academic Year master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_EDIT,
+    category: "Masters - Academic Years",
+    label: "Edit Academic Year",
+    description: "Edit Academic Year master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_DELETE,
+    category: "Masters - Academic Years",
+    label: "Delete Academic Year",
+    description: "Delete Academic Year master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_VIEW,
+    category: "Masters - Templates",
+    label: "View Templates",
+    description: "Open the Template maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_CREATE,
+    category: "Masters - Templates",
+    label: "Create Template",
+    description: "Create Template master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_EDIT,
+    category: "Masters - Templates",
+    label: "Edit Template",
+    description: "Edit Template master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_DELETE,
+    category: "Masters - Templates",
+    label: "Delete Template",
+    description: "Delete Template master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_VIEW,
+    category: "Masters - Districts / States",
+    label: "View Districts / States",
+    description: "Open the District / State maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_CREATE,
+    category: "Masters - Districts / States",
+    label: "Create District / State",
+    description: "Create District / State master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_EDIT,
+    category: "Masters - Districts / States",
+    label: "Edit District / State",
+    description: "Edit District / State master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_DELETE,
+    category: "Masters - Districts / States",
+    label: "Delete District / State",
+    description: "Delete District / State master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_GRADE_VIEW,
+    category: "Masters - Grade Master",
+    label: "View Grade Master",
+    description: "Open the Grade maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_CREATE,
+    category: "Masters - Grade Master",
+    label: "Create Grade",
+    description: "Create Grade master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_EDIT,
+    category: "Masters - Grade Master",
+    label: "Edit Grade",
+    description: "Edit Grade master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_DELETE,
+    category: "Masters - Grade Master",
+    label: "Delete Grade",
+    description: "Delete Grade master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
     key: PERMISSIONS.MARKSHEET_VIEW,
     category: "Exams / Results",
     label: "View Marksheets",
@@ -1119,15 +1378,36 @@ const PHASE_2_4_PERMISSIONS_BY_ROLE = Object.freeze({
   ],
 });
 
+const PHASE_2_5_1_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.MASTER_INSTITUTE_VIEW, PERMISSIONS.MASTER_INSTITUTE_CREATE, PERMISSIONS.MASTER_INSTITUTE_EDIT, PERMISSIONS.MASTER_INSTITUTE_DELETE,
+    PERMISSIONS.MASTER_COURSE_VIEW, PERMISSIONS.MASTER_COURSE_CREATE, PERMISSIONS.MASTER_COURSE_EDIT, PERMISSIONS.MASTER_COURSE_DELETE,
+    PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW, PERMISSIONS.MASTER_ACADEMIC_YEAR_CREATE, PERMISSIONS.MASTER_ACADEMIC_YEAR_EDIT, PERMISSIONS.MASTER_ACADEMIC_YEAR_DELETE,
+    PERMISSIONS.MASTER_TEMPLATE_VIEW, PERMISSIONS.MASTER_TEMPLATE_CREATE, PERMISSIONS.MASTER_TEMPLATE_EDIT, PERMISSIONS.MASTER_TEMPLATE_DELETE,
+    PERMISSIONS.MASTER_DISTRICT_STATE_VIEW, PERMISSIONS.MASTER_DISTRICT_STATE_CREATE, PERMISSIONS.MASTER_DISTRICT_STATE_EDIT, PERMISSIONS.MASTER_DISTRICT_STATE_DELETE,
+    PERMISSIONS.MASTER_GRADE_VIEW, PERMISSIONS.MASTER_GRADE_CREATE, PERMISSIONS.MASTER_GRADE_EDIT, PERMISSIONS.MASTER_GRADE_DELETE,
+  ],
+  supervisor: [], admin: [], employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [],
+  guest: [
+    PERMISSIONS.MASTER_INSTITUTE_VIEW,
+    PERMISSIONS.MASTER_COURSE_VIEW,
+    PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW,
+    PERMISSIONS.MASTER_TEMPLATE_VIEW,
+    PERMISSIONS.MASTER_DISTRICT_STATE_VIEW,
+    PERMISSIONS.MASTER_GRADE_VIEW,
+  ],
+});
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser],
+  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.hquser],
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_3_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_4_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -1137,19 +1417,20 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_3_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_4_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest],
 });
 
 // Versioned permission-catalog migrations are used only when a release introduces
@@ -1177,6 +1458,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 5,
     label: "Phase 2.4 Accounts, Reports, Notifications and Help Desk permissions",
     permissionsByRole: PHASE_2_4_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 6,
+    label: "Phase 2.5.1 Masters maintenance permissions",
+    permissionsByRole: PHASE_2_5_1_PERMISSIONS_BY_ROLE,
   },
 ]);
 

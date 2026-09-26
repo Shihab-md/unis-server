@@ -249,14 +249,17 @@ const getMasterSummary = async (req, res) => {
       await redis.set("totalGrades", totalGrades, { EX: 60 });
     }
 
+    const permissions = await getRolePermissions(req.user?.role);
+    const visible = (permission, value) => permissions.includes(permission) ? value : "0";
+
     return res.status(200).json({
       success: true,
-      totalInstitutes,
-      totalCourses,
-      totalAcademicYears,
-      totalTemplates,
-      totalDistrictStates,
-      totalGrades,
+      totalInstitutes: visible(PERMISSIONS.MASTER_INSTITUTE_VIEW, totalInstitutes),
+      totalCourses: visible(PERMISSIONS.MASTER_COURSE_VIEW, totalCourses),
+      totalAcademicYears: visible(PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW, totalAcademicYears),
+      totalTemplates: visible(PERMISSIONS.MASTER_TEMPLATE_VIEW, totalTemplates),
+      totalDistrictStates: visible(PERMISSIONS.MASTER_DISTRICT_STATE_VIEW, totalDistrictStates),
+      totalGrades: visible(PERMISSIONS.MASTER_GRADE_VIEW, totalGrades),
     });
   } catch (error) {
     console.log(error.message);
