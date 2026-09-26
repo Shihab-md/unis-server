@@ -8,7 +8,6 @@ import {
 } from '../controllers/studentController.js'
 import {
   requireHQ,
-  requireStudentReadRole,
   requireStudentManageRole,
   requireGlobalStudentRead,
   requireSchoolParamReadAccess,

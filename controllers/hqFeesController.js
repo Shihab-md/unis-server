@@ -8,14 +8,6 @@ import { getNextNumber } from "./commonController.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
-const requireRole = (role, allowed) => {
-  if (!allowed.includes(role)) {
-    const err = new Error("Forbidden");
-    err.status = 403;
-    throw err;
-  }
-};
-
 const MIGRATION_REMARK_DEFAULT = "Migration import - already paid before system go-live";
 
 const sumInvoiceNumbers = (rows = [], key) =>
@@ -180,8 +172,6 @@ const applyPaymentToInvoiceAndSyncAll = async ({
 };
 
 export const createMigrationBatchesFromInvoicesAllSchools = async (req, res) => {
-  requireRole(req.user?.role, ["superadmin", "hquser"]);
-
   const {
     acYear,
     paidDate,
@@ -430,8 +420,6 @@ export const createMigrationBatchesFromInvoicesAllSchools = async (req, res) => 
 
 export const listPendingBatches = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
-
     const { schoolId, acYear, status = "PENDING_APPROVAL" } = req.query;
     const q = { status };
     if (schoolId) q.schoolId = schoolId;
@@ -462,8 +450,6 @@ export const listPendingBatches = async (req, res) => {
 
 export const getBatchDetails = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
-
     console.log("Called - getBatchDetails");
 
     const { batchId } = req.params;
@@ -746,8 +732,6 @@ export const getBatchDetails = async (req, res) => {
 */}
 
 export const approveBatch = async (req, res) => {
-  requireRole(req.user?.role, ["superadmin", "hquser"]);
-
   const { batchId } = req.params;
   if (!mongoose.Types.ObjectId.isValid(batchId)) {
     return res.status(400).json({ success: false, error: "Invalid batchId" });
@@ -906,8 +890,6 @@ export const rejectBatch = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
-
     const { batchId } = req.params;
     const { reason } = req.body || {};
 
@@ -941,8 +923,6 @@ export const rejectBatch = async (req, res) => {
 // HQ dashboard
 export const hqFeesDashboard = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
-
     const { acYear } = req.query;
     const match = { status: "PENDING_APPROVAL" };
     if (acYear) match.acYear = new mongoose.Types.ObjectId(acYear);
@@ -978,7 +958,6 @@ export const hqFeesDashboard = async (req, res) => {
 
 export const listPendingInvoicesHQ_NotSent = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser"]);
     console.log("listPendingInvoicesHQ_NotSent")
     const { acYear, schoolId } = req.params;
 

@@ -1,8 +1,6 @@
 import multer from "multer";
-import jwt from "jsonwebtoken";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
-import Employee from "../models/Employee.js";
 import Numbering from "../models/Numbering.js";
 import getRedis from "../db/redis.js"
 import mongoose from "mongoose";
@@ -541,31 +539,19 @@ const buildSchoolFinalProjectStage = () => {
 
 const getSchools = async (req, res) => {
   try {
-    const auth = req.headers.authorization || "";
-    const parts = auth.split(" ");
-
-    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
-    const userRole = decoded.role;
-
-    if (userRole !== "guest" && (parts.length !== 2 || parts[0] !== "Bearer")) {
-      return res.status(401).json({ success: false, error: "Unauthorized Request" });
-    }
-
+    // Authentication and permission membership are enforced by the route.
+    // Reuse the authorization middleware's resolved scope instead of decoding
+    // the JWT and maintaining a second role matrix in this controller.
+    const access = req.accessContext || {};
+    const userRole = String(req.user?.role || "").trim().toLowerCase();
     let filter = {};
 
-    if (userRole === "superadmin" || userRole === "hquser" || userRole === "guest") {
-      filter = {};
-    } else if (userRole === "supervisor") {
-      const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
-      if (!supervisor?._id) return res.status(200).json({ success: true, schools: [] });
-      filter = { supervisorId: supervisor._id };
-    } else if (userRole === "admin") {
-      const employee = await Employee.findOne({ userId }).select("schoolId").lean();
-      if (!employee?.schoolId) return res.status(200).json({ success: true, schools: [] });
-      filter = { _id: employee.schoolId };
-    } else {
-      return res.status(403).json({ success: false, error: "Forbidden" });
+    if (!access.isHQ && userRole !== "guest") {
+      const allowedIds = Array.isArray(access.schoolIds)
+        ? access.schoolIds.filter((value) => mongoose.Types.ObjectId.isValid(String(value)))
+        : [];
+      if (!allowedIds.length) return res.status(200).json({ success: true, schools: [] });
+      filter = { _id: { $in: allowedIds.map((value) => new mongoose.Types.ObjectId(String(value))) } };
     }
 
     // pagination
@@ -613,7 +599,7 @@ const getBySchFilter = async (req, res) => {
     const baseMatch = {};
 
     // V0.11: the normal Niswan list is role-scoped, so filtered reads must not widen it.
-    // requireSchoolReadRole has already resolved req.accessContext for Admin/Muavin.
+    // requireSchoolReadScope has already resolved req.accessContext for Admin/Muavin.
     const access = req.accessContext;
     const requestRole = String(req.user?.role || "").trim().toLowerCase();
     if (access && !access.isHQ && requestRole !== "guest") {

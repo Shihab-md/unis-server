@@ -1,5 +1,4 @@
 import multer from "multer";
-import jwt from "jsonwebtoken";
 import { put } from "@vercel/blob";
 import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import mongoose from "mongoose";
@@ -2972,20 +2971,9 @@ const promoteStudent = async (req, res) => {
   } = req.body || {};
 
   try {
-    // ---------------- Auth ----------------
-    const auth = req.headers.authorization || "";
-    const parts = auth.split(" ");
-    if (parts.length !== 2 || parts[0] !== "Bearer") {
-      return res.status(401).json({ success: false, error: "Unauthorized Request" });
-    }
-
-    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
-    const userRole = decoded.role;
-
-    if (!["superadmin", "hquser", "supervisor", "admin"].includes(userRole)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
+    // Authentication, Student promotion permission, Student scope, and request
+    // Niswan scope are enforced by the route/middleware before this controller.
+    const userId = req.user?._id;
 
     const student = await Student.findById(id).select("_id userId schoolId").lean();
     if (!student?._id) {
@@ -3420,12 +3408,6 @@ const notifySchoolAdminsForBulkPromote = async ({
 
 const removeStudents = async (req, res) => {
   try {
-    // ✅ role check (adjust to your policy)
-    const role = req.user?.role;
-    if (!["superadmin", "hquser"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
     const { studentIds } = req.body;
 
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
@@ -3595,11 +3577,6 @@ const getMakthabFinalYear = (courseName = "") => {
 export const listPromoteCandidates = async (req, res) => {
   try {
     console.log("listPromoteCandidates");
-
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
 
     const { schoolId, targetAcYear, courseId } = req.params;
 
@@ -6193,11 +6170,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
   try {
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
     const {
       schoolId,
       targetAcYear,

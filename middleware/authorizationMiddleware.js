@@ -10,7 +10,6 @@ import FeeInvoice from "../models/FeeInvoice.js";
 const normalizeRole = (role) => String(role || "").trim().toLowerCase();
 const HQ_ROLES = new Set(["superadmin", "hquser"]);
 const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
-const STUDENT_READ_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin", "guest"]);
 const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hquser", "admin"]);
 
 const deny = (res, message = "You are not authorized to access this resource.") =>
@@ -90,24 +89,6 @@ export const getAccessContext = async (user) => {
 const getRequestAccess = async (req) => {
   if (!req.accessContext) req.accessContext = await getAccessContext(req.user);
   return req.accessContext;
-};
-
-export const requireStudentReadRole = async (req, res, next) => {
-  try {
-    const role = normalizeRole(req.user?.role);
-    if (!STUDENT_READ_ROLES.has(role)) {
-      return deny(res, "Student data is not available for this role.");
-    }
-
-    const access = await getRequestAccess(req);
-    if (role === "admin" && !access.isActive) {
-      return deny(res, "Your Niswan Admin account is inactive or is not linked to an active employee record.");
-    }
-    return next();
-  } catch (error) {
-    console.log("[authorization] requireStudentReadRole:", error?.message || error);
-    return res.status(500).json({ success: false, error: "Authorization check failed." });
-  }
 };
 
 export const requireStudentManageRole = async (req, res, next) => {
@@ -285,11 +266,6 @@ export const requireStudentAccess = (paramName = "id") => async (req, res, next)
 // Employee authorization (V0.4)
 // Preserves the current production web role model while enforcing scope server-side.
 // -----------------------------------------------------------------------------
-const EMPLOYEE_READ_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin", "guest"]);
-const EMPLOYEE_CREATE_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin"]);
-const EMPLOYEE_UPDATE_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin"]);
-const EMPLOYEE_DELETE_ROLES = new Set(["superadmin", "supervisor", "admin"]);
-
 const CREATE_TARGET_ROLES = {
   superadmin: new Set(["superadmin", "hquser", "admin", "teacher", "usthadh", "warden"]),
   hquser: new Set(["admin", "teacher"]),
@@ -851,10 +827,6 @@ export const requireInspectionSchoolBodyAccess = async (req, res, next) => {
 // -----------------------------------------------------------------------------
 // Administration authorization (V0.11)
 // -----------------------------------------------------------------------------
-const SCHOOL_READ_ROLES_V011 = new Set(['superadmin', 'hquser', 'supervisor', 'admin', 'guest']);
-const SUPERVISOR_LIST_ROLES_V011 = new Set(['superadmin', 'hquser', 'supervisor', 'guest']);
-const SUPERVISOR_DETAIL_ROLES_V011 = new Set(['superadmin', 'hquser', 'guest']);
-
 export const requireSuperAdmin = (req, res, next) => {
   if (normalizeRole(req.user?.role) !== 'superadmin') {
     return deny(res, 'This operation is available only to Super Admin.');
@@ -878,28 +850,6 @@ export const requireSchoolReadScope = async (req, res, next) => {
   }
 };
 
-export const requireSchoolReadRole = async (req, res, next) => {
-  try {
-    const role = normalizeRole(req.user?.role);
-    if (!SCHOOL_READ_ROLES_V011.has(role)) return deny(res, 'Niswan data is not available for this role.');
-    const access = await getRequestAccess(req);
-    if (['admin', 'supervisor'].includes(role) && !access.isActive) {
-      return deny(res, 'Your account is inactive or is not linked to an active UNIS scope record.');
-    }
-    return next();
-  } catch (error) {
-    console.log('[authorization] requireSchoolReadRole:', error?.message || error);
-    return res.status(500).json({ success: false, error: 'Authorization check failed.' });
-  }
-};
-
-export const requireSchoolManageRole = (req, res, next) => {
-  if (!HQ_ROLES.has(normalizeRole(req.user?.role))) {
-    return deny(res, 'Niswan management is available only to HQ users.');
-  }
-  return next();
-};
-
 export const requireSchoolReadAccess = (paramName = 'id') => async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
@@ -917,25 +867,3 @@ export const requireSchoolReadAccess = (paramName = 'id') => async (req, res, ne
   }
 };
 
-export const requireSupervisorListRole = (req, res, next) => {
-  const role = normalizeRole(req.user?.role);
-  if (!SUPERVISOR_LIST_ROLES_V011.has(role)) {
-    return deny(res, 'Muavin directory is not available for this role.');
-  }
-  return next();
-};
-
-export const requireSupervisorDetailRole = (req, res, next) => {
-  const role = normalizeRole(req.user?.role);
-  if (!SUPERVISOR_DETAIL_ROLES_V011.has(role)) {
-    return deny(res, 'Muavin details are not available for this role.');
-  }
-  return next();
-};
-
-export const requireSupervisorManageRole = (req, res, next) => {
-  if (!HQ_ROLES.has(normalizeRole(req.user?.role))) {
-    return deny(res, 'Muavin management is available only to HQ users.');
-  }
-  return next();
-};

@@ -7,19 +7,9 @@ import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
-const requireRole = (role, allowed) => {
-  if (!allowed.includes(role)) {
-    const err = new Error("Forbidden");
-    err.status = 403;
-    throw err;
-  }
-};
-
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called");
-    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
-
     const { schoolId, status } = req.params;
 
     const q = {};
@@ -84,8 +74,6 @@ export const createPaymentBatch = async (req, res) => {
   console.log("createPaymentBatch - called");
 
   try {
-    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
-
     const {
       schoolId,
       //acYear: bodyAcYear, // optional from UI
@@ -367,7 +355,6 @@ export const schoolFeesDashboard = async (req, res) => {
 // feesController.js (method)
 export const listBatchesSentToHQForSchool = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
     console.log("Called - listBatchesSentToHQForSchool")
     const role = req.user?.role;
     const { schoolId, acYear, status } = req.params;
