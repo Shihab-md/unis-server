@@ -7,6 +7,7 @@ import {
   validatePermissionDependencies,
 } from "../config/permissionCatalog.js";
 import {
+  ensureRolePermissionRecords,
   getRolePermissionSnapshot,
   normalizeRole,
   sanitizePermissions,
@@ -27,6 +28,9 @@ export const listRolePermissions = async (req, res) => {
   try {
     if (!ensureSuperadmin(req, res)) return;
 
+    // Bootstrap missing database rows once. Existing rows are never overwritten.
+    await ensureRolePermissionRecords();
+
     const roles = [];
     for (const roleDef of ROLE_DEFINITIONS) {
       const snapshot = await getRolePermissionSnapshot(roleDef.key);
@@ -40,7 +44,8 @@ export const listRolePermissions = async (req, res) => {
       success: true,
       catalog: PERMISSION_CATALOG,
       roles,
-      note: "Permissions control business actions; Niswan/HQ/Self scope remains enforced separately by the server.",
+      note: "Role permission assignments are stored in MongoDB. Data scope (All / Assigned Niswans / Own Niswan / Self) is enforced separately by the server.",
+      assignmentSource: "database",
     });
   } catch (error) {
     console.log("[role-permissions] list:", error?.message || error);
@@ -104,12 +109,19 @@ export const updateRolePermissions = async (req, res) => {
     }
 
     const expectedRevision = Number(req.body?.expectedRevision);
-    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
-      return res.status(400).json({ success: false, error: "expectedRevision must be a non-negative integer." });
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+      return res.status(400).json({ success: false, error: "expectedRevision must be a positive integer." });
     }
 
     const current = await RolePermission.findOne({ role }).select("_id revision").lean();
-    const currentRevision = Number(current?.revision || 0);
+    if (!current?._id) {
+      return res.status(409).json({
+        success: false,
+        error: "Role permission configuration is not initialized yet. Refresh the screen and try again.",
+      });
+    }
+
+    const currentRevision = Number(current.revision || 0);
     if (expectedRevision !== currentRevision) {
       return res.status(409).json({
         success: false,
@@ -119,37 +131,26 @@ export const updateRolePermissions = async (req, res) => {
     }
 
     const now = new Date();
-    let saved;
-    if (current?._id) {
-      saved = await RolePermission.findOneAndUpdate(
-        { _id: current._id, revision: currentRevision },
-        {
-          $set: { permissions, updatedBy: req.user?._id || null, updatedAt: now },
-          $inc: { revision: 1 },
-        },
-        { new: true }
-      );
-      if (!saved) {
-        return res.status(409).json({
-          success: false,
-          error: "Role permissions changed concurrently. Refresh and try again.",
-        });
-      }
-    } else {
-      saved = await RolePermission.create({
-        role,
-        permissions,
-        revision: 1,
-        updatedBy: req.user?._id || null,
-        createdAt: now,
-        updatedAt: now,
+    const saved = await RolePermission.findOneAndUpdate(
+      { _id: current._id, revision: currentRevision },
+      {
+        $set: { permissions, updatedBy: req.user?._id || null, updatedAt: now },
+        $inc: { revision: 1 },
+      },
+      { new: true }
+    );
+
+    if (!saved) {
+      return res.status(409).json({
+        success: false,
+        error: "Role permissions changed concurrently. Refresh and try again.",
       });
     }
 
     const snapshot = await getRolePermissionSnapshot(role);
     return res.status(200).json({
       success: true,
-      message: "Role permissions updated successfully.",
+      message: "Role permissions saved successfully.",
       role: snapshot,
       resourceId: saved?._id || null,
     });
@@ -162,52 +163,13 @@ export const updateRolePermissions = async (req, res) => {
   }
 };
 
-export const resetRolePermissions = async (req, res) => {
-  try {
-    if (!ensureSuperadmin(req, res)) return;
-
-    const role = normalizeRole(req.params?.role);
-    if (!ROLE_KEY_SET.has(role)) {
-      return res.status(400).json({ success: false, error: "Unknown role." });
-    }
-    if (role === "superadmin") {
-      return res.status(400).json({ success: false, error: "SuperAdmin permissions are locked and cannot be reset." });
-    }
-
-    const expectedRevision = Number(req.query?.expectedRevision);
-    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
-      return res.status(400).json({ success: false, error: "expectedRevision must be a non-negative integer." });
-    }
-
-    const existing = await RolePermission.findOne({ role }).select("_id revision").lean();
-    const currentRevision = Number(existing?.revision || 0);
-    if (expectedRevision !== currentRevision) {
-      return res.status(409).json({
-        success: false,
-        error: "Role permissions changed since this screen was loaded. Refresh and try again.",
-        currentRevision,
-      });
-    }
-
-    if (existing?._id) {
-      const deleted = await RolePermission.deleteOne({ _id: existing._id, revision: currentRevision });
-      if (deleted.deletedCount !== 1) {
-        return res.status(409).json({
-          success: false,
-          error: "Role permissions changed concurrently. Refresh and try again.",
-        });
-      }
-    }
-
-    const snapshot = await getRolePermissionSnapshot(role);
-    return res.status(200).json({
-      success: true,
-      message: "Role permissions reset to production defaults.",
-      role: snapshot,
-      resourceId: existing?._id || null,
-    });
-  } catch (error) {
-    console.log("[role-permissions] reset:", error?.message || error);
-    return res.status(500).json({ success: false, error: "Unable to reset role permissions." });
-  }
+// Backward-compatible safety response for a 9_13_43 browser that still shows the
+// old Reset Defaults button while the server is being rolled out. The operation is
+// intentionally non-destructive because MongoDB is now the single source of truth.
+export const deprecatedResetRolePermissions = async (req, res) => {
+  if (!ensureSuperadmin(req, res)) return;
+  return res.status(410).json({
+    success: false,
+    error: "Reset Defaults has been removed. Role permissions are stored in the database. Use Discard Changes for unsaved screen changes.",
+  });
 };

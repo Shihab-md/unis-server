@@ -2,8 +2,9 @@ import RolePermission from "../models/RolePermission.js";
 import {
   PERMISSION_KEYS,
   PERMISSION_KEY_SET,
+  ROLE_DEFINITIONS,
   ROLE_KEY_SET,
-  getDefaultRolePermissions,
+  getInitialRolePermissionsForBootstrap,
   getPermissionDefinition,
   isPermissionAllowedForRole,
 } from "../config/permissionCatalog.js";
@@ -21,9 +22,8 @@ export const sanitizePermissionsForRole = (role, permissions = []) => {
     sanitizePermissions(permissions).filter((key) => isPermissionAllowedForRole(key, normalizedRole))
   );
 
-  // Fail closed if a persisted document was manually edited or came from an older
-  // release with an invalid dependency combination. UI/API writes already validate
-  // dependencies, but authorization should not depend on storage being perfect.
+  // Fail closed if persisted data was manually edited or came from an older release
+  // with an invalid dependency combination. API/UI writes validate dependencies too.
   let changed = true;
   while (changed) {
     changed = false;
@@ -40,45 +40,89 @@ export const sanitizePermissionsForRole = (role, permissions = []) => {
   return [...selected].sort();
 };
 
+const findRolePermissionRecord = (role) =>
+  RolePermission.findOne({ role })
+    .select("role permissions revision updatedAt updatedBy createdAt")
+    .lean();
+
+// Creates the database source-of-truth row only when a role has never been
+// configured. $setOnInsert guarantees that a later deployment never overwrites
+// permissions already saved by SuperAdmin.
+export const ensureRolePermissionRecord = async (role) => {
+  const normalizedRole = normalizeRole(role);
+  if (!ROLE_KEY_SET.has(normalizedRole) || normalizedRole === "superadmin") return null;
+
+  const existing = await findRolePermissionRecord(normalizedRole);
+  if (existing?._id) return existing;
+
+  const now = new Date();
+  const initialPermissions = sanitizePermissionsForRole(
+    normalizedRole,
+    getInitialRolePermissionsForBootstrap(normalizedRole)
+  );
+
+  try {
+    return await RolePermission.findOneAndUpdate(
+      { role: normalizedRole },
+      {
+        $setOnInsert: {
+          role: normalizedRole,
+          permissions: initialPermissions,
+          revision: 1,
+          updatedBy: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    )
+      .select("role permissions revision updatedAt updatedBy createdAt")
+      .lean();
+  } catch (error) {
+    // Two serverless invocations can race to create the same unique role row.
+    // If another invocation won, use the row it created; never overwrite it.
+    if (error?.code === 11000) return findRolePermissionRecord(normalizedRole);
+    throw error;
+  }
+};
+
+export const ensureRolePermissionRecords = async () => {
+  const editableRoles = ROLE_DEFINITIONS.filter((item) => item.key !== "superadmin").map((item) => item.key);
+  await Promise.all(editableRoles.map((role) => ensureRolePermissionRecord(role)));
+};
+
 export const getRolePermissions = async (role) => {
   const normalizedRole = normalizeRole(role);
 
   if (normalizedRole === "superadmin") return [...PERMISSION_KEYS];
   if (!ROLE_KEY_SET.has(normalizedRole)) return [];
 
-  const custom = await RolePermission.findOne({ role: normalizedRole })
-    .select("permissions")
-    .lean();
+  const record = await ensureRolePermissionRecord(normalizedRole);
+  if (!record?._id) return [];
 
-  return custom?._id
-    ? sanitizePermissionsForRole(normalizedRole, custom.permissions)
-    : sanitizePermissionsForRole(normalizedRole, getDefaultRolePermissions(normalizedRole));
+  return sanitizePermissionsForRole(normalizedRole, record.permissions);
 };
 
 export const getRolePermissionSnapshot = async (role) => {
   const normalizedRole = normalizeRole(role);
-  const custom = await RolePermission.findOne({ role: normalizedRole })
-    .select("role permissions revision updatedAt updatedBy")
-    .lean();
 
   if (normalizedRole === "superadmin") {
     return {
       role: normalizedRole,
       permissions: [...PERMISSION_KEYS],
-      source: "locked",
-      revision: Number(custom?.revision || 0),
-      updatedAt: custom?.updatedAt || null,
+      storage: "locked",
+      revision: 0,
+      updatedAt: null,
     };
   }
 
+  const record = await ensureRolePermissionRecord(normalizedRole);
   return {
     role: normalizedRole,
-    permissions: custom?._id
-      ? sanitizePermissionsForRole(normalizedRole, custom.permissions)
-      : sanitizePermissionsForRole(normalizedRole, getDefaultRolePermissions(normalizedRole)),
-    source: custom?._id ? "custom" : "default",
-    revision: Number(custom?.revision || 0),
-    updatedAt: custom?.updatedAt || null,
+    permissions: record?._id ? sanitizePermissionsForRole(normalizedRole, record.permissions) : [],
+    storage: "database",
+    revision: Number(record?.revision || 0),
+    updatedAt: record?.updatedAt || null,
   };
 };
 
