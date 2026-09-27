@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import Academic from "../models/Academic.js";
 import { sendCSV, sendXLSX } from "../utils/reportExport.js";
 import { formatCompactDuration } from "../utils/profileDuration.js";
+import { ORGANIZATION_TYPES, getHqOrganizationSummary, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const oid = (id) => new mongoose.Types.ObjectId(String(id));
 const isObjectIdLike = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
@@ -56,7 +57,7 @@ async function getAccessibleSchoolIds({ role, schoolId, userId }) {
     const possibleSupervisorIds = [];
     if (supervisor?._id) possibleSupervisorIds.push(supervisor._id);
     if (isObjectIdLike(uid)) possibleSupervisorIds.push(oid(uid));
-    const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } }).select("_id").lean();
+    const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds }, ...getNiswanSchoolFilter() }).select("_id").lean();
     return schools.map((school) => String(school._id));
   }
 
@@ -72,7 +73,7 @@ async function resolveSchoolScope({ allowedSchoolIds, schoolId, schoolCode, scho
   const hasSchoolFilter = Boolean(safeStr(schoolCode) || safeStr(schoolSearch));
   if (!hasSchoolFilter) return allowedSchoolIds;
 
-  const query = {};
+  const query = getNiswanSchoolFilter();
   if (allowedSchoolIds !== null) query._id = { $in: allowedSchoolIds.map(oid) };
   if (safeStr(schoolCode)) query.code = safeStr(schoolCode);
   if (safeStr(schoolSearch)) {
@@ -300,7 +301,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 
   const { page, limit, skip } = getPagination(req);
   const query = Employee.find(match)
-    .select("employeeId userId schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
+    .select("employeeId userId organizationType schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
     .populate({ path: "userId", select: "name email role" })
     .populate({ path: "schoolId", select: "code nameEnglish" })
     .sort({ employeeId: 1 });
@@ -308,14 +309,17 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 
   const [records, total] = await Promise.all([query.lean(), Employee.countDocuments(match)]);
   const sensitive = canViewSensitive(role);
+  const hq = getHqOrganizationSummary();
   const rows = records.map((employee) => ({
     _id: employee._id,
     employeeId: employee.employeeId || "-",
     name: employee.userId?.name || "-",
     email: employee.userId?.email || "-",
     role: employee.userId?.role || "-",
-    schoolCode: employee.schoolId?.code || "-",
-    schoolName: employee.schoolId?.nameEnglish || "-",
+    schoolCode:
+      employee.organizationType === ORGANIZATION_TYPES.HQ ? hq.code : employee.schoolId?.code || "-",
+    schoolName:
+      employee.organizationType === ORGANIZATION_TYPES.HQ ? hq.nameEnglish : employee.schoolId?.nameEnglish || "-",
     contactNumber: employee.contactNumber || "-",
     fatherGuardianName: employee.fatherGuardianName || "-",
     dob: employee.dob || null,
@@ -362,13 +366,13 @@ async function attachSupervisorCounts(supervisors) {
   const supervisorIds = supervisors.map((item) => item._id);
   if (!supervisorIds.length) return supervisors.map((item) => ({ ...item, niswansCount: 0, employeesCount: 0, studentsCount: 0 }));
 
-  const schools = await School.find({ supervisorId: { $in: supervisorIds } }).select("_id supervisorId").lean();
+  const schools = await School.find({ supervisorId: { $in: supervisorIds }, ...getNiswanSchoolFilter() }).select("_id supervisorId").lean();
   const schoolIds = schools.map((school) => school._id);
   const schoolToSupervisor = new Map(schools.map((school) => [String(school._id), String(school.supervisorId)]));
 
   const [employeeGroups, studentGroups] = await Promise.all([
     schoolIds.length
-      ? Employee.aggregate([{ $match: { schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
+      ? Employee.aggregate([{ $match: { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
       : [],
     schoolIds.length
       ? Student.aggregate([{ $match: { schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])

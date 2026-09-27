@@ -21,6 +21,7 @@ import { toCamelCase, getNextNumber, createInvoiceFromStructure, parseDate } fro
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 import { createUserNotification } from "../services/notificationService.js";
 import { validateActualDate, validateActualDateOrder } from "../utils/dateRules.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -481,7 +482,7 @@ const addStudent = async (req, res) => {
 
     req.body.schoolId = safeSchoolId;
 
-    const schoolById = await School.findById(safeSchoolId);
+    const schoolById = await School.findOne({ _id: safeSchoolId, ...getNiswanSchoolFilter() });
     if (schoolById == null) {
       return res
         .status(404)
@@ -957,7 +958,7 @@ const importStudentsData = async (req, res) => {
       ...new Set(studentsDataList.map((r) => safeStr(r.niswanCode)).filter(Boolean)),
     ];
 
-    const schools = await School.find({ code: { $in: niswanCodes } })
+    const schools = await School.find({ code: { $in: niswanCodes }, ...getNiswanSchoolFilter() })
       .select("_id code districtStateId")
       .lean();
 
@@ -2681,7 +2682,7 @@ const updateStudent = async (req, res) => {
         const user = await User.findById(student.userId).session(session);
         if (!user) throw new Error("User not found");
 
-        const school = await School.findById(safeSchoolId).select("_id").session(session);
+        const school = await School.findOne({ _id: safeSchoolId, ...getNiswanSchoolFilter() }).select("_id").session(session);
         if (!school) throw new Error("Niswan not found");
 
         console.log("AC Year : " + safeAcYear);
@@ -3202,7 +3203,7 @@ const getSchoolDisplayText = async (schoolId) => {
   const safeSchoolId = normalizeObjectIdValue(schoolId);
   if (!safeSchoolId || !isObjectId(safeSchoolId)) return "";
 
-  const school = await School.findById(safeSchoolId)
+  const school = await School.findOne({ _id: safeSchoolId, ...getNiswanSchoolFilter() })
     .select("code nameEnglish name")
     .lean();
 

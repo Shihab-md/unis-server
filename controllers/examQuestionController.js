@@ -6,6 +6,7 @@ import ExamQuestionDownload from "../models/ExamQuestionDownload.js";
 import ExamQuestionPaper from "../models/ExamQuestionPaper.js";
 import School from "../models/School.js";
 import { getAccessContext } from "../middleware/authorizationMiddleware.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import {
   deleteQuestionPaperFromDrive,
   downloadQuestionPaperFromDrive,
@@ -101,7 +102,7 @@ const getCourseSubjects = (course = {}) => {
 const getAdminSchool = async (userId) => {
   const employee = await Employee.findOne({ userId }).select("schoolId active").lean();
   if (!employee?.schoolId || clean(employee.active).toLowerCase() !== "active") return null;
-  const school = await School.findOne({ _id: employee.schoolId, active: "Active" })
+  const school = await School.findOne({ _id: employee.schoolId, active: "Active", ...getNiswanSchoolFilter() })
     .select("_id code nameEnglish")
     .lean();
   return school || null;
@@ -227,7 +228,7 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
       sameIdSet(existing.targetSchoolIds, targetSchoolIds)
     );
     if (!existingTargetsUnchanged) {
-      const activeSchools = await School.find({ _id: { $in: targetSchoolIds }, active: "Active" }).select("_id").lean();
+      const activeSchools = await School.find({ _id: { $in: targetSchoolIds }, active: "Active", ...getNiswanSchoolFilter() }).select("_id").lean();
       if (activeSchools.length !== targetSchoolIds.length) throw new Error("One or more selected Niswans are invalid or inactive.");
     }
   }
@@ -272,7 +273,7 @@ export const getExamQuestionOptions = async (req, res) => {
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).sort({ promotionOrder: 1, code: 1 }).lean(),
       access.isManager
-        ? School.find({ active: "Active" }).select("_id code nameEnglish").sort({ code: 1 }).lean()
+        ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish").sort({ code: 1 }).lean()
         : Promise.resolve(access.school ? [access.school] : []),
     ]);
 
@@ -344,7 +345,7 @@ export const listExamQuestions = async (req, res) => {
         .populate("targetSchoolIds", "code nameEnglish")
         .lean(),
       ExamQuestionPaper.countDocuments(filter),
-      access.isManager ? School.find({ active: "Active" }).select("_id").lean() : Promise.resolve([]),
+      access.isManager ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id").lean() : Promise.resolve([]),
     ]);
 
     let statsMap = new Map();
@@ -600,8 +601,8 @@ export const getExamQuestionDownloads = async (req, res) => {
     if (!paper) return res.status(404).json({ success: false, error: "Question Paper not found." });
 
     const targetSchools = paper.targetType === "ALL"
-      ? await School.find({ active: "Active" }).select("_id code nameEnglish").sort({ code: 1 }).lean()
-      : await School.find({ _id: { $in: paper.targetSchoolIds || [] } }).select("_id code nameEnglish active").sort({ code: 1 }).lean();
+      ? await School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish").sort({ code: 1 }).lean()
+      : await School.find({ _id: { $in: paper.targetSchoolIds || [] }, ...getNiswanSchoolFilter() }).select("_id code nameEnglish active").sort({ code: 1 }).lean();
 
     const rows = await ExamQuestionDownload.find({ questionPaperId: paper._id })
       .select("schoolId userId downloadedAt")

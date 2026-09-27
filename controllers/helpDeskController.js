@@ -6,6 +6,7 @@ import Employee from "../models/Employee.js";
 import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const CATEGORIES = new Set([
   "General",
@@ -114,12 +115,16 @@ const getUserSchoolContext = async (user) => {
 
   if (EMPLOYEE_LINKED_ROLES.has(role)) {
     const employee = await Employee.findOne({ userId: user._id })
-      .populate("schoolId", "code nameEnglish")
-      .select("schoolId")
+      .populate("schoolId", "code nameEnglish recordType")
+      .select("organizationType schoolId")
       .lean();
 
+    if (employee?.organizationType === ORGANIZATION_TYPES.HQ) {
+      return { schoolId: null, schoolCode: "", schoolName: "" };
+    }
+
     const school = employee?.schoolId;
-    if (school?._id) {
+    if (school?._id && school.recordType !== "LEGACY_HQ") {
       return {
         schoolId: school._id,
         schoolCode: school.code || "",
@@ -130,8 +135,8 @@ const getUserSchoolContext = async (user) => {
 
   if (STUDENT_LINKED_ROLES.has(role)) {
     const student = await Student.findOne({ userId: user._id })
-      .populate("schoolId", "code nameEnglish")
-      .select("schoolId")
+      .populate("schoolId", "code nameEnglish recordType")
+      .select("organizationType schoolId")
       .lean();
 
     const school = student?.schoolId;
@@ -148,7 +153,7 @@ const getUserSchoolContext = async (user) => {
     const supervisor = await Supervisor.findOne({ userId: user._id }).select("_id").lean();
 
     if (supervisor?._id) {
-      const school = await School.findOne({ supervisorId: supervisor._id })
+      const school = await School.findOne({ supervisorId: supervisor._id, ...getNiswanSchoolFilter() })
         .select("code nameEnglish")
         .sort({ code: 1 })
         .lean();

@@ -22,6 +22,7 @@ import resetPassRouter from './routes/resetPass.js'
 
 import connectToDatabase from './db/db.js'
 import loadCache from './db/loadCache.js'
+import migrateOrganizationModel from './services/organizationMigrationService.js'
 
 import reportRouter from './routes/report.js'
 
@@ -49,6 +50,7 @@ const runtime = validateRuntimeEnvironment();
 console.log(`[environment] ${runtime.environment} | DB=${runtime.databaseName} | server=${SERVER_VERSION}`);
 
 await connectToDatabase()
+await migrateOrganizationModel()
 await loadCache()
  
 const app = express()

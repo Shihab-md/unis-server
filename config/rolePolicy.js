@@ -61,8 +61,8 @@ export const HQ_ACCOUNTS_ROLES = Object.freeze([
 ]);
 export const HQ_ACCOUNTS_ROLE_SET = new Set(HQ_ACCOUNTS_ROLES);
 
-// These roles are Employee-backed HQ staff while the legacy HQ Niswan remains.
-// Phase 5 will remove that fake-HQ-Niswan dependency; Phase 4 does not.
+// Employee-backed HQ roles. Phase 5 resolves their HQ identity from
+// Employee.organizationType rather than from a synthetic School/Niswan record.
 export const HQ_EMPLOYEE_ROLES = Object.freeze([
   ROLES.HQ_ADMIN,
   ROLES.ACCOUNTANT,

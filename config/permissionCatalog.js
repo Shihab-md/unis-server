@@ -180,8 +180,9 @@ const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze([
 ]);
 const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 // HQ User keeps the two explicitly approved legacy HQ utilities even though it is
-// otherwise a read-only global role. Admin remains compatibility-only for the old
-// HQ Admin account linked to the HQ Niswan; normal Niswan Admin is still blocked.
+// otherwise a read-only global role. Admin remains compatibility-only for a legacy
+// Admin Employee explicitly classified under the HQ organization; normal Niswan
+// Admin is still blocked.
 const CERTIFICATE_BULK_IHS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
 const TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
 
@@ -633,7 +634,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     key: PERMISSIONS.CERTIFICATE_BULK_IHS,
     category: "Certificates",
     label: "Create IHS Old Certificates",
-    description: "Create legacy IHS Certificates in bulk. For the Admin role this is effective only for the HQ Admin linked to the HQ Niswan; normal Niswan Admin remains blocked by server scope.",
+    description: "Create legacy IHS Certificates in bulk. For the Admin role this is effective only for a legacy Admin Employee classified under the HQ organization; normal Niswan Admin remains blocked by server scope.",
     requires: [],
     editable: true,
     allowedRoles: CERTIFICATE_BULK_IHS_SCOPE_ROLES,
@@ -1104,7 +1105,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     key: PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
     category: "Marks / Results",
     label: "Create Temp School Marksheets",
-    description: "Generate temporary school marksheets from the existing Excel workflow. For the Admin role this is effective only for the HQ Admin linked to the HQ Niswan; normal Niswan Admin remains blocked by server scope.",
+    description: "Generate temporary school marksheets from the existing Excel workflow. For the Admin role this is effective only for a legacy Admin Employee classified under the HQ organization; normal Niswan Admin remains blocked by server scope.",
     requires: [],
     editable: true,
     allowedRoles: TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES,

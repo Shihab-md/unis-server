@@ -10,6 +10,7 @@ import Template from "../models/Template.js"
 import DistrictState from "../models/DistrictState.js"
 import Certificate from "../models/Certificate.js"
 import Grade from "../models/Grade.js"
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js"
 
 const loadCache = async () => {
     try {
@@ -24,7 +25,7 @@ const loadCache = async () => {
         // ----------------------------
         const [
             totalSupervisors,
-            totalSchoolsRaw,
+            totalSchools,
             totalStudents,
             totalEmployees,
             totalCertificates,
@@ -36,7 +37,7 @@ const loadCache = async () => {
             totalGrades,
         ] = await Promise.all([
             Supervisor.countDocuments({ active: "Active" }),
-            School.countDocuments(),
+            School.countDocuments(getNiswanSchoolFilter()),
             Student.countDocuments(),
             Employee.countDocuments({ active: "Active" }),
             Certificate.countDocuments(),
@@ -47,8 +48,6 @@ const loadCache = async () => {
             DistrictState.countDocuments(),
             Grade.countDocuments(),
         ]);
-
-        const totalSchools = Math.max(Number(totalSchoolsRaw) - 1, 0); // minus HQ
 
         // Use multi-set + TTLs
         await Promise.all([
@@ -85,7 +84,7 @@ const loadCache = async () => {
                 .populate({ path: "userId", select: "name" })
                 .lean(),
 
-            School.find()
+            School.find(getNiswanSchoolFilter())
                 .sort({ code: 1 })
                 .select("_id code nameEnglish districtStateId active")
                 .populate({ path: "districtStateId", select: "district state" })

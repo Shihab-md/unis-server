@@ -8,6 +8,12 @@ import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
 import { getRolePermissions } from "../services/permissionService.js";
 import { HQ_EMPLOYEE_ROLE_SET } from "../config/rolePolicy.js";
+import {
+  ORGANIZATION_TYPES,
+  SCHOOL_RECORD_TYPES,
+  getHqOrganizationSummary,
+  normalizeOrganizationType,
+} from "../config/organizationPolicy.js";
 
 const looksLikeEmail = (v) => typeof v === "string" && v.includes("@");
 
@@ -16,7 +22,6 @@ const getJwtExpiresIn = () => String(process.env.JWT_EXPIRES_IN || "3h");
 const signAuthToken = (payload) =>
   jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: getJwtExpiresIn() });
 
-const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
 
 const employeeScopedRoles = new Set([
   "hqadmin",
@@ -51,19 +56,15 @@ const getScopedSessionForUser = async (user) => {
   let schoolName = null;
   let schoolIds = [];
   let schools = [];
+  let organizationType = null;
+  let organizationCode = null;
+  let organizationName = null;
 
-  if (employeeActiveCheckRoles.has(role)) {
-    const activeEmployee = await Employee.findOne({ userId: user._id, active: "Active" })
-      .select("_id")
-      .lean();
-
-    if (!activeEmployee) {
-      return {
-        ok: false,
-        status: 401,
-        error: "Your account is inactive. Please login again.",
-      };
-    }
+  if (role === "superadmin") {
+    const hq = getHqOrganizationSummary();
+    organizationType = ORGANIZATION_TYPES.HQ;
+    organizationCode = hq.code;
+    organizationName = hq.nameEnglish;
   }
 
   if (role === "supervisor") {
@@ -79,57 +80,88 @@ const getScopedSessionForUser = async (user) => {
       };
     }
 
-    const schoolDocs = await School.find({ supervisorId: activeSupervisor._id })
+    const schoolDocs = await School.find({
+      supervisorId: activeSupervisor._id,
+      recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
+    })
       .select("_id code nameEnglish")
       .sort({ code: 1 })
       .lean();
 
-    schoolIds = schoolDocs.map((s) => String(s._id));
-    schools = schoolDocs.map((s) => ({
-      _id: String(s._id),
-      code: s.code,
-      nameEnglish: s.nameEnglish,
+    schoolIds = schoolDocs.map((school) => String(school._id));
+    schools = schoolDocs.map((school) => ({
+      _id: String(school._id),
+      code: school.code,
+      nameEnglish: school.nameEnglish,
     }));
+
+    const hq = getHqOrganizationSummary();
+    organizationType = ORGANIZATION_TYPES.HQ;
+    organizationCode = hq.code;
+    organizationName = hq.nameEnglish;
   }
 
   if (employeeScopedRoles.has(role)) {
     const employee = await Employee.findOne({ userId: user._id, active: "Active" })
-      .select("schoolId")
+      .select("schoolId organizationType")
       .lean();
 
-    if (!employee?.schoolId) {
+    if (!employee?._id) {
       return {
         ok: false,
-        status: 400,
-        error: "Your account is not linked to a Niswan. Please contact admin.",
+        status: 401,
+        error: "Your account is inactive. Please login again.",
       };
     }
 
-    const school = await School.findById(employee.schoolId)
-      .select("code nameEnglish district state")
-      .lean();
+    const employeeOrganizationType = normalizeOrganizationType(employee.organizationType);
 
-    if (!school?._id) {
-      return {
-        ok: false,
-        status: 400,
-        error: "Your Niswan record is missing. Please contact admin.",
-      };
-    }
-
-    if (HQ_EMPLOYEE_ROLE_SET.has(role) && String(school.code || "").trim() !== HQ_SCHOOL_CODE) {
+    if (HQ_EMPLOYEE_ROLE_SET.has(role) && employeeOrganizationType !== ORGANIZATION_TYPES.HQ) {
       return {
         ok: false,
         status: 403,
-        error: "This HQ role must be linked to the configured HQ staff record. Please contact SuperAdmin.",
+        error: "This HQ role must be assigned to the HQ organization. Please contact SuperAdmin.",
       };
     }
 
-    schoolId = String(school._id);
-    schoolName =
-      `${school.code} : ${school.nameEnglish}` +
-      (school.district ? `, ${school.district}` : "") +
-      (school.state ? `, ${school.state}` : "");
+    organizationType = employeeOrganizationType;
+
+    if (employeeOrganizationType === ORGANIZATION_TYPES.HQ) {
+      const hq = getHqOrganizationSummary();
+      organizationCode = hq.code;
+      organizationName = hq.nameEnglish;
+      schoolId = null;
+      schoolName = null;
+    } else {
+      if (!employee.schoolId) {
+        return {
+          ok: false,
+          status: 400,
+          error: "Your account is not linked to a Niswan. Please contact admin.",
+        };
+      }
+
+      const school = await School.findOne({
+        _id: employee.schoolId,
+        recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
+      })
+        .select("code nameEnglish district state")
+        .lean();
+
+      if (!school?._id) {
+        return {
+          ok: false,
+          status: 400,
+          error: "Your Niswan record is missing. Please contact admin.",
+        };
+      }
+
+      schoolId = String(school._id);
+      schoolName =
+        `${school.code} : ${school.nameEnglish}` +
+        (school.district ? `, ${school.district}` : "") +
+        (school.state ? `, ${school.state}` : "");
+    }
   }
 
   if (studentRoles.has(role)) {
@@ -143,7 +175,10 @@ const getScopedSessionForUser = async (user) => {
       };
     }
 
-    const school = await School.findById(student.schoolId)
+    const school = await School.findOne({
+      _id: student.schoolId,
+      recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
+    })
       .select("code nameEnglish district state")
       .lean();
 
@@ -155,6 +190,7 @@ const getScopedSessionForUser = async (user) => {
       };
     }
 
+    organizationType = ORGANIZATION_TYPES.NISWAN;
     schoolId = String(school._id);
     schoolName =
       `${school.code} : ${school.nameEnglish}` +
@@ -162,7 +198,15 @@ const getScopedSessionForUser = async (user) => {
       (school.state ? `, ${school.state}` : "");
   }
 
-  const tokenPayload = { _id: user._id, role, schoolId, schoolName };
+  const tokenPayload = {
+    _id: user._id,
+    role,
+    schoolId,
+    schoolName,
+    organizationType,
+    organizationCode,
+    organizationName,
+  };
   if (role === "supervisor") tokenPayload.schoolIds = schoolIds;
 
   const permissions = await getRolePermissions(role);
@@ -173,12 +217,28 @@ const getScopedSessionForUser = async (user) => {
     role,
     schoolId,
     schoolName,
+    organizationType,
+    organizationCode,
+    organizationName,
     permissions,
     preferredLanguage: String(user?.preferredLanguage || "en").toLowerCase(),
     ...(role === "supervisor" ? { schoolIds, schools } : {}),
   };
 
-  return { ok: true, role, schoolId, schoolName, schoolIds, schools, permissions, tokenPayload, user: responseUser };
+  return {
+    ok: true,
+    role,
+    schoolId,
+    schoolName,
+    schoolIds,
+    schools,
+    organizationType,
+    organizationCode,
+    organizationName,
+    permissions,
+    tokenPayload,
+    user: responseUser,
+  };
 };
 
 const login = async (req, res) => {

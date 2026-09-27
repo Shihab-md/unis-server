@@ -11,6 +11,7 @@ import Account from "../models/Account.js";
 
 import getRedis from "../db/redis.js";
 import { sendCSV, sendXLSX, sendXLSXMulti } from "../utils/reportExport.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const oid = (id) => new mongoose.Types.ObjectId(String(id));
 const isObjectIdLike = (v) => mongoose.Types.ObjectId.isValid(String(v || ""));
@@ -85,6 +86,7 @@ async function getAccessibleSchoolIds({ role, schoolId, userId }) {
 
     const schools = await School.find({
       supervisorId: { $in: possibleSupervisorIds },
+      ...getNiswanSchoolFilter(),
     })
       .select("_id")
       .lean();
@@ -104,7 +106,7 @@ async function resolveSchoolScope({ allowedSchoolIds, schoolIdFilter, schoolCode
   const hasExtraSchoolFilter = Boolean(safeStr(schoolCode) || safeStr(q));
   if (!hasExtraSchoolFilter) return allowedSchoolIds;
 
-  const schoolQuery = {};
+  const schoolQuery = getNiswanSchoolFilter();
   if (allowedSchoolIds !== null) {
     schoolQuery._id = { $in: allowedSchoolIds.map(oid) };
   }
@@ -582,8 +584,8 @@ export const getReportMeta = async (req, res) => {
 
     const schoolQuery =
       resolvedSchoolIds === null
-        ? {}
-        : { _id: { $in: resolvedSchoolIds.map(oid) } };
+        ? getNiswanSchoolFilter()
+        : { ...getNiswanSchoolFilter(), _id: { $in: resolvedSchoolIds.map(oid) } };
 
     const [schools, courses, academicYears] = await Promise.all([
       School.find(schoolQuery).select("_id code nameEnglish").sort({ code: 1 }).lean(),
@@ -730,8 +732,8 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
 
     const schoolQuery =
       resolvedSchoolIds === null
-        ? {}
-        : { _id: { $in: resolvedSchoolIds.map(oid) } };
+        ? getNiswanSchoolFilter()
+        : { ...getNiswanSchoolFilter(), _id: { $in: resolvedSchoolIds.map(oid) } };
 
     const schools = await School.find(schoolQuery)
       .select("_id code nameEnglish")

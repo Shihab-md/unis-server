@@ -10,6 +10,7 @@ import Student from "../models/Student.js";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
 import { createUserNotification, getWebPushReadiness } from "../services/notificationService.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const VALID_TARGET_ROLES = new Set([
   "superadmin",
@@ -149,7 +150,7 @@ const getTargetNiswansForHistory = async ({ selectAllSchools, selectedSchoolIds 
 
   if (!selectedSchoolIds.length) return [];
 
-  const schools = await School.find({ _id: { $in: selectedSchoolIds } })
+  const schools = await School.find({ _id: { $in: selectedSchoolIds }, ...getNiswanSchoolFilter() })
     .select("code nameEnglish")
     .sort({ code: 1 })
     .lean();
@@ -178,7 +179,9 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
       {
         $match: {
           active: "Active",
-          ...(hasSchoolFilter ? { schoolId: { $in: selectedSchoolIds } } : {}),
+          ...(hasSchoolFilter
+            ? { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId: { $in: selectedSchoolIds } }
+            : {}),
         },
       },
       {
@@ -225,7 +228,7 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
     let supervisorObjectIds = [];
 
     if (hasSchoolFilter) {
-      const schools = await School.find({ _id: { $in: selectedSchoolIds } })
+      const schools = await School.find({ _id: { $in: selectedSchoolIds }, ...getNiswanSchoolFilter() })
         .select("supervisorId")
         .lean();
 

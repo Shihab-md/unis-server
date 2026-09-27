@@ -7,9 +7,13 @@ import Template from "../models/Template.js";
 import Academic from "../models/Academic.js";
 import FeeInvoice from "../models/FeeInvoice.js";
 import { GLOBAL_HQ_READ_ROLE_SET, HQ_EMPLOYEE_ROLE_SET, normalizeRole } from "../config/rolePolicy.js";
+import {
+  ORGANIZATION_TYPES,
+  SCHOOL_RECORD_TYPES,
+  normalizeOrganizationType,
+} from "../config/organizationPolicy.js";
 
 const HQ_ROLES = GLOBAL_HQ_READ_ROLE_SET;
-const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
 const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hqadmin", "admin"]);
 
 const deny = (res, message = "You are not authorized to access this resource.") =>
@@ -21,16 +25,25 @@ export const getAccessContext = async (user) => {
   const role = normalizeRole(user?.role);
   const userId = user?._id;
 
-  if (!userId) return { role, userId: null, isHQ: false, isActive: false, schoolIds: [] };
+  if (!userId) return { role, userId: null, isHQ: false, isActive: false, schoolIds: [], organizationType: null };
   if (role === "superadmin") {
-    return { role, userId, isHQ: true, isActive: true, canReadAllStudents: true, schoolIds: [] };
+    return {
+      role,
+      userId,
+      isHQ: true,
+      isActive: true,
+      canReadAllStudents: true,
+      schoolIds: [],
+      organizationType: ORGANIZATION_TYPES.HQ,
+    };
   }
+
   if (HQ_EMPLOYEE_ROLE_SET.has(role)) {
     const employee = await Employee.findOne({ userId, active: "Active" })
-      .select("_id schoolId active")
-      .populate({ path: "schoolId", select: "_id code active" })
+      .select("_id organizationType active")
       .lean();
-    const isActive = Boolean(employee?._id) && String(employee?.schoolId?.code || "").trim() === HQ_SCHOOL_CODE;
+    const organizationType = normalizeOrganizationType(employee?.organizationType);
+    const isActive = Boolean(employee?._id) && organizationType === ORGANIZATION_TYPES.HQ;
     return {
       role,
       userId,
@@ -38,7 +51,8 @@ export const getAccessContext = async (user) => {
       isActive,
       canReadAllStudents: isActive && HQ_ROLES.has(role),
       employeeId: employee?._id || null,
-      schoolIds: isActive && employee?.schoolId?._id ? [String(employee.schoolId._id)] : [],
+      schoolIds: [],
+      organizationType,
     };
   }
 
@@ -53,19 +67,27 @@ export const getAccessContext = async (user) => {
       isActive: true,
       canReadAllStudents: true,
       schoolIds: [],
+      organizationType: null,
     };
   }
 
-  if (["hqstaff", "admin", "teacher", "employee", "usthadh", "warden", "staff"].includes(role)) {
-    const employee = await Employee.findOne({ userId }).select("_id schoolId active").lean();
+  if (["admin", "teacher", "employee", "usthadh", "warden", "staff"].includes(role)) {
+    const employee = await Employee.findOne({ userId })
+      .select("_id schoolId organizationType active")
+      .lean();
     const isActive = Boolean(employee?._id) && isActiveValue(employee?.active);
+    const organizationType = normalizeOrganizationType(employee?.organizationType);
     return {
       role,
       userId,
       isHQ: false,
       isActive,
       employeeId: employee?._id || null,
-      schoolIds: isActive && employee?.schoolId ? [String(employee.schoolId)] : [],
+      organizationType,
+      schoolIds:
+        isActive && organizationType === ORGANIZATION_TYPES.NISWAN && employee?.schoolId
+          ? [String(employee.schoolId)]
+          : [],
     };
   }
 
@@ -73,9 +95,20 @@ export const getAccessContext = async (user) => {
     const supervisor = await Supervisor.findOne({ userId }).select("_id active").lean();
     const isActive = Boolean(supervisor?._id) && isActiveValue(supervisor?.active);
     if (!isActive) {
-      return { role, userId, isHQ: false, isActive: false, schoolIds: [], supervisorId: supervisor?._id || null };
+      return {
+        role,
+        userId,
+        isHQ: false,
+        isActive: false,
+        schoolIds: [],
+        supervisorId: supervisor?._id || null,
+        organizationType: ORGANIZATION_TYPES.HQ,
+      };
     }
-    const schools = await School.find({ supervisorId: { $in: [supervisor._id, userId] } }).select("_id").lean();
+    const schools = await School.find({
+      supervisorId: { $in: [supervisor._id, userId] },
+      recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
+    }).select("_id").lean();
     return {
       role,
       userId,
@@ -83,6 +116,7 @@ export const getAccessContext = async (user) => {
       isActive: true,
       supervisorId: supervisor._id,
       schoolIds: schools.map((school) => String(school._id)),
+      organizationType: ORGANIZATION_TYPES.HQ,
     };
   }
 
@@ -96,10 +130,11 @@ export const getAccessContext = async (user) => {
       isActive,
       studentId: student?._id || null,
       schoolIds: isActive && student?.schoolId ? [String(student.schoolId)] : [],
+      organizationType: ORGANIZATION_TYPES.NISWAN,
     };
   }
 
-  return { role, userId, isHQ: false, isActive: false, schoolIds: [] };
+  return { role, userId, isHQ: false, isActive: false, schoolIds: [], organizationType: null };
 };
 
 const getRequestAccess = async (req) => {
@@ -116,7 +151,7 @@ export const requireStudentManageRole = async (req, res, next) => {
 
     const access = await getRequestAccess(req);
     if (role === "hqadmin" && !access.isActive) {
-      return deny(res, "HQ Admin requires an active Employee record linked to the configured HQ Niswan.");
+      return deny(res, "HQ Admin requires an active Employee record assigned to the HQ organization.");
     }
     if (role === "admin" && !access.isActive) {
       return deny(res, "Your Niswan Admin account is inactive or is not linked to an active employee record.");
@@ -141,29 +176,26 @@ export const requireHQ = async (req, res, next) => {
   }
 };
 
-// Special HQ utilities may also be used by the existing HQ Admin account. HQ Admin
-// is still the normal `admin` role, distinguished by its active Employee record
-// being linked to the configured HQ Niswan. This does NOT turn normal Niswan Admin
-// into an HQ role and intentionally does not change access.isHQ elsewhere.
+// Special HQ utilities may also be used by the legacy Admin account that is
+// explicitly assigned to the HQ organization. This does NOT turn a normal Niswan
+// Admin into an HQ role and intentionally does not change access.isHQ elsewhere.
 export const requireHQOrHqAdmin = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
     if (HQ_ROLES.has(role)) {
       const access = await getRequestAccess(req);
       if (access.isHQ) return next();
-      return deny(res, "This HQ operation requires an active HQ-linked employee account.");
+      return deny(res, "This HQ operation requires an active Employee assigned to the HQ organization.");
     }
     if (role !== "admin") {
       return deny(res, "This HQ operation is available only to SuperAdmin, HQ User, or HQ Admin.");
     }
 
     const employee = await Employee.findOne({ userId: req.user?._id, active: "Active" })
-      .select("schoolId")
-      .populate({ path: "schoolId", select: "code active" })
+      .select("organizationType")
       .lean();
 
-    const schoolCode = String(employee?.schoolId?.code || "").trim();
-    if (schoolCode !== HQ_SCHOOL_CODE) {
+    if (normalizeOrganizationType(employee?.organizationType) !== ORGANIZATION_TYPES.HQ) {
       return deny(res, "This HQ operation is not available to a normal Niswan Admin.");
     }
 
@@ -309,7 +341,7 @@ const CREATE_TARGET_ROLES = {
 
 const requireActiveEmployeeActor = (access, role, res) => {
   if (HQ_EMPLOYEE_ROLE_SET.has(role) && !access.isActive) {
-    deny(res, "Your HQ role requires an active Employee record linked to the configured HQ Niswan.");
+    deny(res, "Your HQ role requires an active Employee record assigned to the HQ organization.");
     return false;
   }
   if (["admin"].includes(role) && !access.isActive) {
@@ -410,7 +442,7 @@ export const requireEmployeeImport = (req, res, next) => {
 const loadEmployeeForAccess = async (req, res, paramName = "id") => {
   const employeeId = String(req.params?.[paramName] || "");
   const employee = await Employee.findById(employeeId)
-    .select("_id schoolId userId employeeId active")
+    .select("_id schoolId organizationType userId employeeId active")
     .populate({ path: "userId", select: "_id role" })
     .lean();
   if (!employee) {
@@ -465,22 +497,37 @@ export const requireEmployeeCreateAccess = async (req, res, next) => {
     const role = normalizeRole(req.user?.role);
     const requestedSchoolId = String(req.body?.schoolId || "");
     const targetRole = normalizeRole(req.body?.role);
+    const isTargetHqRole = HQ_EMPLOYEE_ROLE_SET.has(targetRole);
 
-    if (!requestedSchoolId || !targetRole) return res.status(400).json({ success: false, error: "Niswan and role are required." });
+    if (!targetRole) return res.status(400).json({ success: false, error: "Role is required." });
     const allowedTargets = CREATE_TARGET_ROLES[role];
     if (!allowedTargets?.has(targetRole)) return deny(res, `You cannot create an Employee with role '${targetRole}'.`);
 
+    if (isTargetHqRole) {
+      if (!access.isHQ || !["superadmin", "hqadmin"].includes(role)) {
+        return deny(res, "HQ Employee roles can be created only by SuperAdmin or HQ Admin.");
+      }
+      req.employeeOrganizationType = ORGANIZATION_TYPES.HQ;
+      req.employeeTargetSchool = null;
+      return next();
+    }
+
+    if (!requestedSchoolId) {
+      return res.status(400).json({ success: false, error: "Niswan is required for a Niswan Employee role." });
+    }
     if (!access.isHQ && !access.schoolIds.includes(requestedSchoolId)) {
       return deny(res, "You can add Employees only inside your authorized Niswan scope.");
     }
 
-    const school = await School.findById(requestedSchoolId).select("_id active code").lean();
+    const school = await School.findOne({
+      _id: requestedSchoolId,
+      recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
+    }).select("_id active code recordType").lean();
     if (!school?._id) return res.status(404).json({ success: false, error: "Niswan not found." });
     if (!isActiveValue(school.active)) return deny(res, "Employees cannot be added to an inactive Niswan.");
-    if (HQ_EMPLOYEE_ROLE_SET.has(targetRole) && String(school.code || "").trim() !== HQ_SCHOOL_CODE) {
-      return deny(res, "HQ roles can be assigned only to employees linked to the configured HQ Niswan.");
-    }
 
+    req.employeeOrganizationType = ORGANIZATION_TYPES.NISWAN;
+    req.employeeTargetSchool = school;
     return next();
   } catch (error) {
     if (String(error?.name || "") === "CastError") return res.status(400).json({ success: false, error: "Invalid Niswan id." });
@@ -496,55 +543,66 @@ export const requireEmployeeUpdateAccess = (paramName = "id") => async (req, res
     const employee = await loadEmployeeForAccess(req, res, paramName);
     if (!employee) return;
 
+    const employeeOrganizationType = normalizeOrganizationType(employee.organizationType);
     const employeeSchoolId = String(employee.schoolId || "");
     const requestedSchoolId = String(req.body?.schoolId || "");
     const oldRole = normalizeRole(employee.userId?.role);
     const newRole = normalizeRole(req.body?.role || oldRole);
 
-    // Current production Web Edit keeps Niswan disabled for every role. Enforce that rule server-side.
-    if (!requestedSchoolId || requestedSchoolId !== employeeSchoolId) {
-      return deny(res, "Employee Niswan cannot be changed from the Employee Edit workflow.");
+    // Employee Edit never moves a person between HQ and Niswan. HQ employees have no
+    // Niswan selection; Niswan employees must remain in their existing Niswan.
+    if (employeeOrganizationType === ORGANIZATION_TYPES.NISWAN) {
+      if (!requestedSchoolId || requestedSchoolId !== employeeSchoolId) {
+        return deny(res, "Employee Niswan cannot be changed from the Employee Edit workflow.");
+      }
+    } else if (requestedSchoolId && requestedSchoolId !== employeeSchoolId) {
+      return deny(res, "HQ Employee organization cannot be changed from the Employee Edit workflow.");
     }
 
-    if (HQ_EMPLOYEE_ROLE_SET.has(newRole)) {
-      const targetSchool = await School.findById(employee.schoolId).select("_id code").lean();
-      if (!targetSchool?._id || String(targetSchool.code || "").trim() !== HQ_SCHOOL_CODE) {
-        return deny(res, "HQ roles can be assigned only to employees linked to the configured HQ Niswan.");
-      }
+    if (HQ_EMPLOYEE_ROLE_SET.has(newRole) && employeeOrganizationType !== ORGANIZATION_TYPES.HQ) {
+      return deny(res, "HQ roles can be assigned only to Employees already assigned to the HQ organization.");
     }
 
     if (role === "superadmin") {
       const allowed = CREATE_TARGET_ROLES.superadmin;
-      // Existing legacy Employee roles may remain unchanged during an edit even if
-      // they are no longer offered for new assignment. A role change itself must
-      // still target one of the explicitly supported roles.
       if (newRole !== oldRole && !allowed.has(newRole)) return deny(res, "Selected Employee role is not supported.");
     } else if (role === "hqadmin") {
       if (["superadmin", "hqadmin"].includes(oldRole)) return deny(res, "HQ Admin cannot edit SuperAdmin or another HQ Admin Employee record.");
       if (newRole !== oldRole) return deny(res, "Only SuperAdmin can change an Employee role.");
     } else if (role === "supervisor") {
-      if (!access.schoolIds.includes(employeeSchoolId) || oldRole !== "admin") {
+      if (employeeOrganizationType !== ORGANIZATION_TYPES.NISWAN || !access.schoolIds.includes(employeeSchoolId) || oldRole !== "admin") {
         return deny(res, "You can edit only assigned Niswan Admins.");
       }
       if (newRole !== oldRole) return deny(res, "Muavin cannot change an Employee role.");
     } else if (role === "admin") {
-      if (!access.schoolIds.includes(employeeSchoolId)) return deny(res, "This employee is outside your Niswan scope.");
+      if (access.organizationType !== ORGANIZATION_TYPES.NISWAN || employeeOrganizationType !== ORGANIZATION_TYPES.NISWAN || !access.schoolIds.includes(employeeSchoolId)) {
+        return deny(res, "This employee is outside your Niswan scope.");
+      }
       if (String(employee.userId?._id || "") === String(req.user?._id || "")) return deny(res, "Use My Profile to change your own account details.");
       if (newRole !== oldRole) return deny(res, "Niswan Admin cannot change an Employee role.");
     } else {
       return deny(res, "Employee update is not available for this role.");
     }
 
-    // Keep the existing one-active-Admin-per-Niswan rule consistent when Super Admin changes roles/status.
     if (newRole === "admin" && String(req.body?.active || employee.active) === "Active") {
-      const duplicate = await Employee.findOne({
+      const duplicateFilter = {
         _id: { $ne: employee._id },
-        schoolId: employee.schoolId,
+        organizationType: employeeOrganizationType,
         active: "Active",
-      }).populate({ path: "userId", match: { role: "admin" }, select: "_id role" }).select("_id userId").lean();
-      if (duplicate?.userId) return res.status(400).json({ success: false, error: "An active Admin already exists for this Niswan." });
+      };
+      if (employeeOrganizationType === ORGANIZATION_TYPES.NISWAN) duplicateFilter.schoolId = employee.schoolId;
+
+      const duplicate = await Employee.findOne(duplicateFilter)
+        .populate({ path: "userId", match: { role: "admin" }, select: "_id role" })
+        .select("_id userId")
+        .lean();
+      if (duplicate?.userId) {
+        const scopeLabel = employeeOrganizationType === ORGANIZATION_TYPES.HQ ? "HQ organization" : "Niswan";
+        return res.status(400).json({ success: false, error: `An active Admin already exists for this ${scopeLabel}.` });
+      }
     }
 
+    req.employeeOrganizationType = employeeOrganizationType;
     req.authorizedEmployee = employee;
     return next();
   } catch (error) {
@@ -747,7 +805,7 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
 
     const [template, school, student] = await Promise.all([
       Template.findById(templateId).select("_id courseId certificateFees").lean(),
-      School.findById(schoolId).select("_id active").lean(),
+      School.findOne({ _id: schoolId, recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ } }).select("_id active").lean(),
       Student.findById(studentId).select("_id schoolId userId").lean(),
     ]);
 

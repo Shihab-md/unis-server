@@ -3,7 +3,22 @@ import { Schema } from "mongoose";
 
 const employeeSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  schoolId: { type: Schema.Types.ObjectId, ref: "School", required: true, index: true },
+  organizationType: {
+    type: String,
+    enum: ["HQ", "NISWAN"],
+    default: "NISWAN",
+    required: true,
+    index: true,
+  },
+  schoolId: {
+    type: Schema.Types.ObjectId,
+    ref: "School",
+    default: null,
+    index: true,
+    required: function requiredSchoolForNiswanEmployee() {
+      return this.organizationType !== "HQ";
+    },
+  },
   employeeId: { type: String, required: true, unique: true, index: true },
   contactNumber: { type: Number, required: true },
   address: { type: String, required: true },
@@ -27,6 +42,7 @@ const employeeSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+employeeSchema.index({ organizationType: 1, schoolId: 1, active: 1, employeeId: 1 });
 employeeSchema.index({ schoolId: 1, active: 1, employeeId: 1 });
 employeeSchema.index({ userId: 1 });
 

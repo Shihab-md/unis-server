@@ -2,8 +2,7 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js';
 import Employee from '../models/Employee.js';
 import { HQ_EMPLOYEE_ROLE_SET, normalizeRole } from '../config/rolePolicy.js';
-
-const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
+import { ORGANIZATION_TYPES } from '../config/organizationPolicy.js';
 
 const sendUnauthorized = (res, code, error) => {
     return res.status(401).json({
@@ -42,15 +41,14 @@ const verifyUser = async (req, res, next) => {
 
         if (HQ_EMPLOYEE_ROLE_SET.has(role)) {
             const employee = await Employee.findOne({ userId: user._id, active: "Active" })
-                .select("_id schoolId")
-                .populate({ path: "schoolId", select: "_id code active" })
+                .select("_id organizationType")
                 .lean();
 
-            if (!employee?._id || String(employee?.schoolId?.code || "").trim() !== HQ_SCHOOL_CODE) {
+            if (!employee?._id || String(employee?.organizationType || "").trim().toUpperCase() !== ORGANIZATION_TYPES.HQ) {
                 return res.status(403).json({
                     success: false,
                     code: "HQ_ROLE_SCOPE_INVALID",
-                    error: "This HQ role requires an active Employee record linked to the configured HQ Niswan.",
+                    error: "This HQ role requires an active Employee record assigned to the HQ organization.",
                 });
             }
         }

@@ -15,7 +15,6 @@ import {
   canApproveStaffLeave,
   getAttendanceAccess,
   getActorStaff,
-  getHqSchool,
   isObjectId,
   loadStaffByRef,
   normalizeRole,
@@ -27,11 +26,20 @@ import {
 import { validateNotFutureDateKey } from "../utils/dateRules.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { getRequestPermissions } from "../services/permissionService.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const STUDENT_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const STAFF_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const LEAVE_STATUSES = new Set(["Pending", "Approved", "Rejected", "Cancelled"]);
 const PAYROLL_STATUSES = new Set(["Draft", "Reviewed", "Finalized", "Paid"]);
+
+const getOrganizationScopeFilter = (organizationType, schoolId) =>
+  organizationType === ORGANIZATION_TYPES.HQ
+    ? { organizationType: ORGANIZATION_TYPES.HQ }
+    : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId };
+
+const getScopeSchoolIdForWrite = (organizationType, schoolId) =>
+  organizationType === ORGANIZATION_TYPES.HQ ? null : schoolId;
 
 const sendError = (res, error) => {
   const status = Number(error?.status || 500);
@@ -174,10 +182,13 @@ const loadStaffRoster = async ({
   const rows = [];
 
   if (includeEmployees) {
-    const employeeFilter = { schoolId };
+    const employeeFilter =
+      organizationType === ORGANIZATION_TYPES.HQ
+        ? { organizationType: ORGANIZATION_TYPES.HQ }
+        : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId };
     if (!includeInactive) employeeFilter.active = "Active";
     const employees = await Employee.find(employeeFilter)
-      .select("_id userId schoolId employeeId designation salary travellingAllowance active")
+      .select("_id userId schoolId organizationType employeeId designation salary travellingAllowance active")
       .populate({ path: "userId", select: "_id name email role" })
       .sort({ employeeId: 1 })
       .lean();
@@ -187,7 +198,9 @@ const loadStaffRoster = async ({
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role), designation: record.designation || "",
       salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
-      active: record.active, schoolId: String(record.schoolId || ""),
+      active: record.active,
+      organizationType: record.organizationType || organizationType,
+      schoolId: organizationType === ORGANIZATION_TYPES.HQ ? "" : String(record.schoolId || ""),
     })));
   }
 
@@ -204,7 +217,7 @@ const loadStaffRoster = async ({
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role || "supervisor"), designation: "Muavin",
       salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
-      active: record.active, schoolId: String(schoolId || ""),
+      active: record.active, organizationType: ORGANIZATION_TYPES.HQ, schoolId: "",
     })));
   }
 
@@ -296,7 +309,7 @@ export const getAttendanceMeta = async (req, res) => {
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).select("_id code name type years").sort({ promotionOrder: 1, code: 1 }).lean(),
       access.isSuperAdmin
-        ? School.find({ active: "Active" }).select("_id code nameEnglish active").sort({ code: 1 }).lean()
+        ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish active").sort({ code: 1 }).lean()
         : Promise.resolve([]),
     ]);
 
@@ -333,7 +346,7 @@ export const getAttendanceMeta = async (req, res) => {
             }
           : null,
       },
-      hqSchool: access.hqSchool,
+      hqOrganization: access.hqOrganization,
       defaultScopeType,
       defaultSchoolId,
       schools: schools.map((school) => ({
@@ -788,7 +801,7 @@ export const getStaffRoster = async (req, res) => {
     }));
 
     const finalizedFilter = {
-      organizationType: scope.organizationType, schoolId: scope.schoolId, dateKey, isFinalized: true,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
       ...(scope.organizationType === "HQ"
         ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
         : { staffType: "Employee" }),
@@ -898,7 +911,7 @@ export const saveStaffAttendance = async (req, res) => {
       }
     }
     const finalizedRecord = await StaffAttendance.findOne({
-      organizationType: scope.organizationType, schoolId: scope.schoolId, dateKey, isFinalized: true,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
       ...(scope.organizationType === "HQ"
         ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
         : { staffType: "Employee" }),
@@ -937,7 +950,7 @@ export const saveStaffAttendance = async (req, res) => {
         staffType,
         staffId,
         userId: staff.userId,
-        schoolId: scope.schoolId,
+        schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
         organizationType: scope.organizationType,
         dateKey,
         status: requestedStatus,
@@ -1031,12 +1044,11 @@ export const getStaffMonthlyAttendance = async (req, res) => {
       throw error;
     }
 
-    const hq = await getHqSchool();
     const organizationType =
-      staff.staffType === "Supervisor" || String(staff.schoolId || "") === String(hq?._id || "")
-        ? "HQ"
-        : "NISWAN";
-    const schoolId = organizationType === "HQ" ? String(hq?._id || "") : String(staff.schoolId || "");
+      staff.staffType === "Supervisor" || staff.organizationType === ORGANIZATION_TYPES.HQ
+        ? ORGANIZATION_TYPES.HQ
+        : ORGANIZATION_TYPES.NISWAN;
+    const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? "" : String(staff.schoolId || "");
 
     const scope = await resolveStaffScope({
       user: req.user,
@@ -1085,13 +1097,12 @@ export const createMyStaffLeave = async (req, res) => {
       throw error;
     }
 
-    const hq = await getHqSchool();
     const organizationType =
-      actor.staffType === "Supervisor" || String(actor.schoolId || "") === String(hq?._id || "")
-        ? "HQ"
-        : "NISWAN";
-    const schoolId = organizationType === "HQ" ? hq?._id : actor.schoolId;
-    if (!schoolId) {
+      actor.staffType === "Supervisor" || actor.organizationType === ORGANIZATION_TYPES.HQ
+        ? ORGANIZATION_TYPES.HQ
+        : ORGANIZATION_TYPES.NISWAN;
+    const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? null : actor.schoolId;
+    if (organizationType === ORGANIZATION_TYPES.NISWAN && !schoolId) {
       const error = new Error("Unable to resolve your Attendance organization.");
       error.status = 400;
       throw error;
@@ -1361,8 +1372,7 @@ export const listPayrollRuns = async (req, res) => {
 
     const run = await PayrollRun.findOne({
       monthKey,
-      organizationType: scope.organizationType,
-      schoolId: scope.schoolId,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
     }).lean();
 
     return res.json({ success: true, run });
@@ -1391,8 +1401,7 @@ export const generatePayroll = async (req, res) => {
     const staff = await loadStaffRoster({ ...scope, includeInactive: false });
     const existing = await PayrollRun.findOne({
       monthKey,
-      organizationType: scope.organizationType,
-      schoolId: scope.schoolId,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
     });
     if (existing && ["Finalized", "Paid"].includes(existing.status)) {
       const error = new Error("Finalized/Paid payroll cannot be regenerated.");
@@ -1473,11 +1482,12 @@ export const generatePayroll = async (req, res) => {
     const run = await PayrollRun.findOneAndUpdate(
       {
         monthKey,
-        organizationType: scope.organizationType,
-        schoolId: scope.schoolId,
+        ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
       },
       {
         $set: {
+          organizationType: scope.organizationType,
+          schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
           workingDays,
           status: existing?.status === "Reviewed" ? "Reviewed" : "Draft",
           items,

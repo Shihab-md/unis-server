@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { toCamelCase } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 import { validateActualDate } from "../utils/dateRules.js";
+import { SCHOOL_RECORD_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const upload = multer({});
 
@@ -102,6 +103,7 @@ const addSchool = async (req, res) => {
     const newCode = await generateNextSchoolCode(code);
 
     const newSchool = new School({
+      recordType: SCHOOL_RECORD_TYPES.NISWAN,
       code: newCode,
       nameEnglish,
       nameArabic,
@@ -156,9 +158,9 @@ const addSchool = async (req, res) => {
     await newSchool.save();
 
     const redis = await getRedis();
-    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
+    await redis.set('totalSchools', String(await School.countDocuments(getNiswanSchoolFilter())));
 
-    const totalSchoolsList = await School.find()
+    const totalSchoolsList = await School.find(getNiswanSchoolFilter())
       .sort({ code: 1 })
       .select("_id code nameEnglish districtStateId active")
       .populate({ path: "districtStateId", select: "district state" })
@@ -544,14 +546,17 @@ const getSchools = async (req, res) => {
     // the JWT and maintaining a second role matrix in this controller.
     const access = req.accessContext || {};
     const userRole = String(req.user?.role || "").trim().toLowerCase();
-    let filter = {};
+    let filter = getNiswanSchoolFilter();
 
     if (!access.isHQ && userRole !== "guest") {
       const allowedIds = Array.isArray(access.schoolIds)
         ? access.schoolIds.filter((value) => mongoose.Types.ObjectId.isValid(String(value)))
         : [];
       if (!allowedIds.length) return res.status(200).json({ success: true, schools: [] });
-      filter = { _id: { $in: allowedIds.map((value) => new mongoose.Types.ObjectId(String(value))) } };
+      filter = {
+        ...getNiswanSchoolFilter(),
+        _id: { $in: allowedIds.map((value) => new mongoose.Types.ObjectId(String(value))) },
+      };
     }
 
     // pagination
@@ -596,7 +601,7 @@ const getBySchFilter = async (req, res) => {
   const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v));
 
   try {
-    const baseMatch = {};
+    const baseMatch = getNiswanSchoolFilter();
 
     // V0.11: the normal Niswan list is role-scoped, so filtered reads must not widen it.
     // requireSchoolReadScope has already resolved req.accessContext for Admin/Muavin.
@@ -733,7 +738,7 @@ const getSchoolsFromCache = async (req, res) => {
 
     // ✅ Fallback to DB if cache empty (optional but recommended)
     if (!Array.isArray(schools) || schools.length === 0) {
-      schools = await School.find()
+      schools = await School.find(getNiswanSchoolFilter())
         .select("code nameEnglish nameArabic nameNative address city contactNumber active supervisorId districtStateId")
         .sort({ code: 1 })
         .lean();
@@ -756,7 +761,7 @@ const getSchoolsFromCache = async (req, res) => {
 const getSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const school = await School.findById({ _id: id })
+    const school = await School.findOne({ _id: id, ...getNiswanSchoolFilter() })
       .populate("supervisorId")
       .populate("districtStateId")
       .populate({
@@ -820,7 +825,7 @@ const updateSchool = async (req, res) => {
     }
 
 
-    const school = await School.findById({ _id: id });
+    const school = await School.findOne({ _id: id, ...getNiswanSchoolFilter() });
     if (!school) {
       return res
         .status(404)
@@ -834,7 +839,7 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "Supervisor data not found." });
     }
 
-    const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
+    const updateSchool = await School.findOneAndUpdate({ _id: id, ...getNiswanSchoolFilter() }, {
       code, nameEnglish,
       nameArabic,
       nameNative,
@@ -901,7 +906,7 @@ const updateSchool = async (req, res) => {
     // Keep reference-data lookups consistent after a mobile/web edit.
     try {
       const redis = await getRedis();
-      const totalSchoolsList = await School.find()
+      const totalSchoolsList = await School.find(getNiswanSchoolFilter())
         .sort({ code: 1 })
         .select("_id code nameEnglish districtStateId active supervisorId")
         .populate({ path: "districtStateId", select: "district state" })
@@ -923,11 +928,13 @@ const updateSchool = async (req, res) => {
 const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    await School.findByIdAndDelete({ _id: id })
-    // await deleteSchool.deleteOne()
+    const deleteSchool = await School.findOneAndDelete({ _id: id, ...getNiswanSchoolFilter() })
+    if (!deleteSchool) {
+      return res.status(404).json({ success: false, error: "Niswan not found" });
+    }
 
     const redis = await getRedis();
-    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
+    await redis.set('totalSchools', String(await School.countDocuments(getNiswanSchoolFilter())));
 
     return res.status(200).json({ success: true, deleteSchool })
   } catch (error) {

@@ -13,6 +13,7 @@ import Grade from "../models/Grade.js";
 import { getRolePermissions } from "../services/permissionService.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { getAccessContext } from "../middleware/authorizationMiddleware.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const SCHOOL_LINKED_ROLES = new Set([
   "admin",
@@ -69,9 +70,7 @@ const getGlobalSummary = async () => {
     );
 
     totalSchools = String(
-      await School.countDocuments({
-        code: { $ne: "UN-00-00001" },
-      })
+      await School.countDocuments(getNiswanSchoolFilter())
     );
 
     totalStudents = String(await Student.countDocuments());
@@ -107,7 +106,7 @@ const getSupervisorSummary = async (userId) => {
 
   const schools = await School.find({
     supervisorId: supervisor._id,
-    code: { $ne: "UN-00-00001" },
+    ...getNiswanSchoolFilter(),
   })
     .select("_id")
     .lean();
@@ -123,6 +122,7 @@ const getSupervisorSummary = async (userId) => {
 
   const [totalEmployees, totalStudents] = await Promise.all([
     Employee.countDocuments({
+      organizationType: ORGANIZATION_TYPES.NISWAN,
       schoolId: { $in: schoolIds },
       active: "Active",
     }),
@@ -146,15 +146,16 @@ const getSchoolLinkedRoleSummary = async (userId) => {
     userId,
     active: "Active",
   })
-    .select("schoolId")
+    .select("organizationType schoolId")
     .lean();
 
-  if (!employee?.schoolId) {
+  if (employee?.organizationType !== ORGANIZATION_TYPES.NISWAN || !employee?.schoolId) {
     return buildEmptySummary();
   }
 
   const [totalEmployees, totalStudents] = await Promise.all([
     Employee.countDocuments({
+      organizationType: ORGANIZATION_TYPES.NISWAN,
       schoolId: employee.schoolId,
       active: "Active",
     }),

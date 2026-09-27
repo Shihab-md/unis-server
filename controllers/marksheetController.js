@@ -6,6 +6,7 @@ import Course from "../models/Course.js";
 import MarksheetExam from "../models/MarksheetExam.js";
 import MarksheetStudent from "../models/MarksheetStudent.js";
 import School from "../models/School.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import Student from "../models/Student.js";
 import Template from "../models/Template.js";
 import { calculateGradeFromRules, getActiveGradeRules } from "../services/gradeService.js";
@@ -325,8 +326,8 @@ export const getMarksheetOptions = async (req, res) => {
     if (!access.canUseModule) return deny(res);
 
     const schoolQuery = access.isGlobalScope
-      ? { active: "Active" }
-      : { _id: { $in: access.schoolIds }, active: "Active" };
+      ? { active: "Active", ...getNiswanSchoolFilter() }
+      : { _id: { $in: access.schoolIds }, active: "Active", ...getNiswanSchoolFilter() };
 
     const [schools, academicYears, courses, gradeRules] = await Promise.all([
       School.find(schoolQuery).select("_id code nameEnglish address active").sort({ code: 1 }).lean(),

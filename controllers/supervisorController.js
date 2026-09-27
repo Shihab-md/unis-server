@@ -4,6 +4,7 @@ import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
+import { ORGANIZATION_TYPES, SCHOOL_RECORD_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
@@ -209,6 +210,7 @@ const getSupervisorEmployeeCountMap = async (schoolMatch) => {
           {
             $match: {
               $expr: { $eq: ["$schoolId", "$$schId"] },
+              organizationType: ORGANIZATION_TYPES.NISWAN,
               active: "Active",
             },
           },
@@ -601,8 +603,8 @@ const getSupervisorStudentCountMap = async (schoolMatch) => {
 const getSupervisorStatsMaps = async (supervisorIds = null) => {
   const schoolMatch =
     Array.isArray(supervisorIds) && supervisorIds.length > 0
-      ? { supervisorId: { $in: supervisorIds } }
-      : { supervisorId: { $ne: null } };
+      ? { supervisorId: { $in: supervisorIds }, recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ } }
+      : { supervisorId: { $ne: null }, recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ } };
 
   const [schoolCountMap, employeeCountMap, studentCountMap] = await Promise.all([
     getSupervisorSchoolCountMap(schoolMatch),
@@ -744,7 +746,7 @@ const getBySupFilter = async (req, res) => {
 
     // If school is selected, resolve its supervisorId
     if (isValidParam(supSchoolId)) {
-      const school = await School.findById(supSchoolId)
+      const school = await School.findOne({ _id: supSchoolId, ...getNiswanSchoolFilter() })
         .select("supervisorId")
         .lean();
 
