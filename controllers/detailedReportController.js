@@ -37,11 +37,12 @@ const formatDate = (value) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const canViewSensitive = (role) => ["superadmin", "hquser"].includes(String(role || "").toLowerCase());
+const canViewSensitive = (role) => ["superadmin", "hqadmin", "accountant"].includes(String(role || "").toLowerCase());
+const canViewFinancialReportData = (role) => String(role || "").trim().toLowerCase() !== "hquser";
 
 async function getAccessibleSchoolIds({ role, schoolId, userId }) {
   const normalizedRole = String(role || "").toLowerCase();
-  if (normalizedRole === "superadmin" || normalizedRole === "hquser") return null;
+  if (["superadmin", "hqadmin", "accountant", "hquser"].includes(normalizedRole)) return null;
 
   if (normalizedRole === "admin") {
     return schoolId && isObjectIdLike(schoolId) ? [String(schoolId)] : [];
@@ -164,7 +165,7 @@ async function buildStudentReportMatch(req, payload) {
   return match;
 }
 
-const mapStudentRow = (student, { includeSensitive = false } = {}) => {
+const mapStudentRow = (student, { includeSensitive = false, includeFinancial = true } = {}) => {
   const row = {
     _id: student._id,
     rollNumber: student.rollNumber || "-",
@@ -179,7 +180,7 @@ const mapStudentRow = (student, { includeSensitive = false } = {}) => {
     courses: (student.courses || []).map((course) => course?.name).filter(Boolean).join(", ") || "-",
     status: student.active || "-",
     hostel: student.hostel || "No",
-    feesStatus: Number(student.feesPaid) === 1 ? "Paid" : "Unpaid",
+    ...(includeFinancial ? { feesStatus: Number(student.feesPaid) === 1 ? "Paid" : "Unpaid" } : {}),
     address: student.address || "-",
     city: student.city || "-",
   };
@@ -214,9 +215,13 @@ const mapStudentRow = (student, { includeSensitive = false } = {}) => {
     district: student.districtStateId?.district || "-",
     state: student.districtStateId?.state || "-",
     hostelRefNumber: student.hostelRefNumber || "-",
-    hostelFees: Number(student.hostelFees || 0),
-    hostelDiscount: Number(student.hostelDiscount || 0),
-    hostelFinalFees: Number(student.hostelFinalFees || 0),
+    ...(includeFinancial
+      ? {
+          hostelFees: Number(student.hostelFees || 0),
+          hostelDiscount: Number(student.hostelDiscount || 0),
+          hostelFinalFees: Number(student.hostelFinalFees || 0),
+        }
+      : {}),
     remarks: student.remarks || "-",
   };
 };
@@ -227,7 +232,8 @@ async function getStudentRows(req, { exportAll = false } = {}) {
   const match = await buildStudentReportMatch(req, payload);
   const { page, limit, skip } = getPagination(req);
   const normalizedRole = String(payload.role || "").toLowerCase();
-  const includeSensitive = ["superadmin", "hquser", "supervisor", "admin"].includes(normalizedRole);
+  const includeSensitive = ["superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin"].includes(normalizedRole);
+  const includeFinancial = canViewFinancialReportData(normalizedRole);
 
   const query = Student.find(match)
     .select(
@@ -246,8 +252,9 @@ async function getStudentRows(req, { exportAll = false } = {}) {
   const [records, total] = await Promise.all([query.lean(), Student.countDocuments(match)]);
   return {
     success: true,
-    rows: records.map((student) => mapStudentRow(student, { includeSensitive })),
+    rows: records.map((student) => mapStudentRow(student, { includeSensitive, includeFinancial })),
     canViewSensitive: includeSensitive,
+    canViewFinancial: includeFinancial,
     pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
   };
 }
@@ -338,7 +345,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 async function getAllowedSupervisorIds(payload) {
   const role = String(payload.role || "").toLowerCase();
   const userId = payload.id || payload._id || payload.userId;
-  if (role === "superadmin" || role === "hquser") return null;
+  if (["superadmin", "hqadmin", "accountant", "hquser"].includes(role)) return null;
 
   if (role === "supervisor") {
     const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
@@ -460,7 +467,7 @@ const sendRowsExport = (res, format, filename, rows, sheetName) => {
   return sendXLSX(res, filename, rows, sheetName);
 };
 
-const flattenStudentExport = (row, sensitive) => ({
+const flattenStudentExport = (row, sensitive, financial) => ({
   "Roll Number": row.rollNumber,
   ...(sensitive ? { "Old Roll Number": row.oldRollNumber } : {}),
   "Student Name": row.name,
@@ -493,7 +500,7 @@ const flattenStudentExport = (row, sensitive) => ({
   Course: row.courses,
   Status: row.status,
   Hostel: row.hostel,
-  "Fees Status": row.feesStatus,
+  ...(financial ? { "Fees Status": row.feesStatus } : {}),
   Address: row.address,
   City: row.city,
   ...(sensitive ? {
@@ -502,9 +509,13 @@ const flattenStudentExport = (row, sensitive) => ({
     District: row.district,
     State: row.state,
     "Hostel Reference": row.hostelRefNumber,
-    "Hostel Monthly Fees": row.hostelFees,
-    "Hostel Discount": row.hostelDiscount,
-    "Hostel Final Fees": row.hostelFinalFees,
+    ...(financial
+      ? {
+          "Hostel Monthly Fees": row.hostelFees,
+          "Hostel Discount": row.hostelDiscount,
+          "Hostel Final Fees": row.hostelFinalFees,
+        }
+      : {}),
     Remarks: row.remarks,
   } : {}),
 });
@@ -574,7 +585,7 @@ export const exportStudentDetailReport = async (req, res) => {
   try {
     const data = await getStudentRows(req, { exportAll: true });
     if (!data.success) return res.status(data.status || 500).json(data);
-    return sendRowsExport(res, req.query.format, `Students_Report_${Date.now()}`, data.rows.map((row) => flattenStudentExport(row, data.canViewSensitive)), "Students");
+    return sendRowsExport(res, req.query.format, `Students_Report_${Date.now()}`, data.rows.map((row) => flattenStudentExport(row, data.canViewSensitive, data.canViewFinancial !== false)), "Students");
   } catch (error) {
     console.error(error);
     return res.status(500).json({ success: false, error: "Student report export error" });

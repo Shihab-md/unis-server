@@ -3,7 +3,10 @@ import { getGoogleDriveRootFolderName } from "../utils/runtimeEnvironment.js";
 const { Schema } = mongoose;
 
 export const DEMO_TUTORIAL_VIEW_ROLES = [
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "supervisor",
   "admin",
   "employee",

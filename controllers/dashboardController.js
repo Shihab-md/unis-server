@@ -12,6 +12,7 @@ import DistrictState from "../models/DistrictState.js";
 import Grade from "../models/Grade.js";
 import { getRolePermissions } from "../services/permissionService.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
 
 const SCHOOL_LINKED_ROLES = new Set([
   "admin",
@@ -180,8 +181,13 @@ const getSummary = async (req, res) => {
 
     let summary;
 
-    if (role === "superadmin" || role === "hquser") {
-      summary = await getGlobalSummary();
+    if (["superadmin", "hqadmin", "accountant", "hquser"].includes(role)) {
+      if (role === "superadmin") {
+        summary = await getGlobalSummary();
+      } else {
+        const access = await getAccessContext(req.user);
+        summary = access?.isHQ && access?.isActive ? await getGlobalSummary() : buildEmptySummary();
+      }
     } else if (role === "supervisor") {
       summary = await getSupervisorSummary(userId);
     } else if (SCHOOL_LINKED_ROLES.has(role)) {

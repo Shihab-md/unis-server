@@ -29,6 +29,21 @@ import { requirePermission } from "../middleware/permissionMiddleware.js";
 
 const router = express.Router();
 
+// Payroll remains intentionally deferred to Phase 6. Preserve the exact legacy
+// access boundary during the HQ-role rollout so no newly introduced HQ role
+// inherits Payroll merely because it has broader attendance/data scope.
+const LEGACY_PAYROLL_ROLES = new Set(["superadmin", "hquser", "admin"]);
+const requireLegacyPayrollAccess = (req, res, next) => {
+  const role = String(req.user?.role || "").trim().toLowerCase();
+  if (!LEGACY_PAYROLL_ROLES.has(role)) {
+    return res.status(403).json({
+      success: false,
+      error: "Payroll access is unchanged until the dedicated Payroll permission phase.",
+    });
+  }
+  return next();
+};
+
 router.get("/meta", authMiddleware, getAttendanceMeta);
 router.get("/overview", authMiddleware, getAttendanceOverview);
 
@@ -85,22 +100,25 @@ router.patch(
   updateStaffLeaveStatus
 );
 
-router.get("/payroll", authMiddleware, listPayrollRuns);
+router.get("/payroll", authMiddleware, requireLegacyPayrollAccess, listPayrollRuns);
 router.post(
   "/payroll/generate",
   authMiddleware,
+  requireLegacyPayrollAccess,
   auditMutation({ action: "PAYROLL_GENERATE", resourceType: "PayrollRun" }),
   generatePayroll
 );
 router.patch(
   "/payroll/:id/items/:itemId",
   authMiddleware,
+  requireLegacyPayrollAccess,
   auditMutation({ action: "PAYROLL_ADJUST", resourceType: "PayrollRun" }),
   updatePayrollItem
 );
 router.patch(
   "/payroll/:id/status",
   authMiddleware,
+  requireLegacyPayrollAccess,
   auditMutation({ action: "PAYROLL_STATUS", resourceType: "PayrollRun" }),
   updatePayrollStatus
 );

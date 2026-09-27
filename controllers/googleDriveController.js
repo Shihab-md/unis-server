@@ -144,7 +144,7 @@ export const disconnect = async (req, res) => {
 
 export const uploadProof = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
+    requireRole(req.user?.role, ["superadmin", "hqadmin", "accountant", "admin"]);
 
     if (!req.file) return res.status(400).json({ success: false, error: "Missing file" });
 

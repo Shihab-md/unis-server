@@ -366,7 +366,7 @@ export const getStudentRoster = async (req, res) => {
     const { schoolId, school } = await resolveStudentScope({
       user: req.user,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     const academicYearId = String(req.query.academicYearId || "");
     const courseId = String(req.query.courseId || "");
@@ -576,7 +576,7 @@ export const getStudentMonthlyAttendance = async (req, res) => {
     await resolveStudentScope({
       user: req.user,
       schoolId: String(student.schoolId),
-      requireManage: true,
+      requireManage: false,
     });
 
     const records = await StudentAttendance.find({
@@ -665,7 +665,7 @@ export const createStudentLeave = async (req, res) => {
     }
 
     const role = normalizeRole(req.user?.role);
-    const autoApprove = ["superadmin", "admin", "teacher", "usthadh"].includes(role);
+    const autoApprove = ["superadmin", "hqadmin", "admin", "teacher", "usthadh"].includes(role);
     if (autoApprove) {
       await assertNoFinalizedStudentAttendanceInRange({ studentId, fromDateKey, toDateKey });
     }
@@ -698,7 +698,7 @@ export const listStudentLeaves = async (req, res) => {
     const { schoolId } = await resolveStudentScope({
       user: req.user,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
 
     const filter = { schoolId };
@@ -776,7 +776,7 @@ export const getStaffRoster = async (req, res) => {
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
 
     const staffCategory =
@@ -1042,7 +1042,7 @@ export const getStaffMonthlyAttendance = async (req, res) => {
       user: req.user,
       scopeType: organizationType,
       schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     if (!(await staffBelongsToScope({ staff, organizationType: scope.organizationType, schoolId: scope.schoolId }))) {
       const error = new Error("Staff member is outside your authorized Attendance scope.");
@@ -1235,7 +1235,7 @@ export const listStaffLeaveApprovals = async (req, res) => {
     // their own request in the approval queue.
     leaves = leaves.filter((leave) => {
       if (String(leave.userId?._id || leave.userId || "") === String(req.user?._id || "")) return false;
-      if (!access.isSuperAdmin && normalizeRole(leave.userId?.role) === "admin") return false;
+      if (!access.isSuperAdmin && ["hqadmin", "admin"].includes(normalizeRole(leave.userId?.role))) return false;
       return true;
     });
 
@@ -1748,7 +1748,7 @@ export const getMonthlyAttendanceReport = async (req, res) => {
       const scope = await resolveStudentScope({
         user: req.user,
         schoolId: req.query.schoolId,
-        requireManage: true,
+        requireManage: false,
       });
 
       const records = await StudentAttendance.find({
@@ -1805,7 +1805,7 @@ export const getMonthlyAttendanceReport = async (req, res) => {
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     const roster = await loadStaffRoster(scope);
     const or = roster.map((row) => ({ staffType: row.staffType, staffId: row.staffId }));

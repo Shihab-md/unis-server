@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 8;
+export const PERMISSION_CATALOG_VERSION = 9;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -123,130 +123,104 @@ export const PERMISSIONS = Object.freeze({
 });
 
 // `allowedRoles` is a server-scope safety boundary, not a role-permission default.
-// SuperAdmin can assign a permission from the UI only to roles whose existing
-// controller/scope implementation can enforce that action safely. The actual
-// role -> permission assignment is stored only in MongoDB.
+// Phase 4 introduces explicit HQ roles while keeping data scope independent from
+// permission assignment. Existing legacy Guest and HQ-Niswan compatibility stays
+// in place until the later organization-model phase.
 const NISWAN_READ_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-  "guest",
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
 ]);
-const NISWAN_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+const NISWAN_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
 const SUPERVISOR_LIST_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "guest",
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "guest",
 ]);
-const SUPERVISOR_DETAIL_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
-const SUPERVISOR_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+const SUPERVISOR_DETAIL_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "guest",
+]);
+const SUPERVISOR_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
 const EMPLOYEE_READ_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-  "guest",
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
 ]);
-const EMPLOYEE_CREATE_UPDATE_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-]);
-const EMPLOYEE_DELETE_SCOPE_ROLES = Object.freeze(["superadmin", "supervisor", "admin"]);
-const EMPLOYEE_IMPORT_SCOPE_ROLES = Object.freeze(["superadmin"]);
+const EMPLOYEE_CREATE_UPDATE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "supervisor", "admin"]);
+const EMPLOYEE_DELETE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "supervisor", "admin"]);
+const EMPLOYEE_IMPORT_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
 const STUDENT_READ_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-  "guest",
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
 ]);
-const STUDENT_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
-const STUDENT_HQ_BULK_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+const STUDENT_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
+const STUDENT_HQ_BULK_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
-// Phase 2.2 keeps the existing Attendance/Leave data-scope rules intact.
-// These arrays only define which existing role scopes are technically capable
-// of enforcing each permission; they are not role-permission assignments.
-const STUDENT_ATTENDANCE_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "admin",
-  "teacher",
-  "usthadh",
+const STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin", "teacher", "usthadh",
 ]);
-const STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "admin", "teacher", "usthadh",
+]);
+const STAFF_ATTENDANCE_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin",
+]);
+const STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
 const STAFF_SELF_SCOPE_ROLES = Object.freeze([
-  "hquser",
-  "supervisor",
-  "admin",
-  "employee",
-  "teacher",
-  "usthadh",
-  "warden",
-  "staff",
+  "hqadmin", "accountant", "hquser", "hqstaff", "supervisor", "admin", "employee",
+  "teacher", "usthadh", "warden", "staff",
 ]);
-const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const STUDENT_LEAVE_VIEW_SCOPE_ROLES = STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES;
+const STUDENT_LEAVE_MANAGE_SCOPE_ROLES = STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES;
+const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
 
-const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
-const EXAM_QUESTION_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin",
+]);
+const EXAM_QUESTION_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
-const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
-const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
-// The legacy IHS utility is also available to the Admin role only when that
-// account is linked to the HQ Niswan. The route keeps that HQ-Admin scope
-// separate from the role-level permission assignment.
-const CERTIFICATE_BULK_IHS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
-const TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
+const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "guest",
+]);
+const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+// HQ User keeps the two explicitly approved legacy HQ utilities even though it is
+// otherwise a read-only global role. Admin remains compatibility-only for the old
+// HQ Admin account linked to the HQ Niswan; normal Niswan Admin is still blocked.
+const CERTIFICATE_BULK_IHS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
+const TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
 
-const INSPECTION_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor"]);
+const INSPECTION_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor",
+]);
 const INSPECTION_CREATE_SCOPE_ROLES = Object.freeze(["supervisor"]);
 
-// Phase 2.4 preserves the current Accounts, Reports, Notifications and Help Desk
-// scope boundaries. These arrays define which existing role scopes can safely
-// enforce a permission; MongoDB remains the source of truth for assignments.
-const ACCOUNTS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "admin"]);
-const ACCOUNTS_HQ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
-const REPORTS_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "supervisor", "admin", "guest"]);
-const ALL_CURRENT_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-  "employee",
-  "teacher",
-  "usthadh",
-  "student",
-  "parent",
-  "warden",
-  "staff",
-  "guest",
+const ACCOUNTS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant", "admin"]);
+const ACCOUNTS_HQ_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant"]);
+const REPORTS_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
 ]);
-const NOTIFICATION_BROADCAST_SCOPE_ROLES = Object.freeze(["superadmin"]);
+const ALL_CURRENT_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "hqstaff", "supervisor", "admin",
+  "employee", "teacher", "usthadh", "student", "parent", "warden", "staff", "guest",
+]);
+const NOTIFICATION_BROADCAST_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 const HELP_DESK_SELF_SCOPE_ROLES = ALL_CURRENT_ROLES;
-const HELP_DESK_STATUS_SCOPE_ROLES = Object.freeze(["superadmin"]);
+const HELP_DESK_STATUS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
 
-// Phase 2.5.1 converts the six existing Masters maintenance resources to the
-// central permission model while preserving the V0.6 scope boundary:
-// SuperAdmin/HQ User can manage; legacy Guest is read-only. Shared /fromCache
-// lookup endpoints intentionally remain authenticated but permission-independent.
-const MASTER_READ_SCOPE_ROLES = Object.freeze(["superadmin", "hquser", "guest"]);
-const MASTER_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hquser"]);
+// Masters and system administration stay SuperAdmin-only in the new HQ model.
+// Legacy Guest keeps its previous read-only Master access for compatibility.
+const MASTER_READ_SCOPE_ROLES = Object.freeze(["superadmin", "guest"]);
+const MASTER_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin"]);
 
-const MARKSHEET_SCOPE_ROLES = Object.freeze([
-  "superadmin",
-  "hquser",
-  "supervisor",
-  "admin",
-  "employee",
-  "teacher",
-  "usthadh",
-  "warden",
-  "staff",
+const MARKSHEET_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "employee",
+  "teacher", "usthadh", "warden", "staff",
+]);
+const MARKSHEET_MANAGE_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "supervisor", "admin", "employee", "teacher", "usthadh",
+  "warden", "staff",
+]);
+// Annual Exam Access controls which exam type may be opened; editing/finalizing still
+// requires separate permissions. Phase 4 global read roles therefore receive Annual
+// read access without receiving any marks-entry/finalization capability.
+const MARKSHEET_ANNUAL_SCOPE_ROLES = Object.freeze([
+  ...MARKSHEET_MANAGE_SCOPE_ROLES, "accountant", "hquser",
 ]);
 
 export const PERMISSION_CATALOG = Object.freeze([
@@ -450,7 +424,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View daily and monthly Student attendance within the existing Niswan Attendance scope.",
     requires: [],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
@@ -459,7 +433,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Create or edit non-finalized Student attendance within the existing Niswan Attendance scope.",
     requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
@@ -468,7 +442,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Finalize a Student attendance sheet. Finalized attendance remains locked by the existing business rules.",
     requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_ENTER],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES,
   },
 
   {
@@ -487,7 +461,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View staff attendance rosters within the existing HQ or Niswan attendance-management scope.",
     requires: [],
     editable: true,
-    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+    allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STAFF_ATTENDANCE_ENTER,
@@ -515,7 +489,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View Student leave records within the existing Student Attendance Niswan scope.",
     requires: [],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_LEAVE_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STUDENT_LEAVE_MANAGE,
@@ -524,7 +498,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Record and update Student leave using the existing approval/finalized-attendance rules.",
     requires: [PERMISSIONS.STUDENT_LEAVE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_LEAVE_MANAGE_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
@@ -561,7 +535,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View monthly Student attendance reports within the existing Niswan Attendance scope.",
     requires: [],
     editable: true,
-    allowedRoles: STUDENT_ATTENDANCE_SCOPE_ROLES,
+    allowedRoles: STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
@@ -570,7 +544,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View monthly Staff attendance reports within the existing HQ or Niswan Attendance scope.",
     requires: [],
     editable: true,
-    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+    allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
   },
 
   {
@@ -1079,7 +1053,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View saved marksheets and load permitted Niswans/exams.",
     requires: [],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.MARKSHEET_ENTER,
@@ -1088,7 +1062,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Enter or edit Draft marksheets within the user's existing Niswan scope.",
     requires: [PERMISSIONS.MARKSHEET_VIEW],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.MARKSHEET_FINALIZE,
@@ -1097,7 +1071,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Finalize Draft marksheets. Finalized marksheets are locked.",
     requires: [PERMISSIONS.MARKSHEET_VIEW, PERMISSIONS.MARKSHEET_ENTER],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.MARKSHEET_ANNUAL,
@@ -1106,7 +1080,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Allow Annual exam marksheet access in addition to Quarterly and Half Yearly.",
     requires: [PERMISSIONS.MARKSHEET_VIEW],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_ANNUAL_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.MARKSHEET_CONSOLIDATED_VIEW,
@@ -1115,7 +1089,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "View and print consolidated marksheets.",
     requires: [PERMISSIONS.MARKSHEET_VIEW],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_VIEW_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.MARKSHEET_PDF,
@@ -1124,7 +1098,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     description: "Generate, regenerate and download official marksheet PDFs.",
     requires: [PERMISSIONS.MARKSHEET_VIEW],
     editable: true,
-    allowedRoles: MARKSHEET_SCOPE_ROLES,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
   },
   {
     key: PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
@@ -1156,8 +1130,11 @@ export const PERMISSION_KEY_SET = new Set(PERMISSION_KEYS);
 // assignable business permissions are managed from the SuperAdmin screen.
 export const ROLE_DEFINITIONS = Object.freeze([
   { key: "superadmin", label: "SuperAdmin", editable: false, scopeLabel: "All UNIS data and system scope" },
-  { key: "hquser", label: "HQ User", editable: true, scopeLabel: "Current global HQ scope" },
-  { key: "supervisor", label: "Supervisor / Muavin", editable: true, scopeLabel: "Assigned Niswans only" },
+  { key: "hqadmin", label: "HQ Admin", editable: true, scopeLabel: "Global HQ operational scope; Masters/System excluded" },
+  { key: "accountant", label: "Accountant", editable: true, scopeLabel: "Global read scope + Accounts management" },
+  { key: "hquser", label: "HQ User", editable: true, scopeLabel: "Global read-only HQ scope + approved HQ utilities" },
+  { key: "hqstaff", label: "HQ Staff", editable: true, scopeLabel: "Own HQ staff self-service only" },
+  { key: "supervisor", label: "Supervisor / Muavin", editable: true, scopeLabel: "Assigned Niswans + own HQ staff self-service" },
   { key: "admin", label: "Niswan Admin", editable: true, scopeLabel: "Own Niswan only" },
   { key: "employee", label: "Employee (Legacy)", editable: true, scopeLabel: "Own Niswan only" },
   { key: "teacher", label: "Teacher", editable: true, scopeLabel: "Own Niswan only" },
@@ -1468,10 +1445,27 @@ const PHASE_2_5_2A_PERMISSIONS_BY_ROLE = Object.freeze({
   employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
 });
 
+// Phase 4 HQ role baselines are derived from the server-supported permission
+// boundary above. This avoids a second hard-coded permission matrix: a fresh HQ
+// role receives exactly the capabilities its scope is designed to enforce.
+const PHASE_4_HQ_ROLE_BASELINES = Object.freeze(
+  Object.fromEntries(
+    ["hqadmin", "accountant", "hquser", "hqstaff"].map((role) => [
+      role,
+      PERMISSION_CATALOG
+        .filter((item) => !Array.isArray(item.allowedRoles) || item.allowedRoles.includes(role))
+        .map((item) => item.key),
+    ])
+  )
+);
+
 // Fresh installations/roles get the complete current baseline once. After the
 // MongoDB row exists, source deployments never re-apply this seed.
 const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
-  hquser: [...PHASE_2_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_3_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_4_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.hquser, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.hquser],
+  hqadmin: PHASE_4_HQ_ROLE_BASELINES.hqadmin,
+  accountant: PHASE_4_HQ_ROLE_BASELINES.accountant,
+  hquser: PHASE_4_HQ_ROLE_BASELINES.hquser,
+  hqstaff: PHASE_4_HQ_ROLE_BASELINES.hqstaff,
   supervisor: [
     ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
@@ -1547,6 +1541,12 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 8,
     label: "Phase 2.5.2A HQ Masters utility permissions",
     permissionsByRole: PHASE_2_5_2A_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 9,
+    label: "Phase 4 explicit HQ role boundaries",
+    permissionsByRole: {},
+    normalizeToCurrentPolicy: true,
   },
 ]);
 

@@ -364,7 +364,7 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
     }
 
     const q = { acYear };
-    const isHQ = role === "superadmin" || role === "hquser";
+    const isHQ = ["superadmin", "hqadmin", "accountant"].includes(role);
 
     if (isHQ) {
       if (schoolId && schoolId !== "ALL") {

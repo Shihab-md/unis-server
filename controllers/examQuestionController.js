@@ -5,6 +5,7 @@ import Employee from "../models/Employee.js";
 import ExamQuestionDownload from "../models/ExamQuestionDownload.js";
 import ExamQuestionPaper from "../models/ExamQuestionPaper.js";
 import School from "../models/School.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
 import {
   deleteQuestionPaperFromDrive,
   downloadQuestionPaperFromDrive,
@@ -12,8 +13,9 @@ import {
 } from "../services/examQuestionDriveService.js";
 
 const EXAM_TYPES = ["Quarterly", "Half Yearly", "Annual"];
-const MANAGER_ROLES = new Set(["superadmin", "hquser"]);
-const VIEWER_ROLES = new Set(["superadmin", "hquser", "admin"]);
+const MANAGER_ROLES = new Set(["superadmin", "hqadmin"]);
+const GLOBAL_VIEWER_ROLES = new Set(["superadmin", "hqadmin", "accountant", "hquser"]);
+const VIEWER_ROLES = new Set([...GLOBAL_VIEWER_ROLES, "admin"]);
 const IST_OFFSET_MINUTES = 330;
 
 const clean = (value) => (value === undefined || value === null ? "" : String(value).trim());
@@ -108,7 +110,12 @@ const getAdminSchool = async (userId) => {
 const getAccess = async (req) => {
   const role = roleOf(req);
   if (!VIEWER_ROLES.has(role)) return { role, canUse: false, isManager: false, school: null };
-  if (MANAGER_ROLES.has(role)) return { role, canUse: true, isManager: true, school: null };
+  if (role === "superadmin") return { role, canUse: true, isManager: true, school: null };
+  if (GLOBAL_VIEWER_ROLES.has(role)) {
+    const scope = await getAccessContext(req.user);
+    const canUse = Boolean(scope?.isHQ && scope?.isActive);
+    return { role, canUse, isManager: canUse && MANAGER_ROLES.has(role), school: null };
+  }
   const school = await getAdminSchool(req.user?._id);
   return { role, canUse: Boolean(school), isManager: false, school };
 };

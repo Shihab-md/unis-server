@@ -25,7 +25,10 @@ const CATEGORIES = new Set([
 const PRIORITIES = new Set(["Low", "Normal", "High", "Urgent"]);
 const STATUSES = new Set(["Open", "In Progress", "Answered", "Closed"]);
 const ROLE_FILTERS = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "supervisor",
   "admin",
   "employee",
@@ -39,7 +42,10 @@ const ROLE_FILTERS = new Set([
 ]);
 
 const EMPLOYEE_LINKED_ROLES = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "admin",
   "employee",
   "teacher",
@@ -57,7 +63,8 @@ const clamp = (value, min, max, fallback) => {
 
 const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const cleanText = (value = "", max = 2500) => String(value || "").trim().slice(0, max);
-const isSuperAdmin = (req) => String(req.user?.role || "").toLowerCase() === "superadmin";
+const isHelpDeskManager = (req) =>
+  ["superadmin", "hqadmin"].includes(String(req.user?.role || "").toLowerCase());
 
 const isTruthyQueryValue = (value) => {
   const text = String(value ?? "").trim().toLowerCase();
@@ -87,9 +94,9 @@ const isUnreadForUser = (query, user) => {
 
   if (!lastMessageAt) return false;
 
-  if (role === "superadmin") {
+  if (["superadmin", "hqadmin"].includes(role)) {
     const readAt = query?.readBySuperadminAt ? new Date(query.readBySuperadminAt).getTime() : 0;
-    return !sameId(query?.lastMessageBy, user?._id) && String(query?.lastMessageByRole || "") !== "superadmin" && lastMessageAt > readAt;
+    return !sameId(query?.lastMessageBy, user?._id) && !["superadmin", "hqadmin"].includes(String(query?.lastMessageByRole || "").toLowerCase()) && lastMessageAt > readAt;
   }
 
   const readAt = query?.readByUserAt ? new Date(query.readByUserAt).getTime() : 0;
@@ -164,7 +171,7 @@ const markReadForViewer = async (query, user) => {
 
   const now = new Date();
   const role = String(user?.role || "").toLowerCase();
-  const update = role === "superadmin" ? { readBySuperadminAt: now } : { readByUserAt: now };
+  const update = ["superadmin", "hqadmin"].includes(role) ? { readBySuperadminAt: now } : { readByUserAt: now };
 
   const updated = await HelpDeskQuery.findByIdAndUpdate(query._id, { $set: update }, { new: true }).lean();
   return updated || query;
@@ -173,10 +180,10 @@ const markReadForViewer = async (query, user) => {
 const getUnreadFilterClause = (req) => {
   const role = String(req.user?.role || "").toLowerCase();
 
-  if (role === "superadmin") {
+  if (["superadmin", "hqadmin"].includes(role)) {
     return {
       $and: [
-        { lastMessageByRole: { $ne: "superadmin" } },
+        { lastMessageByRole: { $nin: ["superadmin", "hqadmin"] } },
         { lastMessageBy: { $ne: req.user._id } },
         {
           $or: [
@@ -206,9 +213,9 @@ const getUnreadFilterClause = (req) => {
 const buildListFilter = (req) => {
   const filter = { active: true };
   const andClauses = [];
-  const superadmin = isSuperAdmin(req);
+  const manager = isHelpDeskManager(req);
 
-  if (!superadmin) {
+  if (!manager) {
     filter.createdBy = req.user._id;
   }
 
@@ -221,7 +228,7 @@ const buildListFilter = (req) => {
   const priority = cleanText(req.query.priority, 40);
   if (priority && priority !== "All" && PRIORITIES.has(priority)) filter.priority = priority;
 
-  if (superadmin) {
+  if (manager) {
     const role = cleanText(req.query.role || req.query.createdByRole, 40).toLowerCase();
     if (role && role !== "all" && ROLE_FILTERS.has(role)) {
       filter.createdByRole = new RegExp(`^${escapeRegex(role)}$`, "i");
@@ -301,8 +308,8 @@ export const getHelpDeskUnreadCount = async (req, res) => {
     const role = String(req.user?.role || "").toLowerCase();
     const baseFilter = { active: true };
 
-    if (role === "superadmin") {
-      baseFilter.lastMessageByRole = { $ne: "superadmin" };
+    if (["superadmin", "hqadmin"].includes(role)) {
+      baseFilter.lastMessageByRole = { $nin: ["superadmin", "hqadmin"] };
       baseFilter.lastMessageBy = { $ne: req.user._id };
       baseFilter.$or = [
         { readBySuperadminAt: null },
@@ -327,8 +334,8 @@ export const getHelpDeskUnreadCount = async (req, res) => {
 
 export const createHelpDeskQuery = async (req, res) => {
   try {
-    if (isSuperAdmin(req)) {
-      return res.status(400).json({ success: false, error: "Superadmin can reply to received queries from the Help Desk list." });
+    if (isHelpDeskManager(req)) {
+      return res.status(400).json({ success: false, error: "HQ Help Desk managers reply to received queries from the Help Desk list." });
     }
 
     const subject = cleanText(req.body?.subject, 160);
@@ -387,7 +394,7 @@ export const getHelpDeskQuery = async (req, res) => {
     if (!id) return res.status(400).json({ success: false, error: "Invalid Help Desk query id." });
 
     const filter = { _id: id, active: true };
-    if (!isSuperAdmin(req)) filter.createdBy = req.user._id;
+    if (!isHelpDeskManager(req)) filter.createdBy = req.user._id;
 
     const query = await HelpDeskQuery.findOne(filter).lean();
     if (!query) return res.status(404).json({ success: false, error: "Help Desk query not found." });
@@ -409,7 +416,7 @@ export const replyHelpDeskQuery = async (req, res) => {
     if (!message) return res.status(400).json({ success: false, error: "Reply message is required." });
 
     const filter = { _id: id, active: true };
-    if (!isSuperAdmin(req)) filter.createdBy = req.user._id;
+    if (!isHelpDeskManager(req)) filter.createdBy = req.user._id;
 
     const existing = await HelpDeskQuery.findOne(filter).lean();
     if (!existing) return res.status(404).json({ success: false, error: "Help Desk query not found." });
@@ -424,8 +431,8 @@ export const replyHelpDeskQuery = async (req, res) => {
     };
 
     const role = String(req.user?.role || "").toLowerCase();
-    const nextStatus = role === "superadmin" ? "Answered" : "Open";
-    const readUpdate = role === "superadmin" ? { readBySuperadminAt: now } : { readByUserAt: now };
+    const nextStatus = ["superadmin", "hqadmin"].includes(role) ? "Answered" : "Open";
+    const readUpdate = ["superadmin", "hqadmin"].includes(role) ? { readBySuperadminAt: now } : { readByUserAt: now };
 
     const updated = await HelpDeskQuery.findOneAndUpdate(
       { _id: id, active: true },
@@ -454,8 +461,8 @@ export const replyHelpDeskQuery = async (req, res) => {
 
 export const updateHelpDeskStatus = async (req, res) => {
   try {
-    if (!isSuperAdmin(req)) {
-      return res.status(403).json({ success: false, error: "Only superadmin can update Help Desk status." });
+    if (!isHelpDeskManager(req)) {
+      return res.status(403).json({ success: false, error: "Only an authorized HQ Help Desk manager can update Help Desk status." });
     }
 
     const id = safeObjectId(req.params.id);

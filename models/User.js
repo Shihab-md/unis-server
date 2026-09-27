@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { USER_ROLE_KEYS } from "../config/rolePolicy.js";
 
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -6,8 +7,7 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     role: {
         type: String, index: true,
-        enum: ["superadmin", "hquser", "supervisor", "admin", "employee",
-            "teacher", "usthadh", "student", "parent", "warden", "staff"], required: true
+        enum: USER_ROLE_KEYS, required: true
     },
     profileImage: { type: String },
     preferredLanguage: {

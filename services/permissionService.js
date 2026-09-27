@@ -75,7 +75,17 @@ const migrateRolePermissionRecord = async (record) => {
       $inc: { revision: 1 },
     };
 
-    if (additions.length > 0) {
+    if (migration.normalizeToCurrentPolicy === true) {
+      // Phase 4 changes role *boundaries* rather than merely adding new keys.
+      // Normalize the role's CURRENT saved permissions against the new allowedRoles
+      // and dependency rules. This removes only permissions that the role can no
+      // longer safely enforce; every still-supported SuperAdmin customization is
+      // preserved, and no previously removed permission is restored.
+      update.$set.permissions = sanitizePermissionsForRole(
+        role,
+        [...(current.permissions || []), ...additions]
+      );
+    } else if (additions.length > 0) {
       update.$addToSet = { permissions: { $each: additions } };
     }
 

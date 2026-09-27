@@ -3839,11 +3839,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
   try {
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
     const {
       schoolId,
       targetAcYear,
@@ -4904,11 +4899,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
   try {
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
     const {
       schoolId,
       targetAcYear,
@@ -5538,10 +5528,6 @@ export const promoteStudentsBulkByCourse = async (req, res) => {
   let session = null;
 
   try {
-    const role = req.user?.role;
-    if (!["superadmin", "hquser", "admin"].includes(role)) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
 
     const {
       schoolId,

@@ -9,7 +9,10 @@ export const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-0
 export const normalizeRole = (value) => String(value || "").trim().toLowerCase();
 
 const EMPLOYEE_STAFF_ROLES = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "admin",
   "employee",
   "teacher",
@@ -74,7 +77,9 @@ export const getAttendanceAccess = async (user) => {
 
   const actorSchoolId = actorStaff?.schoolId || null;
   const actorSchoolCode = actorStaff?.schoolCode || "";
-  const isHqAdmin = role === "admin" && actorSchoolCode === HQ_SCHOOL_CODE;
+  const isLegacyHqAdmin = role === "admin" && actorSchoolCode === HQ_SCHOOL_CODE;
+  const isHqAdmin = role === "hqadmin" || isLegacyHqAdmin;
+  const hasGlobalRead = ["superadmin", "hqadmin", "accountant", "hquser"].includes(role);
 
   const access = {
     role,
@@ -86,13 +91,19 @@ export const getAttendanceAccess = async (user) => {
     isSuperAdmin: role === "superadmin",
     isHqUser: role === "hquser",
     isHqAdmin,
+    isLegacyHqAdmin,
+    isAccountant: role === "accountant",
+    isHqStaff: role === "hqstaff",
     actorSchoolId,
     canManageAnyNiswan: role === "superadmin",
-    canManageHqStaff: role === "superadmin" || role === "hquser" || isHqAdmin,
-    canManageOwnNiswanStaff: role === "admin" && !isHqAdmin && Boolean(actorSchoolId),
+    canViewAnyNiswanStaff: hasGlobalRead,
+    canViewHqStaff: hasGlobalRead || isLegacyHqAdmin,
+    canManageHqStaff: role === "superadmin" || role === "hqadmin" || isLegacyHqAdmin,
+    canManageOwnNiswanStaff: role === "admin" && !isLegacyHqAdmin && Boolean(actorSchoolId),
     canManageOwnNiswanStudents:
-      ["admin", "teacher", "usthadh"].includes(role) && !isHqAdmin && Boolean(actorSchoolId),
-    canManageAnyStudents: role === "superadmin",
+      ["admin", "teacher", "usthadh"].includes(role) && !isLegacyHqAdmin && Boolean(actorSchoolId),
+    canViewAnyStudents: hasGlobalRead,
+    canManageAnyStudents: role === "superadmin" || role === "hqadmin",
     canViewOwnStaffAttendance: Boolean(actorStaff),
     canApplyOwnStaffLeave: Boolean(actorStaff),
   };
@@ -126,9 +137,8 @@ export const resolveStaffScope = async ({ user, scopeType, schoolId, requireMana
     if (requireManage && !access.canManageHqStaff) {
       throw forbidden("You are not authorized to manage HQ staff attendance.");
     }
-    if (!requireManage && !access.canManageHqStaff) {
-      // Non-managers may only use self endpoints, never browse the whole HQ roster.
-      throw forbidden("HQ staff list is available only to authorized HQ attendance managers.");
+    if (!requireManage && !access.canViewHqStaff) {
+      throw forbidden("You are not authorized to view the HQ staff attendance roster.");
     }
     return {
       access,
@@ -142,10 +152,14 @@ export const resolveStaffScope = async ({ user, scopeType, schoolId, requireMana
 
   if (access.isSuperAdmin) {
     if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
+  } else if (!requireManage && access.canViewAnyNiswanStaff) {
+    if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
   } else if (access.canManageOwnNiswanStaff) {
     targetSchoolId = access.actorSchoolId;
   } else {
-    throw forbidden("You are not authorized to manage Niswan staff attendance.");
+    throw forbidden(requireManage
+      ? "You are not authorized to manage Niswan staff attendance."
+      : "You are not authorized to view Niswan staff attendance.");
   }
 
   const school = await School.findById(targetSchoolId).select("_id code nameEnglish active").lean();
@@ -174,12 +188,14 @@ export const resolveStudentScope = async ({ user, schoolId, requireManage = true
   const access = await getAttendanceAccess(user);
   let targetSchoolId = String(schoolId || "").trim();
 
-  if (access.canManageAnyStudents) {
+  if (requireManage ? access.canManageAnyStudents : access.canViewAnyStudents) {
     if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
   } else if (access.canManageOwnNiswanStudents) {
     targetSchoolId = access.actorSchoolId;
   } else {
-    throw forbidden("Student attendance is not available for this account.");
+    throw forbidden(requireManage
+      ? "Student attendance management is not available for this account."
+      : "Student attendance view is not available for this account.");
   }
 
   const school = await School.findById(targetSchoolId).select("_id code nameEnglish active").lean();
@@ -249,8 +265,8 @@ export const canApproveStaffLeave = async ({ approverUser, leave }) => {
 
   if (String(leave.userId) === String(approverUser?._id)) return false;
 
-  // Admin leave (HQ Admin or Niswan Admin) is escalated to SuperAdmin.
-  if (targetRole === "admin") return access.isSuperAdmin;
+  // HQ Admin and Niswan Admin leave is escalated to SuperAdmin.
+  if (["hqadmin", "admin"].includes(targetRole)) return access.isSuperAdmin;
 
   if (access.isSuperAdmin) return true;
 

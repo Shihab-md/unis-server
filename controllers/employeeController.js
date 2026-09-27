@@ -59,11 +59,15 @@ const parseDateFlexible = (raw) => {
 };
 
 const roleCodeMap = {
+  hqadmin: "HA",
+  accountant: "AC",
+  hquser: "HQ",
+  hqstaff: "HS",
   admin: "AD",
   teacher: "TR",
-  hquser: "HQ",
   usthadh: "US",
-  warden: "WR"
+  warden: "WR",
+  staff: "ST",
 };
 
 const extractLast5DigitsFromSchoolCode = (schoolCode) => {
@@ -620,7 +624,7 @@ const getEmployees = async (req, res) => {
     // ✅ OTHER ROLES
     // ------------------------------------------------------------
     const filter =
-      userRole === "superadmin" || userRole === "hquser"
+      ["superadmin", "hqadmin", "accountant", "hquser"].includes(userRole)
         ? { active: "Active" }
         : { schoolId, active: "Active" };
 
@@ -709,7 +713,7 @@ const getEmployees = async (req, res) => {
     // ✅ OTHER ROLES
     // ------------------------------------------------------------
     const filter =
-      userRole === "superadmin" || userRole === "hquser"
+      ["superadmin", "hqadmin", "accountant", "hquser"].includes(userRole)
         ? { active: "Active" }
         : { schoolId, active: "Active" };
 

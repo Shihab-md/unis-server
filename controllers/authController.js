@@ -7,6 +7,7 @@ import Student from "../models/Student.js";
 import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
 import { getRolePermissions } from "../services/permissionService.js";
+import { HQ_EMPLOYEE_ROLE_SET } from "../config/rolePolicy.js";
 
 const looksLikeEmail = (v) => typeof v === "string" && v.includes("@");
 
@@ -15,7 +16,13 @@ const getJwtExpiresIn = () => String(process.env.JWT_EXPIRES_IN || "3h");
 const signAuthToken = (payload) =>
   jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: getJwtExpiresIn() });
 
+const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
+
 const employeeScopedRoles = new Set([
+  "hqadmin",
+  "accountant",
+  "hquser",
+  "hqstaff",
   "admin",
   "teacher",
   "employee",
@@ -25,8 +32,11 @@ const employeeScopedRoles = new Set([
 ]);
 
 const employeeActiveCheckRoles = new Set([
-  "admin",
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
+  "admin",
   "usthadh",
   "warden",
   "teacher",
@@ -104,6 +114,14 @@ const getScopedSessionForUser = async (user) => {
         ok: false,
         status: 400,
         error: "Your Niswan record is missing. Please contact admin.",
+      };
+    }
+
+    if (HQ_EMPLOYEE_ROLE_SET.has(role) && String(school.code || "").trim() !== HQ_SCHOOL_CODE) {
+      return {
+        ok: false,
+        status: 403,
+        error: "This HQ role must be linked to the configured HQ staff record. Please contact SuperAdmin.",
       };
     }
 

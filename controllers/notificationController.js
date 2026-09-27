@@ -13,7 +13,10 @@ import { createUserNotification, getWebPushReadiness } from "../services/notific
 
 const VALID_TARGET_ROLES = new Set([
   "superadmin",
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "supervisor",
   "admin",
   "employee",
@@ -26,7 +29,10 @@ const VALID_TARGET_ROLES = new Set([
 ]);
 
 const EMPLOYEE_LINKED_ROLES = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "admin",
   "employee",
   "teacher",
@@ -42,7 +48,8 @@ const clamp = (value, min, max, fallback) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.trunc(n))) : fallback;
 };
 
-const isSuperAdmin = (req) => String(req.user?.role || "").toLowerCase() === "superadmin";
+const isNotificationManager = (req) =>
+  ["superadmin", "hqadmin"].includes(String(req.user?.role || "").toLowerCase());
 
 const normalizeRoles = (roles = []) => {
   const source = Array.isArray(roles) ? roles : [roles];
@@ -244,7 +251,7 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
     addIds(targetUserIds, supervisors.map((item) => item.userId));
   }
 
-  // Direct global/system roles. hquser/admin/staff-like roles are handled through Employee above.
+  // Direct system roles. HQ employee-backed and staff-like roles are handled through Employee above.
   const directRoles = roles.filter((role) => role === "superadmin");
 
   if (directRoles.length > 0) {
@@ -328,7 +335,7 @@ export const getUnreadCount = async (req, res) => {
     // Superadmin Notification page is intentionally Sent Details only.
     // The bell badge must therefore not count hidden received Notification rows.
     // Sent history count is shown inside the Notifications page pagination, not in the bell.
-    if (isSuperAdmin(req)) {
+    if (isNotificationManager(req)) {
       return res.status(200).json({
         success: true,
         unreadCount: 0,
@@ -499,10 +506,10 @@ export const unregisterWebPushSubscription = async (req, res) => {
 
 export const sendBroadcastNotification = async (req, res) => {
   try {
-    if (!isSuperAdmin(req)) {
+    if (!isNotificationManager(req)) {
       return res.status(403).json({
         success: false,
-        error: "Only superadmin can send notifications.",
+        error: "Only an authorized HQ notification manager can send notifications.",
       });
     }
 
@@ -593,10 +600,10 @@ export const sendBroadcastNotification = async (req, res) => {
 
 export const listBroadcastNotifications = async (req, res) => {
   try {
-    if (!isSuperAdmin(req)) {
+    if (!isNotificationManager(req)) {
       return res.status(403).json({
         success: false,
-        error: "Only superadmin can view sent notification history.",
+        error: "Only an authorized HQ notification manager can view sent notification history.",
       });
     }
 

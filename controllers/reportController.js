@@ -21,6 +21,11 @@ const STUDY_YEAR_OPTIONS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ALUMNI_STUDENT_STATUSES = ["Graduated"];
 const ALUMNI_ACADEMIC_STATUSES = ["Completed"];
 
+// Phase 4: HQ User is global operational read-only, but financial reports are
+// intentionally excluded. All other pre-existing report roles retain their
+// historical financial visibility.
+const canViewFinancialReportData = (role) => String(role || "").trim().toLowerCase() !== "hquser";
+
 const parseStudyYear = (value) => {
   const raw = safeStr(value);
   if (raw === "") return null;
@@ -62,7 +67,7 @@ function getAuthPayload(req) {
 async function getAccessibleSchoolIds({ role, schoolId, userId }) {
   const r = String(role || "").toLowerCase();
 
-  if (r === "superadmin" || r === "hquser") return null;
+  if (["superadmin", "hqadmin", "accountant", "hquser"].includes(r)) return null;
 
   if (r === "admin") {
     return schoolId && isObjectIdLike(schoolId) ? [String(schoolId)] : [];
@@ -344,6 +349,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
     const role = payload.role;
     const userId = payload.id || payload._id || payload.userId;
     const tokenSchoolId = payload.schoolId;
+    const financialVisible = canViewFinancialReportData(role);
 
     const filters = {
       months: Math.min(24, Math.max(3, Number(req.query.months || 12))),
@@ -354,7 +360,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       acYear: safeStr(req.query.acYear),
       year: safeStr(req.query.year),
       status: safeStr(req.query.status),
-      feesStatus: safeStr(req.query.feesStatus),
+      feesStatus: financialVisible ? safeStr(req.query.feesStatus) : "",
       hostel: safeStr(req.query.hostel),
     };
 
@@ -432,7 +438,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
       latestAdmissionsRaw,
     ] = await Promise.all([
       Student.countDocuments(studentMatch),
-      Student.countDocuments({ ...studentMatch, feesPaid: 1 }),
+      financialVisible ? Student.countDocuments({ ...studentMatch, feesPaid: 1 }) : Promise.resolve(0),
       Student.countDocuments({ ...studentMatch, active: "Active" }),
       Student.countDocuments({ ...studentMatch, active: "Graduated" }),
       Student.countDocuments({ ...studentMatch, active: "In-Active" }),
@@ -453,25 +459,29 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
         { $sort: { _id: 1 } },
         { $project: { _id: 0, month: "$_id", count: 1 } },
       ]),
-      buildFeesCollectionSeries({
-        startDate,
-        monthStart,
-        acYear: filters.acYear,
-        resolvedSchoolIds,
-        status: filters.status,
-        hostel: filters.hostel,
-        feesStatus: filters.feesStatus,
-        studentIdsByAcademic,
-        alumniStudentIdsByAcademic,
-      }),
-      Student.find({ ...studentMatch, feesPaid: 0 })
-        .select("_id userId schoolId rollNumber feesPaid doa active hostel courses")
-        .populate({ path: "userId", select: "name" })
-        .populate({ path: "schoolId", select: "code nameEnglish" })
-        .populate({ path: "courses", select: "name type" })
-        .sort({ updatedAt: -1 })
-        .limit(10)
-        .lean(),
+      financialVisible
+        ? buildFeesCollectionSeries({
+            startDate,
+            monthStart,
+            acYear: filters.acYear,
+            resolvedSchoolIds,
+            status: filters.status,
+            hostel: filters.hostel,
+            feesStatus: filters.feesStatus,
+            studentIdsByAcademic,
+            alumniStudentIdsByAcademic,
+          })
+        : Promise.resolve({ monthlyRows: [], thisMonthAmount: 0 }),
+      financialVisible
+        ? Student.find({ ...studentMatch, feesPaid: 0 })
+            .select("_id userId schoolId rollNumber feesPaid doa active hostel courses")
+            .populate({ path: "userId", select: "name" })
+            .populate({ path: "schoolId", select: "code nameEnglish" })
+            .populate({ path: "courses", select: "name type" })
+            .sort({ updatedAt: -1 })
+            .limit(10)
+            .lean()
+        : Promise.resolve([]),
       Student.find(studentMatch)
         .select("_id userId schoolId rollNumber feesPaid doa active hostel courses")
         .populate({ path: "userId", select: "name" })
@@ -495,6 +505,7 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
 
     const result = {
       success: true,
+      financialVisible,
       filters: {
         ...filters,
         schoolId: filters.schoolId || null,
@@ -504,13 +515,11 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
         acYear: filters.acYear || null,
         year: filters.year || null,
         status: filters.status || null,
-        feesStatus: filters.feesStatus || null,
+        ...(financialVisible ? { feesStatus: filters.feesStatus || null } : {}),
         hostel: filters.hostel || null,
       },
       kpis: {
         totalStudents,
-        feesPaid: feesPaidCount,
-        feesUnpaid: Math.max(0, totalStudents - feesPaidCount),
         active: activeCount,
         graduated: graduatedCount,
         inactive: inactiveCount,
@@ -520,19 +529,25 @@ async function getReportsHomeLogic(req, { useCache = false } = {}) {
         hostelNo: hostelNoCount,
         niswansCovered: Array.isArray(coveredSchoolIds) ? coveredSchoolIds.length : 0,
         thisMonthAdmissions,
-        thisMonthFeesCollection: Number(feeSeriesData.thisMonthAmount || 0),
+        ...(financialVisible
+          ? {
+              feesPaid: feesPaidCount,
+              feesUnpaid: Math.max(0, totalStudents - feesPaidCount),
+              thisMonthFeesCollection: Number(feeSeriesData.thisMonthAmount || 0),
+            }
+          : {}),
       },
       trends: {
         admissions: admissionsTrend,
-        feesCollection: feesTrend,
+        ...(financialVisible ? { feesCollection: feesTrend } : {}),
       },
       admissionsTrend,
-      feesTrend,
+      ...(financialVisible ? { feesTrend } : {}),
       previews: {
-        latestUnpaid: previewLatestUnpaid,
         latestAdmissions: previewLatestAdmissions,
+        ...(financialVisible ? { latestUnpaid: previewLatestUnpaid } : {}),
       },
-      latestUnpaid: previewLatestUnpaid,
+      ...(financialVisible ? { latestUnpaid: previewLatestUnpaid } : {}),
       latestAdmissions: previewLatestAdmissions,
     };
 
@@ -555,6 +570,7 @@ export const getReportMeta = async (req, res) => {
     const role = payload.role;
     const userId = payload.id || payload._id || payload.userId;
     const tokenSchoolId = payload.schoolId;
+    const financialVisible = canViewFinancialReportData(role);
 
     const allowedSchoolIds = await getAccessibleSchoolIds({ role, schoolId: tokenSchoolId, userId });
     const resolvedSchoolIds = await resolveSchoolScope({
@@ -577,12 +593,13 @@ export const getReportMeta = async (req, res) => {
 
     const courseTypes = [...new Set(courses.map((item) => safeStr(item.type)).filter(Boolean))];
     const statuses = ["Active", "Alumni", "In-Active", "Transferred", "Graduated", "Discontinued"];
-    const feeStatuses = ["Paid", "Unpaid"];
+    const feeStatuses = financialVisible ? ["Paid", "Unpaid"] : [];
     const hostels = ["Yes", "No"];
     const studyYears = STUDY_YEAR_OPTIONS;
 
     return res.status(200).json({
       success: true,
+      financialVisible,
       schools,
       courses,
       academicYears,
@@ -622,8 +639,6 @@ export const exportReportsHome = async (req, res) => {
     if (format === "csv") {
       const row = {
         totalStudents: data.kpis.totalStudents,
-        feesPaid: data.kpis.feesPaid,
-        feesUnpaid: data.kpis.feesUnpaid,
         active: data.kpis.active,
         graduated: data.kpis.graduated,
         inactive: data.kpis.inactive,
@@ -633,7 +648,13 @@ export const exportReportsHome = async (req, res) => {
         hostelNo: data.kpis.hostelNo,
         niswansCovered: data.kpis.niswansCovered,
         thisMonthAdmissions: data.kpis.thisMonthAdmissions,
-        thisMonthFeesCollection: data.kpis.thisMonthFeesCollection,
+        ...(data.financialVisible
+          ? {
+              feesPaid: data.kpis.feesPaid,
+              feesUnpaid: data.kpis.feesUnpaid,
+              thisMonthFeesCollection: data.kpis.thisMonthFeesCollection,
+            }
+          : {}),
       };
       return sendCSV(res, filenameBase, [row], Object.keys(row));
     }
@@ -641,8 +662,12 @@ export const exportReportsHome = async (req, res) => {
     const sheets = [
       { name: "KPIs", rows: [data.kpis] },
       { name: "AdmissionsTrend", rows: data.trends.admissions || [] },
-      { name: "FeesTrend", rows: data.trends.feesCollection || [] },
-      { name: "LatestUnpaid", rows: data.previews.latestUnpaid || [] },
+      ...(data.financialVisible
+        ? [
+            { name: "FeesTrend", rows: data.trends.feesCollection || [] },
+            { name: "LatestUnpaid", rows: data.previews.latestUnpaid || [] },
+          ]
+        : []),
       { name: "LatestAdmissions", rows: data.previews.latestAdmissions || [] },
     ];
 
@@ -661,6 +686,7 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
     const role = payload.role;
     const userId = payload.id || payload._id || payload.userId;
     const tokenSchoolId = payload.schoolId;
+    const financialVisible = canViewFinancialReportData(role);
 
     const filters = {
       schoolId: safeStr(req.query.schoolId),
@@ -670,7 +696,7 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       acYear: safeStr(req.query.acYear),
       year: safeStr(req.query.year),
       status: safeStr(req.query.status),
-      feesStatus: safeStr(req.query.feesStatus),
+      feesStatus: financialVisible ? safeStr(req.query.feesStatus) : "",
       hostel: safeStr(req.query.hostel),
     };
 
@@ -715,14 +741,14 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
     if (!schools || schools.length === 0) {
       const empty = {
         success: true,
+        financialVisible,
         rows: [],
         summary: {
           totalNiswans: 0,
           totalStudents: 0,
-          totalFeesPaid: 0,
-          totalUnpaid: 0,
           totalActive: 0,
           totalGraduated: 0,
+          ...(financialVisible ? { totalFeesPaid: 0, totalUnpaid: 0 } : {}),
         },
       };
       if (redis) await redis.set(cacheKey, JSON.stringify(empty), { EX: 60 });
@@ -797,15 +823,16 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
         code: school.code || "",
         nameEnglish: school.nameEnglish || "",
         totalStudents,
-        feesPaid,
-        unpaid,
+        ...(financialVisible ? { feesPaid, unpaid } : {}),
         activeStudents,
         graduatedStudents,
         inactiveStudents: Number(st.inactiveStudents || 0),
         transferredStudents: Number(st.transferredStudents || 0),
         discontinuedStudents: Number(st.discontinuedStudents || 0),
         hostelYes: Number(st.hostelYes || 0),
-        paidPercent: totalStudents > 0 ? Number(((feesPaid / totalStudents) * 100).toFixed(1)) : 0,
+        ...(financialVisible
+          ? { paidPercent: totalStudents > 0 ? Number(((feesPaid / totalStudents) * 100).toFixed(1)) : 0 }
+          : {}),
         activePercent: totalStudents > 0 ? Number(((activeStudents / totalStudents) * 100).toFixed(1)) : 0,
         lastAdmissionDate: st.lastAdmissionDate || null,
       };
@@ -815,8 +842,10 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       (acc, row) => {
         acc.totalNiswans += 1;
         acc.totalStudents += Number(row.totalStudents || 0);
-        acc.totalFeesPaid += Number(row.feesPaid || 0);
-        acc.totalUnpaid += Number(row.unpaid || 0);
+        if (financialVisible) {
+          acc.totalFeesPaid += Number(row.feesPaid || 0);
+          acc.totalUnpaid += Number(row.unpaid || 0);
+        }
         acc.totalActive += Number(row.activeStudents || 0);
         acc.totalGraduated += Number(row.graduatedStudents || 0);
         return acc;
@@ -824,14 +853,13 @@ async function getNiswanReportLogic(req, { useCache = false } = {}) {
       {
         totalNiswans: 0,
         totalStudents: 0,
-        totalFeesPaid: 0,
-        totalUnpaid: 0,
+        ...(financialVisible ? { totalFeesPaid: 0, totalUnpaid: 0 } : {}),
         totalActive: 0,
         totalGraduated: 0,
       }
     );
 
-    const result = { success: true, rows, summary };
+    const result = { success: true, financialVisible, rows, summary };
 
     if (redis) {
       await redis.set(cacheKey, JSON.stringify(result), { EX: 60 });

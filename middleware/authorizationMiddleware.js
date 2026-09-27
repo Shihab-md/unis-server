@@ -6,11 +6,11 @@ import Certificate from "../models/Certificate.js";
 import Template from "../models/Template.js";
 import Academic from "../models/Academic.js";
 import FeeInvoice from "../models/FeeInvoice.js";
+import { GLOBAL_HQ_READ_ROLE_SET, HQ_EMPLOYEE_ROLE_SET, normalizeRole } from "../config/rolePolicy.js";
 
-const normalizeRole = (role) => String(role || "").trim().toLowerCase();
-const HQ_ROLES = new Set(["superadmin", "hquser"]);
+const HQ_ROLES = GLOBAL_HQ_READ_ROLE_SET;
 const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
-const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hquser", "admin"]);
+const STUDENT_MANAGE_ROLES = new Set(["superadmin", "hqadmin", "admin"]);
 
 const deny = (res, message = "You are not authorized to access this resource.") =>
   res.status(403).json({ success: false, error: message });
@@ -22,8 +22,24 @@ export const getAccessContext = async (user) => {
   const userId = user?._id;
 
   if (!userId) return { role, userId: null, isHQ: false, isActive: false, schoolIds: [] };
-  if (HQ_ROLES.has(role)) {
+  if (role === "superadmin") {
     return { role, userId, isHQ: true, isActive: true, canReadAllStudents: true, schoolIds: [] };
+  }
+  if (HQ_EMPLOYEE_ROLE_SET.has(role)) {
+    const employee = await Employee.findOne({ userId, active: "Active" })
+      .select("_id schoolId active")
+      .populate({ path: "schoolId", select: "_id code active" })
+      .lean();
+    const isActive = Boolean(employee?._id) && String(employee?.schoolId?.code || "").trim() === HQ_SCHOOL_CODE;
+    return {
+      role,
+      userId,
+      isHQ: isActive && HQ_ROLES.has(role),
+      isActive,
+      canReadAllStudents: isActive && HQ_ROLES.has(role),
+      employeeId: employee?._id || null,
+      schoolIds: isActive && employee?.schoolId?._id ? [String(employee.schoolId._id)] : [],
+    };
   }
 
   // Guest is an existing production read-only role. The web application lets Guest
@@ -40,7 +56,7 @@ export const getAccessContext = async (user) => {
     };
   }
 
-  if (["admin", "teacher", "employee", "usthadh", "warden", "staff"].includes(role)) {
+  if (["hqstaff", "admin", "teacher", "employee", "usthadh", "warden", "staff"].includes(role)) {
     const employee = await Employee.findOne({ userId }).select("_id schoolId active").lean();
     const isActive = Boolean(employee?._id) && isActiveValue(employee?.active);
     return {
@@ -99,6 +115,9 @@ export const requireStudentManageRole = async (req, res, next) => {
     }
 
     const access = await getRequestAccess(req);
+    if (role === "hqadmin" && !access.isActive) {
+      return deny(res, "HQ Admin requires an active Employee record linked to the configured HQ Niswan.");
+    }
     if (role === "admin" && !access.isActive) {
       return deny(res, "Your Niswan Admin account is inactive or is not linked to an active employee record.");
     }
@@ -109,11 +128,17 @@ export const requireStudentManageRole = async (req, res, next) => {
   }
 };
 
-export const requireHQ = (req, res, next) => {
-  if (!HQ_ROLES.has(normalizeRole(req.user?.role))) {
-    return deny(res, "This global operation is available only to HQ users.");
+export const requireHQ = async (req, res, next) => {
+  try {
+    const access = await getRequestAccess(req);
+    if (!access.isHQ || !HQ_ROLES.has(access.role)) {
+      return deny(res, "This global operation is available only to active HQ users.");
+    }
+    return next();
+  } catch (error) {
+    console.log("[authorization] requireHQ:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Authorization check failed." });
   }
-  return next();
 };
 
 // Special HQ utilities may also be used by the existing HQ Admin account. HQ Admin
@@ -123,7 +148,11 @@ export const requireHQ = (req, res, next) => {
 export const requireHQOrHqAdmin = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (HQ_ROLES.has(role)) return next();
+    if (HQ_ROLES.has(role)) {
+      const access = await getRequestAccess(req);
+      if (access.isHQ) return next();
+      return deny(res, "This HQ operation requires an active HQ-linked employee account.");
+    }
     if (role !== "admin") {
       return deny(res, "This HQ operation is available only to SuperAdmin, HQ User, or HQ Admin.");
     }
@@ -267,13 +296,22 @@ export const requireStudentAccess = (paramName = "id") => async (req, res, next)
 // Preserves the current production web role model while enforcing scope server-side.
 // -----------------------------------------------------------------------------
 const CREATE_TARGET_ROLES = {
-  superadmin: new Set(["superadmin", "hquser", "admin", "teacher", "usthadh", "warden"]),
-  hquser: new Set(["admin", "teacher"]),
+  superadmin: new Set([
+    "superadmin", "hqadmin", "accountant", "hquser", "hqstaff",
+    "admin", "teacher", "usthadh", "warden", "staff",
+  ]),
+  hqadmin: new Set([
+    "accountant", "hquser", "hqstaff", "admin", "teacher", "usthadh", "warden", "staff",
+  ]),
   supervisor: new Set(["admin"]),
   admin: new Set(["usthadh", "warden"]),
 };
 
 const requireActiveEmployeeActor = (access, role, res) => {
+  if (HQ_EMPLOYEE_ROLE_SET.has(role) && !access.isActive) {
+    deny(res, "Your HQ role requires an active Employee record linked to the configured HQ Niswan.");
+    return false;
+  }
   if (["admin"].includes(role) && !access.isActive) {
     deny(res, "Your Niswan Admin account is inactive or is not linked to an active employee record.");
     return false;
@@ -349,16 +387,22 @@ export const requireSupervisorAdminList = async (req, res, next) => {
   }
 };
 
-export const requireEmployeeHQFilter = (req, res, next) => {
-  if (!HQ_ROLES.has(normalizeRole(req.user?.role))) {
-    return deny(res, "Global Employee filters are available only to HQ users.");
+export const requireEmployeeHQFilter = async (req, res, next) => {
+  try {
+    const access = await getRequestAccess(req);
+    if (!access.isHQ || !HQ_ROLES.has(access.role)) {
+      return deny(res, "Global Employee filters are available only to active HQ users.");
+    }
+    return next();
+  } catch (error) {
+    console.log("[authorization] requireEmployeeHQFilter:", error?.message || error);
+    return res.status(500).json({ success: false, error: "Authorization check failed." });
   }
-  return next();
 };
 
 export const requireEmployeeImport = (req, res, next) => {
-  if (normalizeRole(req.user?.role) !== "superadmin") {
-    return deny(res, "Employee import is available only to Super Admin.");
+  if (!["superadmin", "hqadmin"].includes(normalizeRole(req.user?.role))) {
+    return deny(res, "Employee import is available only to SuperAdmin or HQ Admin.");
   }
   return next();
 };
@@ -430,9 +474,12 @@ export const requireEmployeeCreateAccess = async (req, res, next) => {
       return deny(res, "You can add Employees only inside your authorized Niswan scope.");
     }
 
-    const school = await School.findById(requestedSchoolId).select("_id active").lean();
+    const school = await School.findById(requestedSchoolId).select("_id active code").lean();
     if (!school?._id) return res.status(404).json({ success: false, error: "Niswan not found." });
     if (!isActiveValue(school.active)) return deny(res, "Employees cannot be added to an inactive Niswan.");
+    if (HQ_EMPLOYEE_ROLE_SET.has(targetRole) && String(school.code || "").trim() !== HQ_SCHOOL_CODE) {
+      return deny(res, "HQ roles can be assigned only to employees linked to the configured HQ Niswan.");
+    }
 
     return next();
   } catch (error) {
@@ -459,14 +506,26 @@ export const requireEmployeeUpdateAccess = (paramName = "id") => async (req, res
       return deny(res, "Employee Niswan cannot be changed from the Employee Edit workflow.");
     }
 
+    if (HQ_EMPLOYEE_ROLE_SET.has(newRole)) {
+      const targetSchool = await School.findById(employee.schoolId).select("_id code").lean();
+      if (!targetSchool?._id || String(targetSchool.code || "").trim() !== HQ_SCHOOL_CODE) {
+        return deny(res, "HQ roles can be assigned only to employees linked to the configured HQ Niswan.");
+      }
+    }
+
     if (role === "superadmin") {
       const allowed = CREATE_TARGET_ROLES.superadmin;
-      if (!allowed.has(newRole)) return deny(res, "Selected Employee role is not supported.");
-    } else if (role === "hquser") {
-      if (oldRole === "superadmin") return deny(res, "HQ User cannot edit a Super Admin Employee record.");
-      if (newRole !== oldRole) return deny(res, "Only Super Admin can change an Employee role.");
+      // Existing legacy Employee roles may remain unchanged during an edit even if
+      // they are no longer offered for new assignment. A role change itself must
+      // still target one of the explicitly supported roles.
+      if (newRole !== oldRole && !allowed.has(newRole)) return deny(res, "Selected Employee role is not supported.");
+    } else if (role === "hqadmin") {
+      if (["superadmin", "hqadmin"].includes(oldRole)) return deny(res, "HQ Admin cannot edit SuperAdmin or another HQ Admin Employee record.");
+      if (newRole !== oldRole) return deny(res, "Only SuperAdmin can change an Employee role.");
     } else if (role === "supervisor") {
-      if (!access.schoolIds.includes(employeeSchoolId) || oldRole !== "admin") return deny(res, "You can edit only assigned Niswan Admins.");
+      if (!access.schoolIds.includes(employeeSchoolId) || oldRole !== "admin") {
+        return deny(res, "You can edit only assigned Niswan Admins.");
+      }
       if (newRole !== oldRole) return deny(res, "Muavin cannot change an Employee role.");
     } else if (role === "admin") {
       if (!access.schoolIds.includes(employeeSchoolId)) return deny(res, "This employee is outside your Niswan scope.");
@@ -506,9 +565,13 @@ export const requireEmployeeDeleteAccess = (paramName = "id") => async (req, res
     const targetRole = normalizeRole(employee.userId?.role);
 
     if (role === "superadmin") {
-      // preserve production global delete permission
+      // global delete permission
+    } else if (role === "hqadmin") {
+      if (["superadmin", "hqadmin"].includes(targetRole)) return deny(res, "HQ Admin cannot delete SuperAdmin or another HQ Admin Employee record.");
     } else if (role === "supervisor") {
-      if (!access.schoolIds.includes(employeeSchoolId) || targetRole !== "admin") return deny(res, "You can delete only assigned Niswan Admins.");
+      if (!access.schoolIds.includes(employeeSchoolId) || targetRole !== "admin") {
+        return deny(res, "You can delete only assigned Niswan Admins.");
+      }
     } else if (role === "admin") {
       if (!access.schoolIds.includes(employeeSchoolId)) return deny(res, "This employee is outside your Niswan scope.");
       if (String(employee.userId?._id || "") === String(req.user?._id || "")) return deny(res, "You cannot delete your own Employee record.");
@@ -528,15 +591,13 @@ export const requireEmployeeDeleteAccess = (paramName = "id") => async (req, res
 
 
 // -----------------------------------------------------------------------------
-// Master authorization (V0.6)
-// Preserve the current Web authorization model while finally enforcing it server-side:
-// - Super Admin / HQ User: list, view, add, edit, delete master records.
-// - Guest: list and view only.
-// - Other authenticated roles may still use the existing /fromCache endpoints because
-//   Student/Employee/Certificate forms depend on those lookup lists.
+// Master authorization.
+// Phase 4 keeps Masters/System administration SuperAdmin-only. Legacy Guest retains
+// its previous read-only Master access. Other authenticated roles may still use the
+// shared /fromCache endpoints because Student/Employee/Certificate forms depend on them.
 // -----------------------------------------------------------------------------
-const MASTER_READ_ROLES = new Set(["superadmin", "hquser", "guest"]);
-const MASTER_MANAGE_ROLES = new Set(["superadmin", "hquser"]);
+const MASTER_READ_ROLES = new Set(["superadmin", "guest"]);
+const MASTER_MANAGE_ROLES = new Set(["superadmin"]);
 
 export const requireMasterReadRole = (req, res, next) => {
   const role = normalizeRole(req.user?.role);
@@ -549,7 +610,7 @@ export const requireMasterReadRole = (req, res, next) => {
 export const requireMasterManageRole = (req, res, next) => {
   const role = normalizeRole(req.user?.role);
   if (!MASTER_MANAGE_ROLES.has(role)) {
-    return deny(res, "Master changes are available only to Super Admin and HQ users.");
+    return deny(res, "Master changes are available only to SuperAdmin.");
   }
   return next();
 };
@@ -562,23 +623,41 @@ export const requireMasterManageRole = (req, res, next) => {
 // - Guest: list and view only.
 // No Admin/Muavin certificate access is introduced in V0.5.
 // -----------------------------------------------------------------------------
-const CERTIFICATE_READ_ROLES = new Set(["superadmin", "hquser", "guest"]);
-const CERTIFICATE_MANAGE_ROLES = new Set(["superadmin", "hquser"]);
+const CERTIFICATE_READ_ROLES = new Set(["superadmin", "hqadmin", "accountant", "hquser", "guest"]);
+const CERTIFICATE_MANAGE_ROLES = new Set(["superadmin", "hqadmin"]);
 
-export const requireCertificateReadRole = (req, res, next) => {
-  const role = normalizeRole(req.user?.role);
-  if (!CERTIFICATE_READ_ROLES.has(role)) {
-    return deny(res, "Certificate data is not available for this role.");
+export const requireCertificateReadRole = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (!CERTIFICATE_READ_ROLES.has(role)) {
+      return deny(res, "Certificate data is not available for this role.");
+    }
+    if (HQ_EMPLOYEE_ROLE_SET.has(role)) {
+      const access = await getRequestAccess(req);
+      if (!access.isActive || (GLOBAL_HQ_READ_ROLE_SET.has(role) && !access.isHQ)) {
+        return deny(res, "Certificate HQ access requires an active HQ-linked Employee record.");
+      }
+    }
+    return next();
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Unable to verify Certificate access." });
   }
-  return next();
 };
 
-export const requireCertificateManageRole = (req, res, next) => {
-  const role = normalizeRole(req.user?.role);
-  if (!CERTIFICATE_MANAGE_ROLES.has(role)) {
-    return deny(res, "Certificate management is available only to HQ users.");
+export const requireCertificateManageRole = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (!CERTIFICATE_MANAGE_ROLES.has(role)) {
+      return deny(res, "Certificate management is available only to HQ users.");
+    }
+    if (role === "hqadmin") {
+      const access = await getRequestAccess(req);
+      if (!access.isHQ) return deny(res, "Certificate management requires an active HQ Admin account.");
+    }
+    return next();
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Unable to verify Certificate management access." });
   }
-  return next();
 };
 
 const loadCertificateForAccess = async (req, res, paramName = "id") => {
@@ -599,6 +678,12 @@ export const requireCertificateReadAccess = (paramName = "id") => async (req, re
     if (!CERTIFICATE_READ_ROLES.has(role)) {
       return deny(res, "Certificate data is not available for this role.");
     }
+    if (HQ_EMPLOYEE_ROLE_SET.has(role)) {
+      const access = await getRequestAccess(req);
+      if (!access.isActive || (GLOBAL_HQ_READ_ROLE_SET.has(role) && !access.isHQ)) {
+        return deny(res, "Certificate HQ access requires an active HQ-linked Employee record.");
+      }
+    }
     const certificate = await loadCertificateForAccess(req, res, paramName);
     if (!certificate) return;
     req.authorizedCertificate = certificate;
@@ -617,6 +702,10 @@ export const requireCertificateManageAccess = (paramName = "id") => async (req, 
     const role = normalizeRole(req.user?.role);
     if (!CERTIFICATE_MANAGE_ROLES.has(role)) {
       return deny(res, "Certificate management is available only to HQ users.");
+    }
+    if (role === "hqadmin") {
+      const access = await getRequestAccess(req);
+      if (!access.isHQ) return deny(res, "Certificate management requires an active HQ Admin account.");
     }
     const certificate = await loadCertificateForAccess(req, res, paramName);
     if (!certificate) return;
@@ -640,6 +729,10 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
     const role = normalizeRole(req.user?.role);
     if (!CERTIFICATE_MANAGE_ROLES.has(role)) {
       return deny(res, "Certificate creation is available only to HQ users.");
+    }
+    if (role === "hqadmin") {
+      const access = await getRequestAccess(req);
+      if (!access.isHQ) return deny(res, "Certificate creation requires an active HQ Admin account.");
     }
 
     const templateId = String(req.body?.templateId || "");
@@ -729,14 +822,15 @@ export const requireCertificateCreateAccess = async (req, res, next) => {
 };
 
 // V0.10 — Inspection / Accounts / Reports boundaries.
-const INSPECTION_READ_ROLES = new Set(["superadmin", "hquser", "supervisor"]);
-const REPORT_ROLES = new Set(["superadmin", "hquser", "supervisor", "admin", "guest"]);
-const ACCOUNT_ROLES = new Set(["superadmin", "hquser", "admin"]);
+const INSPECTION_READ_ROLES = new Set(["superadmin", "hqadmin", "accountant", "hquser", "supervisor"]);
+const REPORT_ROLES = new Set(["superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest"]);
+const ACCOUNT_ROLES = new Set(["superadmin", "hqadmin", "accountant", "admin"]);
 
 export const requireInspectionReadRole = async (req, res, next) => {
   try {
     const access = await getRequestAccess(req);
     if (!INSPECTION_READ_ROLES.has(access.role)) return deny(res, "Inspection reports are not available for this role.");
+    if (HQ_EMPLOYEE_ROLE_SET.has(access.role) && !access.isActive) return deny(res, "HQ access requires an active HQ-linked Employee record.");
     if (access.role === "supervisor" && !access.isActive) return deny(res, "Inactive Muavin accounts cannot access inspection reports.");
     return next();
   } catch (error) {
@@ -759,6 +853,9 @@ export const requireReportsRole = async (req, res, next) => {
   try {
     const access = await getRequestAccess(req);
     if (!REPORT_ROLES.has(access.role)) return deny(res, "Reports are not available for this role.");
+    if (HQ_EMPLOYEE_ROLE_SET.has(access.role) && !access.isActive) {
+      return deny(res, "HQ report access requires an active HQ-linked Employee record.");
+    }
     if (["admin", "supervisor"].includes(access.role) && !access.isActive) {
       return deny(res, "Inactive accounts cannot access reports.");
     }
@@ -772,6 +869,7 @@ export const requireAccountsRole = async (req, res, next) => {
   try {
     const access = await getRequestAccess(req);
     if (!ACCOUNT_ROLES.has(access.role)) return deny(res, "Accounts are not available for this role.");
+    if (HQ_EMPLOYEE_ROLE_SET.has(access.role) && !access.isActive) return deny(res, "HQ Accounts access requires an active HQ-linked Employee record.");
     if (access.role === "admin" && !access.isActive) return deny(res, "Inactive Admin accounts cannot access Accounts.");
     return next();
   } catch (error) {
@@ -840,7 +938,7 @@ export const requireSchoolReadScope = async (req, res, next) => {
     // the existing Niswan scope and preserves inactive Admin/Muavin protection.
     const role = normalizeRole(req.user?.role);
     const access = await getRequestAccess(req);
-    if (["admin", "supervisor"].includes(role) && !access.isActive) {
+    if ((HQ_EMPLOYEE_ROLE_SET.has(role) || ["admin", "supervisor"].includes(role)) && !access.isActive) {
       return deny(res, "Your account is inactive or is not linked to an active UNIS scope record.");
     }
     return next();
