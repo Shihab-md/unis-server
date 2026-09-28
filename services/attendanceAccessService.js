@@ -189,6 +189,57 @@ export const resolveStaffScope = async ({ user, scopeType, schoolId, requireMana
   };
 };
 
+export const resolvePayrollScope = async ({ user, scopeType, schoolId }) => {
+  const access = await getAttendanceAccess(user);
+  const role = access.role;
+  const requestedScope = normalizeScopeType(scopeType);
+  const hasGlobalPayrollScope = ["superadmin", "hqadmin", "accountant"].includes(role);
+  const hasOwnNiswanPayrollScope =
+    role === "admin" &&
+    !access.isLegacyHqAdmin &&
+    access.actorOrganizationType === ORGANIZATION_TYPES.NISWAN &&
+    Boolean(access.actorSchoolId);
+
+  if (requestedScope === ORGANIZATION_TYPES.HQ) {
+    if (!hasGlobalPayrollScope) {
+      throw forbidden("You are not authorized to access HQ Payroll.");
+    }
+    return {
+      access,
+      organizationType: ORGANIZATION_TYPES.HQ,
+      schoolId: null,
+      school: null,
+      organization: access.hqOrganization,
+    };
+  }
+
+  let targetSchoolId = String(schoolId || "").trim();
+  if (hasGlobalPayrollScope) {
+    if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
+  } else if (hasOwnNiswanPayrollScope) {
+    targetSchoolId = access.actorSchoolId;
+  } else {
+    throw forbidden("You are not authorized to access Niswan Payroll.");
+  }
+
+  const school = await School.findOne({ _id: targetSchoolId, ...getNiswanSchoolFilter() })
+    .select("_id code nameEnglish active recordType")
+    .lean();
+  if (!school?._id) throw badRequest("Selected Niswan was not found.");
+
+  return {
+    access,
+    organizationType: ORGANIZATION_TYPES.NISWAN,
+    schoolId: String(school._id),
+    school: { _id: String(school._id), code: school.code, nameEnglish: school.nameEnglish },
+    organization: {
+      organizationType: ORGANIZATION_TYPES.NISWAN,
+      code: school.code,
+      nameEnglish: school.nameEnglish,
+    },
+  };
+};
+
 export const resolveStudentScope = async ({ user, schoolId, requireManage = true }) => {
   const access = await getAttendanceAccess(user);
   let targetSchoolId = String(schoolId || "").trim();
@@ -294,4 +345,4 @@ export const canApproveStaffLeave = async ({ approverUser, leave }) => {
 };
 
 export const canManagePayrollScope = async ({ user, scopeType, schoolId }) =>
-  resolveStaffScope({ user, scopeType, schoolId, requireManage: true });
+  resolvePayrollScope({ user, scopeType, schoolId });

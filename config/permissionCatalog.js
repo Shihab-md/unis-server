@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 9;
+export const PERMISSION_CATALOG_VERSION = 10;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -45,6 +45,14 @@ export const PERMISSIONS = Object.freeze({
 
   STUDENT_ATTENDANCE_REPORT_VIEW: "attendance.student.report.view",
   STAFF_ATTENDANCE_REPORT_VIEW: "attendance.staff.report.view",
+
+  PAYROLL_VIEW: "payroll.view",
+  PAYROLL_GENERATE: "payroll.generate",
+  PAYROLL_ADJUST: "payroll.adjust",
+  PAYROLL_REVIEW: "payroll.review",
+  PAYROLL_FINALIZE: "payroll.finalize",
+  PAYROLL_PAY: "payroll.pay",
+  PAYSLIP_SELF_VIEW: "payslip.self.view",
 
   EXAM_QUESTION_VIEW: "exam.question.view",
   EXAM_QUESTION_CREATE: "exam.question.create",
@@ -169,6 +177,12 @@ const STAFF_SELF_SCOPE_ROLES = Object.freeze([
 const STUDENT_LEAVE_VIEW_SCOPE_ROLES = STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES;
 const STUDENT_LEAVE_MANAGE_SCOPE_ROLES = STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES;
 const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
+
+// Payroll is a finance boundary independent from Attendance management. HQ Admin and
+// Accountant can manage HQ/any Niswan Payroll; a Niswan Admin remains limited to own
+// Niswan by resolvePayrollScope(). Payslip self-service never widens management scope.
+const PAYROLL_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant", "admin"]);
+const PAYSLIP_SELF_SCOPE_ROLES = Object.freeze(["superadmin", ...STAFF_SELF_SCOPE_ROLES]);
 
 const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze([
   "superadmin", "hqadmin", "accountant", "hquser", "admin",
@@ -546,6 +560,70 @@ export const PERMISSION_CATALOG = Object.freeze([
     requires: [],
     editable: true,
     allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.PAYROLL_VIEW,
+    category: "Payroll",
+    label: "View Payroll",
+    description: "View salary Payroll runs within the finance-controlled HQ or Niswan Payroll scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_GENERATE,
+    category: "Payroll",
+    label: "Generate / Recalculate Payroll",
+    description: "Generate or recalculate Draft/Reviewed Payroll from salary, Attendance and approved unpaid Leave.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_ADJUST,
+    category: "Payroll",
+    label: "Adjust Payroll Items",
+    description: "Edit manual allowance, deduction and item remarks while Payroll is not Finalized/Paid.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_REVIEW,
+    category: "Payroll",
+    label: "Review Payroll",
+    description: "Move Payroll between Draft and Reviewed using the existing workflow rules.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_FINALIZE,
+    category: "Payroll",
+    label: "Finalize Payroll",
+    description: "Finalize a Reviewed Payroll run. Finalized salary items become locked.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_PAY,
+    category: "Payroll",
+    label: "Mark Payroll Paid",
+    description: "Mark a Finalized Payroll run as Paid and record payment method/reference.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYSLIP_SELF_VIEW,
+    category: "Payslips",
+    label: "View Own Payslips",
+    description: "View only the logged-in staff member's own Finalized/Paid Payroll salary items.",
+    requires: [],
+    editable: true,
+    allowedRoles: PAYSLIP_SELF_SCOPE_ROLES,
   },
 
   {
@@ -1446,6 +1524,33 @@ const PHASE_2_5_2A_PERMISSIONS_BY_ROLE = Object.freeze({
   employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
 });
 
+const PHASE_6_PERMISSIONS_BY_ROLE = Object.freeze({
+  hqadmin: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  accountant: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  hquser: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  hqstaff: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  supervisor: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  admin: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  employee: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  teacher: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  usthadh: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  warden: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  staff: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  student: [], parent: [], guest: [],
+});
+
 // Phase 4 HQ role baselines are derived from the server-supported permission
 // boundary above. This avoids a second hard-coded permission matrix: a fresh HQ
 // role receives exactly the capabilities its scope is designed to enforce.
@@ -1475,6 +1580,7 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_6_PERMISSIONS_BY_ROLE.supervisor,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -1487,19 +1593,20 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.admin,
     ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_6_PERMISSIONS_BY_ROLE.admin,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_FINALIZE,
     PERMISSIONS.MARKSHEET_PDF,
   ],
-  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.employee],
-  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.teacher],
-  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.usthadh],
-  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.warden],
-  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.staff],
-  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.student],
-  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.parent],
-  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.guest],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.employee, ...PHASE_6_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.teacher, ...PHASE_6_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_6_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.warden, ...PHASE_6_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.staff, ...PHASE_6_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.student, ...PHASE_6_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.parent, ...PHASE_6_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.guest, ...PHASE_6_PERMISSIONS_BY_ROLE.guest],
 });
 
 // Versioned permission-catalog migrations preserve intended access when a release
@@ -1548,6 +1655,11 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     label: "Phase 4 explicit HQ role boundaries",
     permissionsByRole: {},
     normalizeToCurrentPolicy: true,
+  },
+  {
+    version: 10,
+    label: "Phase 6 Payroll and own Payslip permissions",
+    permissionsByRole: PHASE_6_PERMISSIONS_BY_ROLE,
   },
 ]);
 

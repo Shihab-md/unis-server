@@ -20,13 +20,14 @@ import {
   normalizeRole,
   normalizeScopeType,
   resolveStaffScope,
+  resolvePayrollScope,
   resolveStudentScope,
   staffBelongsToScope,
 } from "../services/attendanceAccessService.js";
 import { validateNotFutureDateKey } from "../utils/dateRules.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { getRequestPermissions } from "../services/permissionService.js";
-import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
+import { ORGANIZATION_TYPES, getHqOrganizationSummary, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const STUDENT_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const STAFF_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
@@ -305,10 +306,22 @@ const countStatuses = (rows = []) => {
 export const getAttendanceMeta = async (req, res) => {
   try {
     const access = await getAttendanceAccess(req.user);
+    const permissionSet = new Set(await getRequestPermissions(req));
+    const canManagePayrollGlobally =
+      permissionSet.has(PERMISSIONS.PAYROLL_VIEW) &&
+      ["superadmin", "hqadmin", "accountant"].includes(access.role);
+    const canManageOwnNiswanPayroll =
+      permissionSet.has(PERMISSIONS.PAYROLL_VIEW) &&
+      access.role === "admin" &&
+      !access.isLegacyHqAdmin &&
+      access.actorOrganizationType === ORGANIZATION_TYPES.NISWAN &&
+      Boolean(access.actorSchoolId);
+    const canViewOwnPayslip =
+      permissionSet.has(PERMISSIONS.PAYSLIP_SELF_VIEW) && Boolean(access.actorStaff?.staffId);
     const [academicYears, courses, schools] = await Promise.all([
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).select("_id code name type years").sort({ promotionOrder: 1, code: 1 }).lean(),
-      access.isSuperAdmin
+      access.isSuperAdmin || canManagePayrollGlobally
         ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish active").sort({ code: 1 }).lean()
         : Promise.resolve([]),
     ]);
@@ -335,6 +348,9 @@ export const getAttendanceMeta = async (req, res) => {
         canManageAnyStudents: access.canManageAnyStudents,
         canViewOwnStaffAttendance: access.canViewOwnStaffAttendance,
         canApplyOwnStaffLeave: access.canApplyOwnStaffLeave,
+        canManagePayrollGlobally,
+        canManageOwnNiswanPayroll,
+        canViewOwnPayslip,
         actorSchoolId: access.actorSchoolId,
         actorStaff: access.actorStaff
           ? {
@@ -1363,11 +1379,10 @@ const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, to
 export const listPayrollRuns = async (req, res) => {
   try {
     const monthKey = requireMonthKey(req.query.month);
-    const scope = await resolveStaffScope({
+    const scope = await resolvePayrollScope({
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
     });
 
     const run = await PayrollRun.findOne({
@@ -1376,6 +1391,74 @@ export const listPayrollRuns = async (req, res) => {
     }).lean();
 
     return res.json({ success: true, run });
+  } catch (error) {
+    return sendError(res, error);
+  }
+};
+
+export const listMyPayslips = async (req, res) => {
+  try {
+    const actor = await getActorStaff(req.user);
+    if (!actor?.staffId) {
+      const error = new Error("Your login is not linked to a staff record.");
+      error.status = 403;
+      throw error;
+    }
+
+    const runs = await PayrollRun.find({
+      status: { $in: ["Finalized", "Paid"] },
+      items: { $elemMatch: { staffType: actor.staffType, staffId: actor.staffId } },
+    })
+      .populate({ path: "schoolId", select: "_id code nameEnglish recordType" })
+      .sort({ monthKey: -1 })
+      .limit(36)
+      .lean();
+
+    const hq = getHqOrganizationSummary();
+    const payslips = runs
+      .map((run) => {
+        const item = (run.items || []).find(
+          (row) => row.staffType === actor.staffType && String(row.staffId) === String(actor.staffId)
+        );
+        if (!item) return null;
+        const isHq = run.organizationType === ORGANIZATION_TYPES.HQ;
+        return {
+          payrollRunId: String(run._id),
+          monthKey: run.monthKey,
+          status: run.status,
+          organizationType: run.organizationType,
+          organizationCode: isHq ? hq.code : run.schoolId?.code || "",
+          organizationName: isHq ? hq.nameEnglish : run.schoolId?.nameEnglish || "",
+          workingDays: run.workingDays,
+          finalizedAt: run.finalizedAt || null,
+          paidAt: run.paidAt || null,
+          paymentMethod: run.paymentMethod || "",
+          paymentReference: run.paymentReference || "",
+          item: {
+            staffType: item.staffType,
+            staffId: String(item.staffId),
+            staffCode: item.staffCode || "",
+            name: item.name || "",
+            role: item.role || "",
+            monthlySalary: Number(item.monthlySalary || 0),
+            travellingAllowance: Number(item.travellingAllowance || 0),
+            grossSalary: Number(item.grossSalary || 0),
+            attendanceRecordedDays: Number(item.attendanceRecordedDays || 0),
+            absentUnits: Number(item.absentUnits || 0),
+            halfDayUnits: Number(item.halfDayUnits || 0),
+            unpaidLeaveUnits: Number(item.unpaidLeaveUnits || 0),
+            payableDays: Number(item.payableDays || 0),
+            attendanceDeduction: Number(item.attendanceDeduction || 0),
+            manualAllowance: Number(item.manualAllowance || 0),
+            manualDeduction: Number(item.manualDeduction || 0),
+            netSalary: Number(item.netSalary || 0),
+            remarks: item.remarks || "",
+          },
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({ success: true, payslips });
   } catch (error) {
     return sendError(res, error);
   }
@@ -1391,11 +1474,10 @@ export const generatePayroll = async (req, res) => {
       throw error;
     }
 
-    const scope = await resolveStaffScope({
+    const scope = await resolvePayrollScope({
       user: req.user,
       scopeType: req.body?.scopeType,
       schoolId: req.body?.schoolId,
-      requireManage: true,
     });
     const { fromDateKey, toDateKey } = monthRange(monthKey);
     const staff = await loadStaffRoster({ ...scope, includeInactive: false });
@@ -1531,11 +1613,10 @@ export const updatePayrollItem = async (req, res) => {
       throw error;
     }
 
-    await resolveStaffScope({
+    await resolvePayrollScope({
       user: req.user,
       scopeType: run.organizationType,
       schoolId: String(run.schoolId || ""),
-      requireManage: true,
     });
 
     const item = run.items.id(itemId);
@@ -1581,11 +1662,22 @@ export const updatePayrollStatus = async (req, res) => {
       throw error;
     }
 
-    await resolveStaffScope({
+    const statusPermission =
+      nextStatus === "Finalized"
+        ? PERMISSIONS.PAYROLL_FINALIZE
+        : nextStatus === "Paid"
+          ? PERMISSIONS.PAYROLL_PAY
+          : PERMISSIONS.PAYROLL_REVIEW;
+    await assertRequestPermission(
+      req,
+      statusPermission,
+      `You do not have permission to change Payroll status to ${nextStatus}.`
+    );
+
+    await resolvePayrollScope({
       user: req.user,
       scopeType: run.organizationType,
       schoolId: String(run.schoolId || ""),
-      requireManage: true,
     });
 
     const allowedTransitions = {

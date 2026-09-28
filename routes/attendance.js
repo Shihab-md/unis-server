@@ -13,6 +13,7 @@ import {
   getStudentMonthlyAttendance,
   getStudentRoster,
   listMyStaffLeaves,
+  listMyPayslips,
   listPayrollRuns,
   listStaffLeaveApprovals,
   listStudentLeaves,
@@ -28,21 +29,6 @@ import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { requirePermission } from "../middleware/permissionMiddleware.js";
 
 const router = express.Router();
-
-// Payroll remains intentionally deferred to Phase 6. Preserve the exact legacy
-// access boundary during the HQ-role rollout so no newly introduced HQ role
-// inherits Payroll merely because it has broader attendance/data scope.
-const LEGACY_PAYROLL_ROLES = new Set(["superadmin", "hquser", "admin"]);
-const requireLegacyPayrollAccess = (req, res, next) => {
-  const role = String(req.user?.role || "").trim().toLowerCase();
-  if (!LEGACY_PAYROLL_ROLES.has(role)) {
-    return res.status(403).json({
-      success: false,
-      error: "Payroll access is unchanged until the dedicated Payroll permission phase.",
-    });
-  }
-  return next();
-};
 
 router.get("/meta", authMiddleware, getAttendanceMeta);
 router.get("/overview", authMiddleware, getAttendanceOverview);
@@ -100,25 +86,26 @@ router.patch(
   updateStaffLeaveStatus
 );
 
-router.get("/payroll", authMiddleware, requireLegacyPayrollAccess, listPayrollRuns);
+router.get("/payroll", authMiddleware, requirePermission(PERMISSIONS.PAYROLL_VIEW), listPayrollRuns);
+router.get("/payroll/mine", authMiddleware, requirePermission(PERMISSIONS.PAYSLIP_SELF_VIEW), listMyPayslips);
 router.post(
   "/payroll/generate",
   authMiddleware,
-  requireLegacyPayrollAccess,
+  requirePermission(PERMISSIONS.PAYROLL_GENERATE),
   auditMutation({ action: "PAYROLL_GENERATE", resourceType: "PayrollRun" }),
   generatePayroll
 );
 router.patch(
   "/payroll/:id/items/:itemId",
   authMiddleware,
-  requireLegacyPayrollAccess,
+  requirePermission(PERMISSIONS.PAYROLL_ADJUST),
   auditMutation({ action: "PAYROLL_ADJUST", resourceType: "PayrollRun" }),
   updatePayrollItem
 );
 router.patch(
   "/payroll/:id/status",
   authMiddleware,
-  requireLegacyPayrollAccess,
+  requirePermission(PERMISSIONS.PAYROLL_VIEW),
   auditMutation({ action: "PAYROLL_STATUS", resourceType: "PayrollRun" }),
   updatePayrollStatus
 );
