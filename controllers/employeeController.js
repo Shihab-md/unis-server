@@ -593,7 +593,8 @@ const getEmployees = async (req, res) => {
     };
 
     // ------------------------------------------------------------
-    // ✅ SUPERVISOR: return only Admin employees under supervisor schools
+    // ✅ SUPERVISOR: return all Active employees under assigned Niswans.
+    // Mutation authority remains separately restricted to assigned-Niswan Admins.
     // ------------------------------------------------------------
     if (userRole === "supervisor") {
       if (!loginUserId) {
@@ -622,8 +623,9 @@ const getEmployees = async (req, res) => {
         return res.status(200).json({ success: true, employees: [] });
       }
 
-      // 3) Fetch employees for those schools
-      const employeesAll = await Employee.find({
+      // 3) Fetch all Active employees for those assigned Niswans.
+      // This intentionally matches the Supervisor dashboard Employee count.
+      const employees = await Employee.find({
         organizationType: ORGANIZATION_TYPES.NISWAN,
         schoolId: { $in: schoolIds },
         active: "Active",
@@ -633,11 +635,6 @@ const getEmployees = async (req, res) => {
         .populate({ path: "userId", select: "_id name email role" })
         .sort({ employeeId: 1 })
         .lean();
-
-      // 4) Filter only admin users
-      const employees = employeesAll.filter(
-        (e) => String(e?.userId?.role || "").toLowerCase() === "admin"
-      );
 
       return res.status(200).json({ success: true, employees });
     }

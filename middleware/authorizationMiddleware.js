@@ -465,11 +465,12 @@ export const requireEmployeeReadAccess = (paramName = "id") => async (req, res, 
     }
 
     const employeeSchoolId = String(employee.schoolId || "");
-    const targetRole = normalizeRole(employee.userId?.role);
 
     if (role === "supervisor") {
-      if (!access.schoolIds.includes(employeeSchoolId) || targetRole !== "admin") {
-        return deny(res, "This employee is outside your assigned Niswan/Admin scope.");
+      // Muavin may read any Employee inside an assigned Niswan.
+      // Edit/Delete remain independently restricted to assigned-Niswan Admins below.
+      if (!access.schoolIds.includes(employeeSchoolId)) {
+        return deny(res, "This employee is outside your assigned Niswan scope.");
       }
     } else if (role === "admin") {
       if (!access.schoolIds.includes(employeeSchoolId)) {

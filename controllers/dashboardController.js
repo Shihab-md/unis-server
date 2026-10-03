@@ -105,7 +105,8 @@ const getSupervisorSummary = async (userId) => {
   }
 
   const schools = await School.find({
-    supervisorId: supervisor._id,
+    // Keep Dashboard and Employee List on the same assigned-Niswan compatibility scope.
+    supervisorId: { $in: [supervisor._id, userId] },
     ...getNiswanSchoolFilter(),
   })
     .select("_id")
