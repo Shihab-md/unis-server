@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 10;
+export const PERMISSION_CATALOG_VERSION = 11;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -178,11 +178,13 @@ const STUDENT_LEAVE_VIEW_SCOPE_ROLES = STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES;
 const STUDENT_LEAVE_MANAGE_SCOPE_ROLES = STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES;
 const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
 
-// Payroll is a finance boundary independent from Attendance management. HQ Admin and
-// Accountant can manage HQ/any Niswan Payroll; a Niswan Admin remains limited to own
-// Niswan by resolvePayrollScope(). Payslip self-service never widens management scope.
-const PAYROLL_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant", "admin"]);
-const PAYSLIP_SELF_SCOPE_ROLES = Object.freeze(["superadmin", ...STAFF_SELF_SCOPE_ROLES]);
+// Payroll is an HQ-only finance boundary independent from Niswan operations.
+// Only SuperAdmin, HQ Admin and Accountant may manage HQ Payroll. Own Payslips are
+// available only to HQ staff identities; Supervisor/Muavin is an HQ staff role.
+const PAYROLL_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant"]);
+const PAYSLIP_SELF_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "hqstaff", "supervisor",
+]);
 
 const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze([
   "superadmin", "hqadmin", "accountant", "hquser", "admin",
@@ -566,7 +568,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     key: PERMISSIONS.PAYROLL_VIEW,
     category: "Payroll",
     label: "View Payroll",
-    description: "View salary Payroll runs within the finance-controlled HQ or Niswan Payroll scope.",
+    description: "View HQ salary Payroll runs. Payroll is not available for Niswans.",
     requires: [],
     editable: true,
     allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
@@ -620,7 +622,7 @@ export const PERMISSION_CATALOG = Object.freeze([
     key: PERMISSIONS.PAYSLIP_SELF_VIEW,
     category: "Payslips",
     label: "View Own Payslips",
-    description: "View only the logged-in staff member's own Finalized/Paid Payroll salary items.",
+    description: "View only the logged-in HQ staff member's own Finalized/Paid Payroll salary items.",
     requires: [],
     editable: true,
     allowedRoles: PAYSLIP_SELF_SCOPE_ROLES,
@@ -1660,6 +1662,12 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     version: 10,
     label: "Phase 6 Payroll and own Payslip permissions",
     permissionsByRole: PHASE_6_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 11,
+    label: "Payroll HQ-only policy normalization",
+    permissionsByRole: {},
+    normalizeToCurrentPolicy: true,
   },
 ]);
 

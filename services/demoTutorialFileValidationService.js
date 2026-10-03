@@ -1,12 +1,32 @@
 import path from "path";
 
-const DEFAULT_MAX_MB = 100;
-const configuredMaxMb = Number(process.env.DEMO_TUTORIAL_MAX_FILE_MB || DEFAULT_MAX_MB);
+const DEFAULT_MAX_PDF_MB = 100;
+const DEFAULT_MAX_VIDEO_MB = 200;
 
-export const DEMO_TUTORIAL_MAX_FILE_MB =
-  Number.isFinite(configuredMaxMb) && configuredMaxMb > 0
-    ? configuredMaxMb
-    : DEFAULT_MAX_MB;
+const positiveNumberOr = (value, fallback) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+};
+
+// Keep the legacy all-file setting as the PDF fallback for backward compatibility.
+// Video uploads now have their own limit so increasing tutorial videos does not also
+// increase the PDF limit.
+export const DEMO_TUTORIAL_MAX_PDF_MB = positiveNumberOr(
+  process.env.DEMO_TUTORIAL_MAX_PDF_MB ?? process.env.DEMO_TUTORIAL_MAX_FILE_MB,
+  DEFAULT_MAX_PDF_MB
+);
+
+export const DEMO_TUTORIAL_MAX_VIDEO_MB = positiveNumberOr(
+  process.env.DEMO_TUTORIAL_MAX_VIDEO_MB,
+  DEFAULT_MAX_VIDEO_MB
+);
+
+// Retained for compatibility with any external imports/diagnostics that referenced
+// the old single-limit constant. It represents the largest supported tutorial file.
+export const DEMO_TUTORIAL_MAX_FILE_MB = Math.max(
+  DEMO_TUTORIAL_MAX_PDF_MB,
+  DEMO_TUTORIAL_MAX_VIDEO_MB
+);
 
 const EXTENSION_CONFIG = Object.freeze({
   ".pdf": {
@@ -107,18 +127,22 @@ export const validateDemoTutorialUploadMetadata = ({
     throw badRequest("File name is too long.");
   }
 
+  const { config } = getConfigForName(originalFileName);
+  const maxFileMb =
+    config.fileKind === "VIDEO"
+      ? DEMO_TUTORIAL_MAX_VIDEO_MB
+      : DEMO_TUTORIAL_MAX_PDF_MB;
   const numericSize = Number(fileSize);
-  const maxBytes = Math.floor(DEMO_TUTORIAL_MAX_FILE_MB * 1024 * 1024);
+  const maxBytes = Math.floor(maxFileMb * 1024 * 1024);
   if (!Number.isSafeInteger(numericSize) || numericSize <= 0) {
     throw badRequest("The uploaded file is invalid or unsupported.");
   }
   if (numericSize > maxBytes) {
     throw badRequest(
-      `File is too large. Maximum allowed size is ${DEMO_TUTORIAL_MAX_FILE_MB} MB.`
+      `File is too large. Maximum allowed size is ${maxFileMb} MB.`
     );
   }
 
-  const { config } = getConfigForName(originalFileName);
   const incomingMimeType = clean(mimeType).toLowerCase();
   if (!config.acceptedMimeTypes.has(incomingMimeType)) {
     throw badRequest("Only PDF, MP4, WEBM, MOV and M4V files are allowed.");

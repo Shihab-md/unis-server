@@ -310,14 +310,13 @@ export const getAttendanceMeta = async (req, res) => {
     const canManagePayrollGlobally =
       permissionSet.has(PERMISSIONS.PAYROLL_VIEW) &&
       ["superadmin", "hqadmin", "accountant"].includes(access.role);
-    const canManageOwnNiswanPayroll =
-      permissionSet.has(PERMISSIONS.PAYROLL_VIEW) &&
-      access.role === "admin" &&
-      !access.isLegacyHqAdmin &&
-      access.actorOrganizationType === ORGANIZATION_TYPES.NISWAN &&
-      Boolean(access.actorSchoolId);
+    // Payroll is HQ-only. Keep the legacy response field false for mixed-version
+    // frontend compatibility; no Niswan role may manage Payroll.
+    const canManageOwnNiswanPayroll = false;
     const canViewOwnPayslip =
-      permissionSet.has(PERMISSIONS.PAYSLIP_SELF_VIEW) && Boolean(access.actorStaff?.staffId);
+      permissionSet.has(PERMISSIONS.PAYSLIP_SELF_VIEW) &&
+      Boolean(access.actorStaff?.staffId) &&
+      access.actorStaff?.organizationType === ORGANIZATION_TYPES.HQ;
     const [academicYears, courses, schools] = await Promise.all([
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).select("_id code name type years").sort({ promotionOrder: 1, code: 1 }).lean(),
@@ -1404,8 +1403,14 @@ export const listMyPayslips = async (req, res) => {
       error.status = 403;
       throw error;
     }
+    if (actor.organizationType !== ORGANIZATION_TYPES.HQ) {
+      const error = new Error("Payslips are available only for HQ staff.");
+      error.status = 403;
+      throw error;
+    }
 
     const runs = await PayrollRun.find({
+      organizationType: ORGANIZATION_TYPES.HQ,
       status: { $in: ["Finalized", "Paid"] },
       items: { $elemMatch: { staffType: actor.staffType, staffId: actor.staffId } },
     })
