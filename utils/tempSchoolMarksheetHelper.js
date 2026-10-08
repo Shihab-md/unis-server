@@ -1,5 +1,3 @@
-import { getBusinessTodayKey } from "./dateRules.js";
-
 export const TEMP_SCHOOL_MARKSHEET_HEADERS = [
   "exam",
   "acYear",
@@ -144,8 +142,6 @@ export const normalizeTempSchoolMarksheetRow = (row = {}, index = 0) => {
 
   if (!issueDate) {
     errors.push("Invalid day / month / year");
-  } else if (issueDate.dateKey > getBusinessTodayKey()) {
-    errors.push("Date of issue cannot be in the future");
   }
 
   const subjects = [];
