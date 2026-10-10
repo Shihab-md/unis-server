@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily UNIS production backup at 02:15 India time
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Asia/Kolkata
+Persistent=true
+AccuracySec=1min
+Unit=unis-mongodb-backup@production.service
+
+[Install]
+WantedBy=timers.target

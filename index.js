@@ -33,6 +33,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
 
 import googleDriveRoutes from "./routes/googleDriveRoutes.js";
+import databaseBackupRoutes from "./routes/databaseBackupRoutes.js";
 
 import inspectionReportRoutes from "./routes/inspectionReportRoutes.js";
 
@@ -107,6 +108,7 @@ app.use("/api/hq/fees", hqFeesRoutes);
 app.use("/api/public", publicRoutes);
 
 app.use("/api/integrations/google-drive", googleDriveRoutes);
+app.use("/api/database-backup", databaseBackupRoutes);
 
 app.use("/api/inspection-report", inspectionReportRoutes);
 

@@ -1,0 +1,6 @@
+[Unit]
+Description=Record UNIS backup/monitor failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger --priority daemon.err --tag unis-backup UNIS %i backup or freshness check failed. Review the failed unit and last-attempt.json. If resumeRequired is true, recover writers before clearing the backup lock.
