@@ -1,3 +1,5 @@
+import { SchoolReportError, schoolReportFilters, schoolReportSearch } from "../utils/schoolReportPolicy.js";
+import DistrictState from "../models/DistrictState.js";
 import { getAccessContext } from "../middleware/authorizationMiddleware.js";
 import multer from "multer";
 import School from "../models/School.js";
@@ -923,6 +925,48 @@ const updateSchool = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "update Niswan server error" });
+  }
+};
+
+// Fresh report data: role/permission/scope are enforced independently of UI caches.
+export const getSchoolListReport = async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const access = req.accessContext || await getAccessContext(req.user);
+    if (!["superadmin", "hqadmin", "supervisor"].includes(access.role) || !access.isActive || (access.role !== "supervisor" && !access.isHQ)) throw new SchoolReportError("NR_FORBIDDEN", 403);
+    const filters = schoolReportFilters(req.query);
+    const match = getNiswanSchoolFilter();
+    if (access.role === "supervisor") match._id = { $in: access.schoolIds.map(id => new mongoose.Types.ObjectId(id)) };
+    if (filters.supervisorId) match.supervisorId = new mongoose.Types.ObjectId(filters.supervisorId);
+    if (filters.districtStateId) match.districtStateId = new mongoose.Types.ObjectId(filters.districtStateId);
+    if (filters.status) match.active = filters.status;
+    const schools = await School.aggregate([
+      { $match: match }, ...await buildSchoolCountsPipeline(), ...buildSchoolPopulatePipeline(),
+      buildSchoolFinalProjectStage(), { $sort: { code: 1, _id: 1 } },
+    ]);
+    const rows = schools.map(s => ({
+      code: s.code || "", nameEnglish: s.nameEnglish || "", nameNative: s.nameNative || "", nameArabic: s.nameArabic || "",
+      address: s.address || "", city: s.city || "", districtState: [s.districtStateId?.district, s.districtStateId?.state].filter(Boolean).join(", "),
+      incharge1: s.incharge1 || "", incharge1Number: s.incharge1Number == null ? "" : String(s.incharge1Number), active: s.active || "",
+      supervisorRecordId: s.supervisorId?._id ? String(s.supervisorId._id) : "", supervisorCode: s.supervisorId?.supervisorId || "", supervisorName: s.supervisorId?.userId?.name || "",
+      studentCount: Number(s.studentCount || 0), employeeCount: Number(s.employeeCount || 0),
+    })).filter(row => schoolReportSearch(row, filters.search));
+    const singleIds = [...new Set(rows.map(row => row.supervisorRecordId).filter(Boolean))];
+    const supervisorId = access.role === "supervisor" ? access.supervisorId : filters.supervisorId || (singleIds.length === 1 && rows.every(row => row.supervisorRecordId) ? singleIds[0] : null);
+    const [supervisor, districtState] = await Promise.all([
+      supervisorId ? Supervisor.findById(supervisorId).select("supervisorId userId").populate("userId", "name").lean() : null,
+      filters.districtStateId ? DistrictState.findById(filters.districtStateId).select("district state").lean() : null,
+    ]);
+    if ((filters.supervisorId && !supervisor) || (filters.districtStateId && !districtState)) throw new SchoolReportError("NR_INVALID_FILTER");
+    return res.json({ success: true, report: {
+      generatedAt: new Date().toISOString(), filters: { ...filters, districtStateName: districtState ? [districtState.district, districtState.state].filter(Boolean).join(", ") : "" },
+      supervisor: supervisor ? { code: supervisor.supervisorId, name: supervisor.userId?.name || "" } : null,
+      showSupervisorColumn: !supervisor, totalNiswans: rows.length,
+      totalStudents: rows.reduce((sum, row) => sum + row.studentCount, 0), totalStaff: rows.reduce((sum, row) => sum + row.employeeCount, 0), rows,
+    } });
+  } catch (error) {
+    if (!(error instanceof SchoolReportError)) console.error("[school-list-report]", error?.name);
+    return res.status(error instanceof SchoolReportError ? error.status : 503).json({ success: false, code: error instanceof SchoolReportError ? error.code : "NR_UNAVAILABLE", error: error instanceof SchoolReportError ? error.code : "NR_UNAVAILABLE" });
   }
 };
 

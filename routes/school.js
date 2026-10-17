@@ -1,6 +1,6 @@
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
-import { addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache, getBySchFilter } from '../controllers/schoolController.js'
+import { getSchoolListReport, addSchool, upload, getSchools, getSchool, updateSchool, deleteSchool, getSchoolsFromCache, getBySchFilter } from '../controllers/schoolController.js'
 import { requireSchoolReadScope, requireSchoolReadAccess } from '../middleware/authorizationMiddleware.js'
 import { requirePermission } from '../middleware/permissionMiddleware.js'
 import { PERMISSIONS } from '../config/permissionCatalog.js'
@@ -18,6 +18,9 @@ router.get('/', authMiddleware,
 
 // Cache lookup remains an authenticated shared lookup used by multiple existing forms.
 router.get('/fromCache/', authMiddleware, getSchoolsFromCache)
+
+router.get('/list-report', authMiddleware,
+  requirePermission(PERMISSIONS.NISWAN_VIEW), requireSchoolReadScope, getSchoolListReport)
 
 router.get('/bySchFilter/:supervisorId/:districtStateId/:schStatus', authMiddleware,
   requirePermission(PERMISSIONS.NISWAN_VIEW, 'You do not have permission to view Niswans.'),
