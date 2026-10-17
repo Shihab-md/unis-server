@@ -172,12 +172,11 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
   const examStartTime = clean(body.examStartTime);
   const releaseDate = clean(body.releaseDate);
   const releaseTime = clean(body.releaseTime);
-  const closeDate = clean(body.closeDate);
-  const closeTime = clean(body.closeTime);
   const targetType = clean(body.targetType).toUpperCase() === "SELECTED" ? "SELECTED" : "ALL";
-  const publicationStatus = ["Draft", "Published", "Closed"].includes(clean(body.publicationStatus))
-    ? clean(body.publicationStatus)
-    : "Draft";
+  // Create is always Published. Updates retain saved legacy settings; ignoring
+  // removed client controls prevents an ordinary edit from publishing a draft
+  // or reopening a closed paper. No bulk migration changes historical records.
+  const publicationStatus = existing ? existing.publicationStatus : "Published";
 
   if (!isObjectId(academicYearId)) throw new Error("Please select a valid Academic Year.");
   if (!isObjectId(courseId)) throw new Error("Please select a valid Course.");
@@ -192,11 +191,8 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
   const availableFrom = parseIstDateTime(releaseDate, releaseTime);
   if (!availableFrom) throw new Error("Release Date and Time are required.");
   if (availableFrom > examStartsAt) throw new Error("Question Paper release time cannot be later than the Exam Start Time.");
-  let availableUntil = null;
-  if (closeDate || closeTime) {
-    if (!closeDate || !closeTime) throw new Error("Both Close Date and Close Time are required when setting a close time.");
-    availableUntil = parseIstDateTime(closeDate, closeTime);
-    if (!availableUntil) throw new Error("Close Date/Time is invalid.");
+  const availableUntil = existing?.availableUntil || null;
+  if (availableUntil) {
     if (availableUntil <= availableFrom) throw new Error("Close time must be later than the release time.");
     if (availableUntil <= examStartsAt) throw new Error("Close time must be later than the Exam Start Time.");
   }
@@ -463,7 +459,7 @@ export const updateExamQuestion = async (req, res) => {
       if (req.file || lockedFieldChanged) {
         return res.status(409).json({
           success: false,
-          error: "This Question Paper has already been downloaded by a Niswan. PDF, exam details, release time and targets are locked. You may only update title/instructions, close time or close the paper.",
+          error: "This Question Paper has already been downloaded by a Niswan. PDF, exam details, release time and targets are locked. You may only update title/instructions.",
         });
       }
       if (payload.publicationStatus === "Draft") {
