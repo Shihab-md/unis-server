@@ -42,7 +42,7 @@ export function payrollTaAmount(items) {
 }
 
 export async function assertPayrollClaims(run, session, { checkNewApprovals = true } = {}) {
-  if (run.taPolicyVersion !== 1) failTa("TA_RECALCULATE_REQUIRED", 409);
+  if (run.taPolicyVersion !== 1 || run.needsRecalculation) failTa("TA_RECALCULATE_REQUIRED", 409);
   const reserved = await TravelClaim.find({ payrollRunId: run._id }).session(session);
   const byId = new Map(reserved.map((c) => [String(c._id), c]));
   const seen = new Set(); const staff = new Map();

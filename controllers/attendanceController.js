@@ -6,7 +6,7 @@ import Employee from "../models/Employee.js";
 import PayrollRun from "../models/PayrollRun.js";
 import { withHqFinanceTransaction } from "../services/hqFinanceTransactionService.js";
 import { reservePayrollClaims, payrollTaAmount, assertPayrollClaims, settlePayrollClaims, assertPayrollRevision } from "../services/payrollTravelClaimService.js";
-import { failTa, moneyPaise, isMonthKey, TA_SELF_ROLES, TA_REVIEW_ROLES } from "../utils/travelClaimPolicy.js";
+import { failTa, moneyPaise, isMonthKey, isDateKey, TA_SELF_ROLES, TA_REVIEW_ROLES } from "../utils/travelClaimPolicy.js";
 import School from "../models/School.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import StaffLeave from "../models/StaffLeave.js";
@@ -27,6 +27,7 @@ import {
   resolveStudentScope,
   staffBelongsToScope,
 } from "../services/attendanceAccessService.js";
+import { assertLeaveRevision, assertLeaveTransition, assertPayrollPeriodOpen, invalidatePayrollPeriod, flagCancelledLeaveAttendance, assertAttendanceReviewed, failWorkflow, leaveText } from "../services/staffLeaveWorkflowService.js";
 import { validateNotFutureDateKey } from "../utils/dateRules.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { getRequestPermissions } from "../services/permissionService.js";
@@ -50,7 +51,7 @@ const sendError = (res, error) => {
   if (status >= 500) console.log("[attendance]", error?.stack || error?.message || error);
   return res.status(status).json({
     success: false,
-    code: error?.name === "TaError" ? error.code : undefined,
+    code: ["TaError", "AttendanceWorkflowError"].includes(error?.name) ? error.code : undefined,
     error: error?.message || "Attendance operation failed.",
   });
 };
@@ -247,7 +248,7 @@ const getApprovedStudentLeaveMap = async ({ studentIds, dateKey }) => {
   return new Map(leaves.map((leave) => [String(leave.studentId), leave]));
 };
 
-const getApprovedStaffLeaveMap = async ({ staffRows, dateKey }) => {
+const getApprovedStaffLeaveMap = async ({ staffRows, dateKey, session = null }) => {
   if (!staffRows.length) return new Map();
   const employeeIds = staffRows.filter((row) => row.staffType === "Employee").map((row) => row.staffId);
   const supervisorIds = staffRows.filter((row) => row.staffType === "Supervisor").map((row) => row.staffId);
@@ -262,6 +263,7 @@ const getApprovedStaffLeaveMap = async ({ staffRows, dateKey }) => {
     fromDateKey: { $lte: dateKey },
     toDateKey: { $gte: dateKey },
   })
+    .session(session)
     .select("_id staffType staffId leaveType isPaid dayType reason")
     .lean();
 
@@ -278,10 +280,10 @@ const assertNoFinalizedStudentAttendanceInRange = async ({ studentId, fromDateKe
   }
 };
 
-const assertNoFinalizedStaffAttendanceInRange = async ({ staffType, staffId, fromDateKey, toDateKey }) => {
+const assertNoFinalizedStaffAttendanceInRange = async ({ staffType, staffId, fromDateKey, toDateKey, session = null }) => {
   const finalized = await StaffAttendance.findOne({
     staffType, staffId, dateKey: { $gte: fromDateKey, $lte: toDateKey }, isFinalized: true,
-  }).select("_id dateKey").lean();
+  }).session(session).select("_id dateKey").lean();
   if (finalized) {
     const error = new Error(`Leave cannot be changed because staff attendance for ${finalized.dateKey} is already finalized.`);
     error.status = 409; throw error;
@@ -867,6 +869,7 @@ export const getStaffRoster = async (req, res) => {
               isFinalized: Boolean(attendance.isFinalized),
             }
           : null,
+        requiresReview: Boolean(attendance?.requiresReview),
         status: effectiveStatus,
         inTime: attendance?.inTime || "",
         outTime: attendance?.outTime || "",
@@ -902,111 +905,123 @@ export const saveStaffAttendance = async (req, res) => {
       requireManage: true,
     });
 
-    const staffCategory =
-      scope.organizationType === "HQ" ? normalizeHqStaffCategory(req.body?.staffCategory) : "NISWAN_STAFF";
-    const roster = await loadStaffRoster({ ...scope, staffCategory });
-    const rosterMap = new Map(roster.map((row) => [`${row.staffType}:${row.staffId}`, row]));
-    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-    if (!rows.length) {
-      const error = new Error("No staff attendance rows were provided.");
-      error.status = 400;
-      throw error;
-    }
-
-    const submittedKeys = rows.map((row) => `${String(row?.staffType || "")}:${String(row?.staffId || "")}`);
-    if (new Set(submittedKeys).size !== rows.length) {
-      const error = new Error("Duplicate or missing staff attendance rows were submitted.");
-      error.status = 400; throw error;
-    }
     const finalize = Boolean(req.body?.finalize);
-    if (finalize) {
-      await assertRequestPermission(
-        req,
-        PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
-        "You do not have permission to finalize Staff attendance."
-      );
-      const rosterKeys = [...rosterMap.keys()];
-      const submittedSet = new Set(submittedKeys);
-      if (submittedKeys.length !== rosterKeys.length || rosterKeys.some((key) => !submittedSet.has(key))) {
-        const error = new Error("Every active staff member in the selected attendance sheet must be marked before finalizing.");
-        error.status = 400; throw error;
-      }
-    }
-    const finalizedRecord = await StaffAttendance.findOne({
-      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
-      ...(scope.organizationType === "HQ"
-        ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
-        : { staffType: "Employee" }),
-    }).select("_id").lean();
-    if (finalizedRecord) {
-      const error = new Error("Finalized staff attendance is locked and cannot be edited.");
-      error.status = 409; throw error;
-    }
-    const leaveMap = await getApprovedStaffLeaveMap({ staffRows: roster, dateKey });
-    const operations = [];
-
-    for (const row of rows) {
-      const staffType = String(row?.staffType || "");
-      const staffId = String(row?.staffId || "");
-      const key = `${staffType}:${staffId}`;
-      const staff = rosterMap.get(key);
-      if (!staff) {
-        const error = new Error("One or more staff records are outside the selected Attendance scope.");
-        error.status = 403;
-        throw error;
-      }
-
-      const approvedLeave = leaveMap.get(key);
-      const requestedStatus = approvedLeave
-        ? approvedLeave.dayType === "Half Day"
-          ? "Half Day"
-          : "Leave"
-        : String(row?.status || "");
-      if (!STAFF_STATUSES.has(requestedStatus)) {
-        const error = new Error(`Invalid staff attendance status: ${requestedStatus}`);
+    const savedCount = await withHqFinanceTransaction(async (session) => {
+      const staffCategory =
+        scope.organizationType === "HQ" ? normalizeHqStaffCategory(req.body?.staffCategory) : "NISWAN_STAFF";
+      const roster = await loadStaffRoster({ ...scope, staffCategory, session });
+      const rosterMap = new Map(roster.map((row) => [`${row.staffType}:${row.staffId}`, row]));
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      if (!rows.length) {
+        const error = new Error("No staff attendance rows were provided.");
         error.status = 400;
         throw error;
       }
 
-      const setData = {
-        staffType,
-        staffId,
-        userId: staff.userId,
-        schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
-        organizationType: scope.organizationType,
-        dateKey,
-        status: requestedStatus,
-        inTime: cleanText(row?.inTime, 20),
-        outTime: cleanText(row?.outTime, 20),
-        remarks: cleanText(row?.remarks, 500),
-        markedBy: req.user._id,
-        updatedAt: new Date(),
-      };
+      const submittedKeys = rows.map((row) => `${String(row?.staffType || "")}:${String(row?.staffId || "")}`);
+      if (new Set(submittedKeys).size !== rows.length) {
+        const error = new Error("Duplicate or missing staff attendance rows were submitted.");
+        error.status = 400; throw error;
+      }
       if (finalize) {
-        setData.isFinalized = true;
-        setData.finalizedBy = req.user._id;
-        setData.finalizedAt = new Date();
+        await assertRequestPermission(
+          req,
+          PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+          "You do not have permission to finalize Staff attendance."
+        );
+        const rosterKeys = [...rosterMap.keys()];
+        const submittedSet = new Set(submittedKeys);
+        if (submittedKeys.length !== rosterKeys.length || rosterKeys.some((key) => !submittedSet.has(key))) {
+          const error = new Error("Every active staff member in the selected attendance sheet must be marked before finalizing.");
+          error.status = 400; throw error;
+        }
+      }
+      const finalizedRecord = await StaffAttendance.findOne({
+        ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
+        ...(scope.organizationType === "HQ"
+          ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
+          : { staffType: "Employee" }),
+      }).session(session).select("_id").lean();
+      if (finalizedRecord) {
+        const error = new Error("Finalized staff attendance is locked and cannot be edited.");
+        error.status = 409; throw error;
+      }
+      const leaveMap = await getApprovedStaffLeaveMap({ staffRows: roster, dateKey, session });
+      const previousRecords = roster.length ? await StaffAttendance.find({ dateKey, $or: roster.map((row) => ({ staffType: row.staffType, staffId: row.staffId })) }).session(session).lean() : [];
+      const previousByStaff = new Map(previousRecords.map((record) => [`${record.staffType}:${record.staffId}`, record]));
+      const operations = [];
+
+      for (const row of rows) {
+        const staffType = String(row?.staffType || "");
+        const staffId = String(row?.staffId || "");
+        const key = `${staffType}:${staffId}`;
+        const staff = rosterMap.get(key);
+        if (!staff) {
+          const error = new Error("One or more staff records are outside the selected Attendance scope.");
+          error.status = 403;
+          throw error;
+        }
+
+        const approvedLeave = leaveMap.get(key);
+        const requestedStatus = approvedLeave
+          ? approvedLeave.dayType === "Half Day"
+            ? "Half Day"
+            : "Leave"
+          : String(row?.status || "");
+        if (!STAFF_STATUSES.has(requestedStatus)) {
+          const error = new Error(`Invalid staff attendance status: ${requestedStatus}`);
+          error.status = 400;
+          throw error;
+        }
+
+        const previous = previousByStaff.get(key);
+        const sourceChanged = !previous || previous.status !== requestedStatus || previous.requiresReview;
+        const period = { staffType, staffId, organizationType: scope.organizationType, fromDateKey: dateKey, toDateKey: dateKey };
+        if (sourceChanged) { await assertPayrollPeriodOpen(period, session); await invalidatePayrollPeriod(period, session); }
+
+        const setData = {
+          requiresReview: false,
+          staffType,
+          staffId,
+          userId: staff.userId,
+          schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
+          organizationType: scope.organizationType,
+          dateKey,
+          status: requestedStatus,
+          inTime: cleanText(row?.inTime, 20),
+          outTime: cleanText(row?.outTime, 20),
+          remarks: cleanText(row?.remarks, 500),
+          markedBy: req.user._id,
+          updatedAt: new Date(),
+        };
+        if (finalize) {
+          setData.isFinalized = true;
+          setData.finalizedBy = req.user._id;
+          setData.finalizedAt = new Date();
+        }
+
+        const update = {
+          $set: setData,
+          $setOnInsert: { createdAt: new Date() },
+        };
+        operations.push({
+          updateOne: {
+            filter: { staffType, staffId, dateKey },
+            update,
+            upsert: true,
+          },
+        });
       }
 
-      const update = {
-        $set: setData,
-        $setOnInsert: { createdAt: new Date() },
-      };
-      operations.push({
-        updateOne: {
-          filter: { staffType, staffId, dateKey },
-          update,
-          upsert: true,
-        },
-      });
-    }
+      if (operations.length) await StaffAttendance.bulkWrite(operations, { ordered: true, session });
 
-    if (operations.length) await StaffAttendance.bulkWrite(operations, { ordered: true });
+      return operations.length;
+    });
 
     return res.json({
       success: true,
       message: finalize ? "Staff attendance finalized successfully." : "Staff attendance saved successfully.",
-      savedCount: operations.length,
+      savedCount,
     });
   } catch (error) {
     return sendError(res, error);
@@ -1112,85 +1127,91 @@ export const getStaffMonthlyAttendance = async (req, res) => {
 
 export const createMyStaffLeave = async (req, res) => {
   try {
-    const actor = await getActorStaff(req.user);
-    if (!actor?.staffId || String(actor.active || "").toLowerCase() !== "active") {
-      const error = new Error("Your login is not linked to an active staff record.");
-      error.status = 403;
-      throw error;
-    }
+    const leave = await withHqFinanceTransaction(async (session) => {
+      const actor = await getActorStaff(req.user);
+      if (!actor?.staffId || String(actor.active || "").toLowerCase() !== "active") {
+        const error = new Error("Your login is not linked to an active staff record.");
+        error.status = 403;
+        throw error;
+      }
 
-    const organizationType =
-      actor.staffType === "Supervisor" || actor.organizationType === ORGANIZATION_TYPES.HQ
-        ? ORGANIZATION_TYPES.HQ
-        : ORGANIZATION_TYPES.NISWAN;
-    const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? null : actor.schoolId;
-    if (organizationType === ORGANIZATION_TYPES.NISWAN && !schoolId) {
-      const error = new Error("Unable to resolve your Attendance organization.");
-      error.status = 400;
-      throw error;
-    }
+      const organizationType =
+        actor.staffType === "Supervisor" || actor.organizationType === ORGANIZATION_TYPES.HQ
+          ? ORGANIZATION_TYPES.HQ
+          : ORGANIZATION_TYPES.NISWAN;
+      const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? null : actor.schoolId;
+      if (organizationType === ORGANIZATION_TYPES.NISWAN && !schoolId) {
+        const error = new Error("Unable to resolve your Attendance organization.");
+        error.status = 400;
+        throw error;
+      }
 
-    const fromDateKey = requireDateKey(req.body?.fromDateKey, "From date");
-    const toDateKey = requireDateKey(req.body?.toDateKey, "To date");
-    enumerateDateKeys(fromDateKey, toDateKey);
+      const fromDateKey = requireDateKey(req.body?.fromDateKey, "From date");
+      const toDateKey = requireDateKey(req.body?.toDateKey, "To date");
+      if (!isDateKey(fromDateKey) || !isDateKey(toDateKey)) failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      enumerateDateKeys(fromDateKey, toDateKey);
+      if (req.body?.dayType !== undefined && !["Full Day", "Half Day"].includes(req.body.dayType)) failWorkflow("LEAVE_INVALID_FIELDS", 400);
 
-    const dayType = req.body?.dayType === "Half Day" ? "Half Day" : "Full Day";
-    if (dayType === "Half Day" && fromDateKey !== toDateKey) {
-      const error = new Error("Half Day leave must use the same From and To date.");
-      error.status = 400;
-      throw error;
-    }
+      const dayType = req.body?.dayType === "Half Day" ? "Half Day" : "Full Day";
+      if (dayType === "Half Day" && fromDateKey !== toDateKey) {
+        const error = new Error("Half Day leave must use the same From and To date.");
+        error.status = 400;
+        throw error;
+      }
 
-    await assertNoFinalizedStaffAttendanceInRange({
-      staffType: actor.staffType, staffId: actor.staffId, fromDateKey, toDateKey,
-    });
+      await assertNoFinalizedStaffAttendanceInRange({
+        staffType: actor.staffType, staffId: actor.staffId, fromDateKey, toDateKey, session,
+      });
 
-    const leaveType = cleanText(req.body?.leaveType, 100);
-    const reason = cleanText(req.body?.reason, 1000);
-    if (!leaveType || !reason) {
-      const error = new Error("Leave Type and Reason are required.");
-      error.status = 400;
-      throw error;
-    }
+      await assertPayrollPeriodOpen({ ...actor, organizationType, fromDateKey, toDateKey }, session);
 
-    const overlapping = await StaffLeave.findOne({
-      staffType: actor.staffType,
-      staffId: actor.staffId,
-      status: { $in: ["Pending", "Approved"] },
-      fromDateKey: { $lte: toDateKey },
-      toDateKey: { $gte: fromDateKey },
-    }).lean();
-    if (overlapping) {
-      const error = new Error("An overlapping Pending/Approved leave already exists.");
-      error.status = 409;
-      throw error;
-    }
+      const leaveType = leaveText(req.body?.leaveType, 100, true);
+      const reason = leaveText(req.body?.reason, 1000, true);
+      if (Buffer.from(reason, "utf8").toString("utf8") !== reason || Buffer.from(leaveType, "utf8").toString("utf8") !== leaveType) failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      if (!leaveType || !reason) {
+        const error = new Error("Leave Type and Reason are required.");
+        error.status = 400;
+        throw error;
+      }
 
-    const leave = await StaffLeave.create({
-      staffType: actor.staffType,
-      staffId: actor.staffId,
-      userId: actor.userId,
-      schoolId,
-      organizationType,
-      leaveType,
-      isPaid: true,
-      fromDateKey,
-      toDateKey,
-      dayType,
-      reason,
-      remarks: cleanText(req.body?.remarks, 1000),
-      status: normalizeRole(req.user?.role) === "superadmin" ? "Approved" : "Pending",
-      requestedBy: req.user._id,
-      decidedBy: normalizeRole(req.user?.role) === "superadmin" ? req.user._id : undefined,
-      decidedAt: normalizeRole(req.user?.role) === "superadmin" ? new Date() : undefined,
+      const overlapping = await StaffLeave.findOne({
+        staffType: actor.staffType,
+        staffId: actor.staffId,
+        status: { $in: ["Pending", "Approved"] },
+        fromDateKey: { $lte: toDateKey },
+        toDateKey: { $gte: fromDateKey },
+      }).session(session).lean();
+      if (overlapping) {
+        const error = new Error("An overlapping Pending/Approved leave already exists.");
+        error.status = 409;
+        throw error;
+      }
+
+      const leave = new StaffLeave({
+        revision: 1, history: [{ toStatus: "Pending", actorId: req.user._id, at: new Date(), isPaid: true }],
+        staffType: actor.staffType,
+        staffId: actor.staffId,
+        userId: actor.userId,
+        schoolId,
+        organizationType,
+        leaveType,
+        isPaid: true,
+        fromDateKey,
+        toDateKey,
+        dayType,
+        reason,
+        remarks: leaveText(req.body?.remarks, 1000),
+        status: "Pending",
+        requestedBy: req.user._id,
+      });
+
+      await leave.save({ session });
+      return leave;
     });
 
     return res.status(201).json({
       success: true,
-      message:
-        normalizeRole(req.user?.role) === "superadmin"
-          ? "Leave recorded successfully."
-          : "Leave application submitted successfully.",
+      message: "Leave application submitted successfully.",
       leave,
     });
   } catch (error) {
@@ -1288,64 +1309,80 @@ export const updateStaffLeaveStatus = async (req, res) => {
       throw error;
     }
 
-    const leave = await StaffLeave.findById(leaveId);
-    if (!leave) {
-      const error = new Error("Staff leave was not found.");
-      error.status = 404;
-      throw error;
-    }
+    const leave = await withHqFinanceTransaction(async (session) => {
+      const leave = await StaffLeave.findById(leaveId).session(session);
+      if (!leave) {
+        const error = new Error("Staff leave was not found.");
+        error.status = 404;
+        throw error;
+      }
 
-    if (nextStatus === "Cancelled") {
-      if (String(leave.userId) === String(req.user?._id)) {
-        await assertRequestPermission(
-          req,
-          PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
-          "You do not have permission to cancel your own staff leave."
-        );
+      if (nextStatus === "Cancelled") {
+        if (String(leave.userId) === String(req.user?._id)) {
+          await assertRequestPermission(
+            req,
+            PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+            "You do not have permission to cancel your own staff leave."
+          );
+        } else {
+          await assertRequestPermission(
+            req,
+            PERMISSIONS.STAFF_LEAVE_APPROVE,
+            "You do not have permission to cancel this staff leave."
+          );
+          const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
+          if (!allowed) {
+            const error = new Error("You are not authorized to cancel this staff leave.");
+            error.status = 403;
+            throw error;
+          }
+        }
       } else {
         await assertRequestPermission(
           req,
           PERMISSIONS.STAFF_LEAVE_APPROVE,
-          "You do not have permission to cancel this staff leave."
+          "You do not have permission to approve/reject Staff leave."
         );
         const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
         if (!allowed) {
-          const error = new Error("You are not authorized to cancel this staff leave.");
+          const error = new Error("You are not authorized to approve/reject this staff leave.");
           error.status = 403;
           throw error;
         }
       }
-    } else {
-      await assertRequestPermission(
-        req,
-        PERMISSIONS.STAFF_LEAVE_APPROVE,
-        "You do not have permission to approve/reject Staff leave."
-      );
-      const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
-      if (!allowed) {
-        const error = new Error("You are not authorized to approve/reject this staff leave.");
-        error.status = 403;
-        throw error;
+
+      assertLeaveRevision(leave, req.body?.revision);
+      assertLeaveTransition(leave, nextStatus);
+      if (nextStatus === "Approved" && typeof req.body?.isPaid !== "boolean") failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      const affectsAttendance = nextStatus === "Approved" || leave.status === "Approved";
+      if (affectsAttendance) {
+        await assertPayrollPeriodOpen(leave, session);
+        await assertNoFinalizedStaffAttendanceInRange({
+          staffType: leave.staffType, staffId: leave.staffId,
+          fromDateKey: leave.fromDateKey, toDateKey: leave.toDateKey, session,
+        });
       }
-    }
 
-    if (nextStatus === "Approved" || (leave.status === "Approved" && nextStatus !== "Approved")) {
-      await assertNoFinalizedStaffAttendanceInRange({
-        staffType: leave.staffType, staffId: leave.staffId,
-        fromDateKey: leave.fromDateKey, toDateKey: leave.toDateKey,
-      });
-    }
+      const previousStatus = leave.status;
+      if (affectsAttendance) {
+        await invalidatePayrollPeriod(leave, session);
+        if (nextStatus === "Cancelled") await flagCancelledLeaveAttendance(leave, req.user._id, session);
+      }
+      if (["Approved", "Rejected"].includes(nextStatus)) {
+        if (nextStatus === "Approved") leave.isPaid = req.body.isPaid;
+        leave.decidedBy = req.user._id;
+        leave.decidedAt = new Date();
+      }
 
-    if (["Approved", "Rejected"].includes(nextStatus)) {
-      leave.isPaid = req.body?.isPaid !== undefined ? Boolean(req.body.isPaid) : leave.isPaid;
-      leave.decidedBy = req.user._id;
-      leave.decidedAt = new Date();
-    }
+      leave.history.push({ fromStatus: previousStatus, toStatus: nextStatus, actorId: req.user._id, at: new Date(), isPaid: leave.isPaid });
+      leave.revision = Number(leave.revision || 0) + 1;
+      leave.status = nextStatus;
+      leave.remarks = req.body?.remarks === undefined ? leave.remarks : leaveText(req.body.remarks, 1000);
+      leave.updatedAt = new Date();
+      await leave.save({ session });
+      return leave;
 
-    leave.status = nextStatus;
-    leave.remarks = cleanText(req.body?.remarks ?? leave.remarks, 1000);
-    leave.updatedAt = new Date();
-    await leave.save();
+    });
 
     return res.json({ success: true, message: `Staff leave ${nextStatus.toLowerCase()}.`, leave });
   } catch (error) {
@@ -1515,6 +1552,7 @@ export const generatePayroll = async (req, res) => {
       const { byStaff, excluded } = await reservePayrollClaims({ runId, monthKey, staff, userId: req.user._id, session });
       const items = [];
       for (const row of staff) {
+        await assertAttendanceReviewed({ staffType: row.staffType, staffId: row.staffId, fromDateKey, toDateKey }, session);
         const attendance = await StaffAttendance.find({
           staffType: row.staffType,
           staffId: row.staffId,
@@ -1537,7 +1575,7 @@ export const generatePayroll = async (req, res) => {
         let halfDayUnits = 0;
         attendance.forEach((record) => {
           const approvedLeave = approvedLeaveByDate.get(record.dateKey);
-          if (record.status === "Absent") absentUnits += 1;
+          if (record.status === "Absent" && !approvedLeave) absentUnits += 1;
           // A Half Day generated by approved leave is handled by leave paid/unpaid rules below.
           if (record.status === "Half Day" && !approvedLeave) halfDayUnits += 0.5;
         });
@@ -1546,7 +1584,6 @@ export const generatePayroll = async (req, res) => {
         approvedLeaveByDate.forEach((leave, dateKey) => {
           const attendanceRecord = attendanceByDate.get(dateKey);
           if (!attendanceRecord) return;
-          if (!["Leave", "Half Day"].includes(attendanceRecord.status)) return;
           if (!leave.isPaid) unpaidLeaveUnits += Number(leave.unit || 0);
         });
 
@@ -1602,7 +1639,7 @@ export const generatePayroll = async (req, res) => {
             schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
             workingDays,
             revision: Number(existing?.revision || 0) + 1,
-            status: "Draft", taPolicyVersion: 1, taExcludedClaims: excluded,
+            status: "Draft", taPolicyVersion: 1, taExcludedClaims: excluded, needsRecalculation: false,
             reviewedBy: null, reviewedAt: null,
             items,
             generatedBy: req.user._id,
@@ -1656,7 +1693,7 @@ export const updatePayrollItem = async (req, res) => {
     });
 
     assertPayrollRevision(run, req.body.expectedRevision);
-    if (run.taPolicyVersion !== 1) failTa("TA_RECALCULATE_REQUIRED", 409);
+    if (run.taPolicyVersion !== 1 || run.needsRecalculation) failTa("TA_RECALCULATE_REQUIRED", 409);
     const item = run.items.id(itemId);
     if (!item) {
       const error = new Error("Payroll item was not found.");

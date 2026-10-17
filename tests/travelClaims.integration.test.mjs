@@ -14,6 +14,9 @@ import Supervisor from "../models/Supervisor.js";
 import TravelClaim from "../models/TravelClaim.js";
 import PayrollRun from "../models/PayrollRun.js";
 import RolePermission from "../models/RolePermission.js";
+import School from "../models/School.js";
+import StaffLeave from "../models/StaffLeave.js";
+import { isPermissionAllowedForRole } from "../config/permissionCatalog.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import IntegrationCredential from "../models/IntegrationCredential.js";
 import AuditLog from "../models/AuditLog.js";
@@ -82,6 +85,15 @@ before(async () => {
     if (role === "supervisor") staff = await Supervisor.create({ userId: user._id, supervisorId: "TEST-SUP", address: "Local", contactNumber: 123456, salary, travellingAllowance: fixed, active: "Active" });
     else if (!["superadmin", "guest"].includes(role)) staff = await Employee.create({ userId: user._id, employeeId: `TEST-${role}`, organizationType: role === "teacher" ? "NISWAN" : "HQ", schoolId: role === "teacher" ? new mongoose.Types.ObjectId() : null, address: "Local", contactNumber: 123456, salary, travellingAllowance: fixed, active: "Active" });
     actors[role] = { user, staff, token: jwt.sign({ _id: String(user._id), role }, process.env.JWT_SECRET) };
+  }
+  for(const [key,role,code] of [["nadmin","admin","A"],["nstaff","staff","A"],["notheradmin","admin","B"]]) {
+    const user=await User.create({name:`${key} தமிழ்`,email:`${key}@local.test`,role,password:"not-a-real-login-password"});
+    const staff=await Employee.create({userId:user._id,employeeId:`TEST-${key}`,organizationType:"NISWAN",schoolId:new mongoose.Types.ObjectId(),address:"Local",contactNumber:123456,salary:0,active:"Active"});
+    actors[key]={user,staff,schoolCode:code,token:jwt.sign({_id:String(user._id),role},process.env.JWT_SECRET)};
+  }
+  for(const code of ["A","B"]){
+    const school=await School.create({code:`TEST-N-${code}`,nameEnglish:`Test Niswan ${code}`,address:"Local",districtStateId:new mongoose.Types.ObjectId(),supervisorId:actors.supervisor.staff._id,incharge1:"Local",incharge1Number:123456});
+    for(const key of code==="A"?["nadmin","nstaff","teacher"]:["notheradmin"]){await Employee.updateOne({_id:actors[key].staff._id},{$set:{schoolId:school._id}});actors[key].schoolId=school._id;}
   }
   for (const model of Object.values(mongoose.models)) await model.init();
   for (const model of [User, Employee, Supervisor, PayrollRun, RolePermission, StaffAttendance, AuditLog]) await model.createIndexes();
@@ -288,4 +300,149 @@ test("evidence downloads refuse a receipt shared publicly outside the app", asyn
   file.permissions = [{ type: "anyone", role: "reader" }];
   try { const response = await fetch(`${base}/api/travel-claims/${claim._id}/evidence/${claim.evidence[0]._id}`, { headers: { Authorization: `Bearer ${actors.supervisor.token}` } }); assert.equal(response.status, 409); assert.equal((await response.json()).code, "TA_EVIDENCE_UNAVAILABLE"); }
   finally { delete file.permissions; }
+});
+
+// Leave and navigation release regression cases use a separate past period.
+const periodMonth = "2026-03", periodDate = "2026-03-05";
+const leaveInput = (changes = {}) => ({ leaveType: "Sick Leave", dayType: "Full Day", fromDateKey: periodDate, toDateKey: periodDate, reason: "உடல்நலம் / إجازة", ...changes });
+async function resetPeriod() {
+  // Restore the fixture defaults after the earlier explicit-revocation test.
+  await RolePermission.updateOne({role:"hqstaff"},{$set:{permissions:getInitialRolePermissionsForBootstrap("hqstaff"),catalogVersion:12}});
+  await PayrollRun.deleteMany({ monthKey: { $in: ["2026-03", "2026-04"] } });
+  await StaffLeave.deleteMany({ fromDateKey: { $gte: "2026-03-01", $lte: "2026-04-30" } });
+  await StaffAttendance.deleteMany({ dateKey: { $gte: "2026-03-01", $lte: "2026-04-30" } });
+}
+const workflowTest = (name, fn) => test(name, async () => { await resetPeriod(); await fn(); });
+async function applyLeave(actor = actors.hquser, changes = {}, expected = 201) { return request(actor, "POST", "/api/attendance/staff-leaves/mine", leaveInput(changes), expected); }
+async function leaveDecision(leave, status = "Approved", isPaid = false, actor = actors.hqadmin, expected = 200) {
+  return request(actor, "PATCH", `/api/attendance/staff-leaves/${leave._id}/status`, { status, isPaid, revision: leave.revision || 0 }, expected);
+}
+async function markAttendance(target = actors.hquser, status = "Absent", expected = 200) {
+  return request(actors.hqadmin, "POST", "/api/attendance/staff/bulk", { scopeType: "HQ", date: periodDate, staffCategory: target.user.role === "supervisor" ? "MUAVIN" : "HQ_STAFF", rows: [{ staffType: target.user.role === "supervisor" ? "Supervisor" : "Employee", staffId: String(target.staff._id), status }] }, expected);
+}
+workflowTest("Niswan Staff student-entry access remains blocked at catalog and API", async () => {
+  assert.equal(isPermissionAllowedForRole(PERMISSIONS.STUDENT_ATTENDANCE_ENTER, "staff"), false);
+  await request(actors.nstaff, "POST", "/api/attendance/student/bulk", { date: periodDate, rows: [] }, 403);
+});
+workflowTest("Niswan Admin sees own teachers/staff and Teacher remains student-only", async () => {
+  const data = await request(actors.nadmin, "GET", `/api/attendance/staff/roster?scopeType=NISWAN&schoolId=${actors.notheradmin.schoolId}&date=${periodDate}`);
+  assert.equal(String(data.scope.schoolId),String(actors.nadmin.schoolId));assert(data.staff.some(s=>s.role==="teacher"));assert(data.staff.some(s=>s.role==="staff"));
+  await request(actors.teacher,"POST","/api/attendance/staff/bulk",{scopeType:"NISWAN",date:periodDate,rows:[]},403);
+  const students = await request(actors.teacher,"GET",`/api/attendance/student/roster?schoolId=${actors.notheradmin.schoolId}&academicYearId=${new mongoose.Types.ObjectId()}&courseId=${new mongoose.Types.ObjectId()}&date=${periodDate}`);
+  assert.equal(String(students.school._id),String(actors.teacher.schoolId));
+});
+workflowTest("HQ leave application preserves Unicode and starts Pending with a revision",async()=>{
+  const {leave}=await applyLeave();assert.equal(leave.status,"Pending");assert.equal(leave.revision,1);assert.equal(leave.reason,"உடல்நலம் / إجازة");assert.equal(leave.history.length,1);
+});
+workflowTest("HQ Admin can approve HQ User, HQ Staff, Accountant and Muavin leave",async()=>{
+  for(const role of ["hquser","hqstaff","accountant","supervisor"]){const {leave}=await applyLeave(actors[role]);const out=await leaveDecision(leave);assert.equal(out.leave.status,"Approved");assert.equal(out.leave.revision,2);}
+});
+workflowTest("leave self-approval is blocked and HQ Admin leave goes to SuperAdmin",async()=>{
+  const {leave}=await applyLeave(actors.hqadmin);await leaveDecision(leave,"Approved",true,actors.hqadmin,403);const out=await leaveDecision(leave,"Approved",true,actors.superadmin);assert.equal(out.leave.status,"Approved");
+});
+workflowTest("Accountant can approve TA but cannot approve leave",async()=>{
+  const {leave}=await applyLeave();await leaveDecision(leave,"Approved",true,actors.accountant,403);
+});
+workflowTest("Niswan teacher leave is scoped to own Admin, and Admin leave escalates",async()=>{
+  const {leave}=await applyLeave(actors.teacher);await leaveDecision(leave,"Approved",true,actors.notheradmin,403);await leaveDecision(leave,"Approved",true,actors.nadmin);
+  const admin=(await applyLeave(actors.nadmin)).leave;await leaveDecision(admin,"Approved",true,actors.hqadmin,403);await leaveDecision(admin,"Approved",true,actors.superadmin);
+});
+workflowTest("Rejected and Cancelled leave cannot be reopened through direct API calls",async()=>{
+  for(const end of ["Rejected","Cancelled"]){const {leave}=await applyLeave();const out=await leaveDecision(leave,end,false,end==="Cancelled"?actors.hquser:actors.hqadmin);const denied=await leaveDecision(out.leave,"Approved",true,actors.hqadmin,409);assert.equal(denied.code,"LEAVE_STATE_LOCKED");}
+});
+workflowTest("an approved leave cannot be re-decided or have its paid flag overwritten",async()=>{
+  const first=(await leaveDecision((await applyLeave()).leave,"Approved",true)).leave;
+  for(const status of ["Approved","Rejected"]){const data=await leaveDecision(first,status,false,actors.hqadmin,409);assert.equal(data.code,"LEAVE_STATE_LOCKED");}
+  assert.equal((await StaffLeave.findById(first._id)).isPaid,true);
+});
+workflowTest("missing/stale leave revisions and non-boolean approval flags are rejected",async()=>{
+  const {leave}=await applyLeave();for(const revision of [undefined,0]){const data=await request(actors.hqadmin,"PATCH",`/api/attendance/staff-leaves/${leave._id}/status`,{status:"Approved",isPaid:true,revision},409);assert.equal(data.code,"LEAVE_STALE");}
+  const data=await request(actors.hqadmin,"PATCH",`/api/attendance/staff-leaves/${leave._id}/status`,{status:"Approved",isPaid:"false",revision:leave.revision},400);assert.equal(data.code,"LEAVE_INVALID_FIELDS");assert.equal((await StaffLeave.findById(leave._id)).status,"Pending");
+});
+workflowTest("concurrent leave decisions have one winner and one history event",async()=>{
+  const {leave}=await applyLeave();const responses=await Promise.all(["Approved","Rejected"].map(status=>fetch(`${base}/api/attendance/staff-leaves/${leave._id}/status`,{method:"PATCH",headers:jsonHeaders(actors.hqadmin),body:JSON.stringify({status,isPaid:false,revision:leave.revision})})));assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);const saved=await StaffLeave.findById(leave._id);assert.equal(saved.history.length,2);assert.equal(saved.revision,2);
+});
+workflowTest("concurrent overlapping leave applications create only one request",async()=>{
+  const responses=await Promise.all([1,2].map(()=>fetch(`${base}/api/attendance/staff-leaves/mine`,{method:"POST",headers:jsonHeaders(actors.hquser),body:JSON.stringify(leaveInput())})));assert.deepEqual(responses.map(r=>r.status).sort(),[201,409]);assert.equal(await StaffLeave.countDocuments({userId:actors.hquser.user._id,fromDateKey:periodDate}),1);
+});
+workflowTest("paid leave invalidates Reviewed payroll and removes an earlier absence deduction",async()=>{
+  await markAttendance();let run=await generate(periodMonth);const item=run.items.find(i=>i.staffId===String(actors.hquser.staff._id));assert.equal(item.attendanceDeduction,1000);
+  run=(await request(actors.accountant,"PATCH",`/api/attendance/payroll/${run._id}/items/${item._id}`,{manualAllowance:75,manualDeduction:10,expectedRevision:run.revision})).run;run=(await statusRun(run,"Reviewed")).run;
+  const leave=(await applyLeave()).leave;await leaveDecision(leave,"Approved",true);const invalidated=await PayrollRun.findById(run._id);assert.equal(invalidated.status,"Draft");assert.equal(invalidated.needsRecalculation,true);assert.equal(invalidated.revision,run.revision+1);assert.equal(invalidated.reviewedBy,null);
+  await statusRun(invalidated,"Reviewed",409);const denied=await request(actors.accountant,"PATCH",`/api/attendance/payroll/${run._id}/items/${item._id}`,{manualAllowance:0,manualDeduction:0,expectedRevision:invalidated.revision},409);assert.equal(denied.code,"TA_RECALCULATE_REQUIRED");
+  const recalculated=await generate(periodMonth);const updated=recalculated.items.find(i=>i.staffId===String(actors.hquser.staff._id));assert.equal(recalculated.needsRecalculation,false);assert.equal(updated.attendanceDeduction,0);assert.equal(updated.manualAllowance,75);assert.equal(updated.manualDeduction,10);assert.equal(updated.netSalary,20065);
+});
+workflowTest("unpaid full/half-day leave is deducted once, without double-counting absence",async()=>{
+  for(const [dayType,expected] of [["Full Day",1000],["Half Day",500]]){await resetPeriod();await markAttendance();await leaveDecision((await applyLeave(actors.hquser,{dayType})).leave);const run=await generate(periodMonth);const item=run.items.find(i=>i.staffId===String(actors.hquser.staff._id));assert.equal(item.attendanceDeduction,expected);assert.equal(item.absentUnits,0);assert.equal(item.halfDayUnits,0);}
+});
+workflowTest("attendance source changes invalidate Reviewed payroll but remarks-only edits do not",async()=>{
+  await markAttendance();let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;
+  await markAttendance(actors.hquser,"Present");let saved=await PayrollRun.findById(run._id);assert.equal(saved.needsRecalculation,true);assert.equal(saved.status,"Draft");run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;
+  await request(actors.hqadmin,"POST","/api/attendance/staff/bulk",{scopeType:"HQ",date:periodDate,rows:[{staffType:"Employee",staffId:String(actors.hquser.staff._id),status:"Present",remarks:"தமிழ்"}]});saved=await PayrollRun.findById(run._id);assert.equal(saved.status,"Reviewed");assert.equal(saved.revision,run.revision);
+});
+workflowTest("Finalized payroll blocks leave approval and attendance source changes",async()=>{
+  const leave=(await applyLeave()).leave;await markAttendance();let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;run=(await statusRun(run,"Finalized")).run;
+  const result=await leaveDecision(leave,"Approved",false,actors.hqadmin,409);assert.equal(result.code,"LEAVE_PAYROLL_LOCKED");await markAttendance(actors.hquser,"Present",409);assert.equal((await StaffLeave.findById(leave._id)).status,"Pending");assert.equal((await PayrollRun.findById(run._id)).revision,run.revision);
+});
+workflowTest("Paid payroll blocks approved-leave cancellation and new backdated applications",async()=>{
+  const approved=(await leaveDecision((await applyLeave()).leave,"Approved",true)).leave;await markAttendance(actors.hquser,"Leave");let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;run=(await statusRun(run,"Finalized")).run;run=(await statusRun(run,"Paid")).run;
+  const result=await leaveDecision(approved,"Cancelled",true,actors.hquser,409);assert.equal(result.code,"LEAVE_PAYROLL_LOCKED");await applyLeave(actors.hqstaff,{fromDateKey:"2026-03-06",toDateKey:"2026-03-06"},409);assert.equal((await StaffLeave.findById(approved._id)).status,"Approved");
+});
+workflowTest("pending leave can be cancelled after payroll freezes because it changes no salary",async()=>{
+  const leave=(await applyLeave()).leave;let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;await statusRun(run,"Finalized");const out=await leaveDecision(leave,"Cancelled",false,actors.hquser);assert.equal(out.leave.status,"Cancelled");
+});
+workflowTest("cross-month leave approval rolls back entirely when one payroll month is frozen",async()=>{
+  const leave=(await applyLeave(actors.hquser,{fromDateKey:"2026-03-31",toDateKey:"2026-04-01"})).leave;let march=await generate(periodMonth);march=(await statusRun(march,"Reviewed")).run;await statusRun(march,"Finalized");const april=await generate("2026-04");await leaveDecision(leave,"Approved",false,actors.hqadmin,409);const saved=await PayrollRun.findById(april._id);assert.equal(saved.needsRecalculation,false);assert.equal(saved.revision,april.revision);
+});
+workflowTest("mid-approval failure rolls back leave status and payroll invalidation",async()=>{
+  let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;const leave=(await applyLeave()).leave;const original=StaffLeave.prototype.save;
+  StaffLeave.prototype.save=function(...args){if(this.status==="Approved")throw new Error("Injected leave-save failure");return original.apply(this,args);};
+  try{await leaveDecision(leave,"Approved",false,actors.hqadmin,500);}finally{StaffLeave.prototype.save=original;}
+  const saved=await PayrollRun.findById(run._id);assert.equal(saved.status,"Reviewed");assert.equal(saved.needsRecalculation,false);assert.equal(saved.revision,run.revision);assert.equal((await StaffLeave.findById(leave._id)).status,"Pending");
+});
+workflowTest("payroll finalization and leave approval serialize with one valid winner",async()=>{
+  const leave=(await applyLeave()).leave;let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;
+  const responses=await Promise.all([fetch(`${base}/api/attendance/staff-leaves/${leave._id}/status`,{method:"PATCH",headers:jsonHeaders(actors.hqadmin),body:JSON.stringify({status:"Approved",isPaid:false,revision:leave.revision})}),fetch(`${base}/api/attendance/payroll/${run._id}/status`,{method:"PATCH",headers:jsonHeaders(actors.accountant),body:JSON.stringify({status:"Finalized",expectedRevision:run.revision})})]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);const saved=await PayrollRun.findById(run._id),claim=await StaffLeave.findById(leave._id);if(claim.status==="Approved"){assert.equal(saved.status,"Draft");assert(saved.needsRecalculation);}else assert.equal(saved.status,"Finalized");
+});
+workflowTest("cancelled approved leave keeps attendance but requires explicit re-marking",async()=>{
+  const approved=(await leaveDecision((await applyLeave()).leave,"Approved",true)).leave;await markAttendance(actors.hquser,"Leave");await generate(periodMonth);await leaveDecision(approved,"Cancelled",true,actors.hquser);
+  let attendance=await StaffAttendance.findOne({staffId:actors.hquser.staff._id,dateKey:periodDate});assert(attendance);assert.equal(attendance.status,"Leave");assert.equal(attendance.requiresReview,true);
+  const denied=await request(actors.accountant,"POST","/api/attendance/payroll/generate",{scopeType:"HQ",month:periodMonth,workingDays:20,expectedRevision:(await PayrollRun.findOne({monthKey:periodMonth})).revision},409);assert.equal(denied.code,"PAYROLL_ATTENDANCE_REVIEW_REQUIRED");
+  const roster=await request(actors.hqadmin,"GET",`/api/attendance/staff/roster?scopeType=HQ&date=${periodDate}`);assert(roster.staff.find(s=>s.staffId===String(actors.hquser.staff._id)).requiresReview);
+  await markAttendance(actors.hquser,"Absent");attendance=await StaffAttendance.findById(attendance._id);assert.equal(attendance.requiresReview,false);const run=await generate(periodMonth);assert.equal(run.items.find(i=>i.staffId===String(actors.hquser.staff._id)).attendanceDeduction,1000);
+});
+workflowTest("legacy leave with no revision/history migrates on its first guarded decision",async()=>{
+  const {leave}=await applyLeave();await StaffLeave.collection.updateOne({_id:new mongoose.Types.ObjectId(leave._id)},{$unset:{revision:"",history:""}});const out=await leaveDecision({...leave,revision:0},"Approved",true);assert.equal(out.leave.revision,1);assert.equal(out.leave.history.length,1);
+});
+workflowTest("invalid real dates and malformed Unicode cannot create leave records",async()=>{
+  const bad=await applyLeave(actors.hquser,{fromDateKey:"2026-02-30",toDateKey:"2026-02-30"},400);assert.equal(bad.code,"LEAVE_INVALID_FIELDS");await applyLeave(actors.hquser,{reason:"invalid\ud800"},400);assert.equal(await StaffLeave.countDocuments({fromDateKey:periodDate}),0);
+});
+
+workflowTest("attendance finalization racing approval cannot freeze the wrong leave status",async()=>{
+  const leave=(await applyLeave()).leave;
+  const roster=await request(actors.hqadmin,"GET",`/api/attendance/staff/roster?scopeType=HQ&date=${periodDate}`);
+  const rows=roster.staff.map(s=>({staffType:s.staffType,staffId:s.staffId,status:"Present"}));
+  const results=await Promise.all([
+    fetch(`${base}/api/attendance/staff/bulk`,{method:"POST",headers:jsonHeaders(actors.hqadmin),body:JSON.stringify({scopeType:"HQ",staffCategory:"HQ_STAFF",date:periodDate,rows,finalize:true})}),
+    fetch(`${base}/api/attendance/staff-leaves/${leave._id}/status`,{method:"PATCH",headers:jsonHeaders(actors.hqadmin),body:JSON.stringify({status:"Approved",isPaid:true,revision:leave.revision})}),
+  ]);
+  assert.equal(results[0].status,200);assert([200,409].includes(results[1].status));
+  const saved=await StaffAttendance.findOne({staffId:actors.hquser.staff._id,dateKey:periodDate});const current=await StaffLeave.findById(leave._id);assert.equal(saved.isFinalized,true);
+  assert.equal(saved.status,current.status==="Approved"?"Leave":"Present");
+});
+workflowTest("finalized attendance prevents cancellation without invalidating Reviewed payroll",async()=>{
+  const approved=(await leaveDecision((await applyLeave()).leave,"Approved",true)).leave;await markAttendance(actors.hquser,"Leave");let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;
+  await StaffAttendance.updateOne({staffId:actors.hquser.staff._id,dateKey:periodDate},{$set:{isFinalized:true}});
+  await leaveDecision(approved,"Cancelled",true,actors.hquser,409);const saved=await PayrollRun.findById(run._id);assert.equal(saved.status,"Reviewed");assert.equal(saved.revision,run.revision);assert.equal(saved.needsRecalculation,false);
+});
+workflowTest("attendance write failure rolls back payroll invalidation and keeps the old mark",async()=>{
+  await markAttendance();let run=await generate(periodMonth);run=(await statusRun(run,"Reviewed")).run;const original=StaffAttendance.bulkWrite;
+  StaffAttendance.bulkWrite=async()=>{throw new Error("Injected attendance-write failure")};
+  try{await markAttendance(actors.hquser,"Present",500);}finally{StaffAttendance.bulkWrite=original;}
+  const saved=await PayrollRun.findById(run._id);assert.equal(saved.status,"Reviewed");assert.equal(saved.revision,run.revision);assert.equal(saved.needsRecalculation,false);assert.equal((await StaffAttendance.findOne({staffId:actors.hquser.staff._id,dateKey:periodDate})).status,"Absent");
+});
+workflowTest("revoking the HQ Admin leave-approval permission remains effective",async()=>{
+  const leave=(await applyLeave()).leave;const current=await RolePermission.findOne({role:"hqadmin"});const original=[...current.permissions];
+  try{await RolePermission.updateOne({_id:current._id},{$pull:{permissions:PERMISSIONS.STAFF_LEAVE_APPROVE}});await leaveDecision(leave,"Approved",true,actors.hqadmin,403);await leaveDecision(leave,"Approved",true,actors.superadmin);}
+  finally{await RolePermission.updateOne({_id:current._id},{$set:{permissions:original}});}
 });

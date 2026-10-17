@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import HqFinanceState from "../models/HqFinanceState.js";
 import TravelClaim from "../models/TravelClaim.js";
 import PayrollRun from "../models/PayrollRun.js";
+import StaffLeave from "../models/StaffLeave.js";
+import StaffAttendance from "../models/StaffAttendance.js";
 import { failTa } from "../utils/travelClaimPolicy.js";
 
 let initialized;
@@ -12,6 +14,8 @@ export function initializeTaWorkflow() {
     await TravelClaim.createCollection();
     await TravelClaim.createIndexes();
     await PayrollRun.createCollection();
+    await StaffLeave.createCollection();
+    await StaffAttendance.createCollection();
     await HqFinanceState.createCollection();
     try { await HqFinanceState.updateOne({ _id: "HQ_TA_PAYROLL" }, { $setOnInsert: { revision: 0 } }, { upsert: true }); }
     catch (error) { if (error.code !== 11000) throw error; }

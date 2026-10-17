@@ -33,6 +33,7 @@ const payrollRunSchema = new Schema({
   taPolicyVersion: { type: Number },
   revision: { type: Number, default: 0 },
   reviewedAt: Date,
+  needsRecalculation: { type: Boolean, default: false },
   taExcludedClaims: { type: [{ claimId: { type: Schema.Types.ObjectId, ref: "TravelClaim" }, claimNumber: String, name: String }], default: [] },
   monthKey: { type: String, required: true, index: true }, // YYYY-MM
   organizationType: { type: String, enum: ["HQ", "NISWAN"], required: true, index: true },
