@@ -43,6 +43,27 @@ for(const query of ['supervisorId=bad','districtStateId=bad','status=Deleted','s
 test('student/staff totals use the existing active list counts without changing records',async()=>{const counts=await Promise.all([Student.countDocuments(),Employee.countDocuments(),School.countDocuments()]);const {report}=await request(actors.superadmin);const first=report.rows.find(r=>r.code==='N-001');assert.equal(first.studentCount,2);assert.equal(first.employeeCount,1);assert.equal(report.totalStudents,2);assert.equal(report.totalStaff,1);assert.deepEqual(await Promise.all([Student.countDocuments(),Employee.countDocuments(),School.countDocuments()]),counts);assert.equal(first.nameNative,'தமிழ்');assert.equal(first.nameArabic,'مدرسة');assert.equal(first.incharge1Number,'9876543210');assert(!JSON.stringify(report).includes('password'));});
 test('all 600 matching rows are exported even when page/limit query is supplied',async()=>{const batch=Array.from({length:600},(_,i)=>({code:`B-${String(i).padStart(4,'0')}`,nameEnglish:`Batch School ${i}`,address:'Local',supervisorId:actors.supervisor.staff._id,districtStateId:district._id,incharge1:'Local',incharge1Number:12345,active:'Active'}));await School.insertMany(batch);try{const {report}=await request(actors.supervisor,'/api/school/list-report?search=Batch&page=1&limit=10');assert.equal(report.rows.length,600);assert.equal(report.totalNiswans,600);assert.equal(report.rows[599].code,'B-0599');}finally{await School.deleteMany({code:/^B-/});}});
 test('catalog is unchanged and no new export permission is introduced',()=>{assert.equal(PERMISSION_CATALOG_VERSION,13);assert.equal(PERMISSION_KEYS.length,109);});
+test('single-Supervisor HQ reports include legacy assignments and safe contact metadata',async()=>{
+ const legacy=await School.create({code:'GROUP-LEGACY',nameEnglish:'Grouped legacy school',address:'Local',districtStateId:district._id,supervisorId:actors.supervisor.user._id,incharge1:'Local',incharge1Number:1234,active:'Active'});
+ try{for(const role of ['superadmin','hqadmin']){
+  const {report}=await request(actors[role],`/api/school/list-report?supervisorId=${id(actors.supervisor.staff)}`);
+  assert.deepEqual(report.rows.map(r=>r.code),['GROUP-LEGACY','N-001','N-002']);
+  assert.equal(report.supervisor.recordId,id(actors.supervisor.staff));assert.equal(report.supervisor.contact,String(actors.supervisor.staff.contactNumber));
+  assert(report.rows.every(r=>r.supervisorRecordId===report.supervisor.recordId));assert(!JSON.stringify(report).includes('salary'));
+ }
+ const {report}=await request(actors.hqadmin,`/api/school/list-report?supervisorId=${id(actors.supervisor.staff)}&status=In-Active&districtStateId=${id(district)}`);assert.deepEqual(report.rows.map(r=>r.code),['N-002']);
+ const empty=(await request(actors.hqadmin,`/api/school/list-report?supervisorId=${id(actors.supervisor.staff)}&search=no-such-school`)).report;assert.equal(empty.rows.length,0);assert.equal(empty.supervisor.recordId,id(actors.supervisor.staff));
+ const scoped=(await request(actors.otherSupervisor,`/api/school/list-report?supervisorId=${id(actors.supervisor.staff)}`)).report;assert.deepEqual(scoped.rows,[]);assert.equal(scoped.supervisor.recordId,id(actors.otherSupervisor.staff));
+ }finally{await School.deleteOne({_id:legacy._id});}
+});
+test('HQ export retains schools without a resolvable Supervisor for the unassigned PDF',async()=>{
+ const ids=[new mongoose.Types.ObjectId(),new mongoose.Types.ObjectId()];
+ await School.collection.insertMany([{_id:ids[0],code:'UNASSIGNED-NO-ID',nameEnglish:'No assignment',active:'Active',recordType:'NISWAN'},{_id:ids[1],code:'UNASSIGNED-ORPHAN',nameEnglish:'Old assignment',active:'In-Active',supervisorId:new mongoose.Types.ObjectId(),recordType:'NISWAN'}]);
+ try{const {report}=await request(actors.hqadmin);for(const code of ['UNASSIGNED-NO-ID','UNASSIGNED-ORPHAN']){const row=report.rows.find(r=>r.code===code);assert(row);assert.equal(row.supervisorRecordId,'');assert.equal(row.supervisorContact,'');}
+ const own=(await request(actors.supervisor)).report;assert(!own.rows.some(r=>r.code.startsWith('UNASSIGNED-')));
+ }finally{await School.deleteMany({_id:{$in:ids}});}
+});
+test('a validly formatted but nonexistent Supervisor filter is rejected',async()=>{const data=await request(actors.hqadmin,`/api/school/list-report?supervisorId=${new mongoose.Types.ObjectId()}`,400);assert.equal(data.code,'NR_INVALID_FILTER');});
 test('legacy Supervisor user-ID assignments remain inside the authenticated scope',async()=>{const s=await School.create({code:'LEGACY-ASSIGN',nameEnglish:'Legacy Assignment',address:'Local',districtStateId:district._id,supervisorId:actors.supervisor.user._id,incharge1:'Local',incharge1Number:1234});try{const {report}=await request(actors.supervisor);assert(report.rows.some(r=>r.code==='LEGACY-ASSIGN'));assert(!report.rows.some(r=>r.code==='N-003'));assert.equal(report.supervisor.code,actors.supervisor.staff.supervisorId);}finally{await School.deleteOne({_id:s._id});}});
 test('revoked Supervisor Niswan View permission cannot export',async()=>{const saved=await getRolePermissions('supervisor');await RolePermission.updateOne({role:'supervisor'},{$pull:{permissions:PERMISSIONS.NISWAN_VIEW}});try{await request(actors.supervisor,undefined,403);}finally{await RolePermission.updateOne({role:'supervisor'},{$set:{permissions:saved}});}});
 

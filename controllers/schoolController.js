@@ -935,9 +935,12 @@ export const getSchoolListReport = async (req, res) => {
     const access = req.accessContext || await getAccessContext(req.user);
     if (!["superadmin", "hqadmin", "supervisor"].includes(access.role) || !access.isActive || (access.role !== "supervisor" && !access.isHQ)) throw new SchoolReportError("NR_FORBIDDEN", 403);
     const filters = schoolReportFilters(req.query);
+    const filteredSupervisor = filters.supervisorId ? await Supervisor.findById(filters.supervisorId)
+      .select("supervisorId userId contactNumber").populate("userId", "name").lean() : null;
+    if (filters.supervisorId && !filteredSupervisor) throw new SchoolReportError("NR_INVALID_FILTER");
     const match = getNiswanSchoolFilter();
     if (access.role === "supervisor") match._id = { $in: access.schoolIds.map(id => new mongoose.Types.ObjectId(id)) };
-    if (filters.supervisorId) match.supervisorId = new mongoose.Types.ObjectId(filters.supervisorId);
+    if (filteredSupervisor) match.supervisorId = { $in: [filteredSupervisor._id, filteredSupervisor.userId?._id].filter(Boolean) };
     if (filters.districtStateId) match.districtStateId = new mongoose.Types.ObjectId(filters.districtStateId);
     if (filters.status) match.active = filters.status;
     const projection = buildSchoolFinalProjectStage();
@@ -977,13 +980,13 @@ export const getSchoolListReport = async (req, res) => {
     const singleIds = [...new Set(rows.map(row => row.supervisorRecordId).filter(Boolean))];
     const supervisorId = access.role === "supervisor" ? access.supervisorId : filters.supervisorId || (singleIds.length === 1 && rows.every(row => row.supervisorRecordId) ? singleIds[0] : null);
     const [supervisor, districtState] = await Promise.all([
-      supervisorId ? Supervisor.findById(supervisorId).select("supervisorId userId").populate("userId", "name").lean() : null,
+      supervisorId ? (access.role !== "supervisor" && filteredSupervisor ? filteredSupervisor : Supervisor.findById(supervisorId).select("supervisorId userId contactNumber").populate("userId", "name").lean()) : null,
       filters.districtStateId ? DistrictState.findById(filters.districtStateId).select("district state").lean() : null,
     ]);
     if ((filters.supervisorId && !supervisor) || (filters.districtStateId && !districtState)) throw new SchoolReportError("NR_INVALID_FILTER");
     return res.json({ success: true, report: {
       generatedAt: new Date().toISOString(), filters: { ...filters, districtStateName: districtState ? [districtState.district, districtState.state].filter(Boolean).join(", ") : "" },
-      supervisor: supervisor ? { code: supervisor.supervisorId, name: supervisor.userId?.name || "" } : null,
+      supervisor: supervisor ? { recordId: String(supervisor._id), code: supervisor.supervisorId, name: supervisor.userId?.name || "", contact: supervisor.contactNumber == null ? "" : String(supervisor.contactNumber) } : null,
       showSupervisorColumn: !supervisor, showSupervisorDetails: access.role !== "supervisor", totalNiswans: rows.length,
       totalStudents: rows.reduce((sum, row) => sum + row.studentCount, 0), totalStaff: rows.reduce((sum, row) => sum + row.employeeCount, 0), rows,
     } });
