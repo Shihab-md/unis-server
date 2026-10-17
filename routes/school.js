@@ -52,8 +52,8 @@ router.put('/:id', authMiddleware,
   updateSchool)
 
 router.delete('/:id', authMiddleware,
-  auditMutation({ action: 'SCHOOL_DELETE', resourceType: 'School' }),
-  requirePermission(PERMISSIONS.NISWAN_DELETE, 'You do not have permission to delete Niswans.'),
+  auditMutation({ action: 'SCHOOL_DEACTIVATE', resourceType: 'School' }),
+  requirePermission(PERMISSIONS.NISWAN_DELETE, 'You do not have permission to deactivate Niswans.'),
   deleteSchool)
 
 export default router

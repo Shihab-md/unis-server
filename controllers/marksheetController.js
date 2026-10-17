@@ -329,11 +329,13 @@ export const getMarksheetOptions = async (req, res) => {
       ? { active: "Active", ...getNiswanSchoolFilter() }
       : { _id: { $in: access.schoolIds }, active: "Active", ...getNiswanSchoolFilter() };
 
-    const [schools, academicYears, courses, gradeRules] = await Promise.all([
+    const consolidatedSchoolQuery = access.isGlobalScope ? getNiswanSchoolFilter() : { _id: { $in: access.schoolIds }, ...getNiswanSchoolFilter() };
+    const [schools, academicYears, courses, gradeRules, consolidatedSchools] = await Promise.all([
       School.find(schoolQuery).select("_id code nameEnglish address active").sort({ code: 1 }).lean(),
       AcademicYear.find().select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find().sort({ code: 1 }).lean(),
       getActiveGradeRules(),
+      access.canConsolidated ? School.find(consolidatedSchoolQuery).select("_id code nameEnglish active").sort({ code: 1 }).lean() : Promise.resolve([]),
     ]);
 
     return res.status(200).json({
@@ -348,6 +350,7 @@ export const getMarksheetOptions = async (req, res) => {
         canPdf: access.canPdf,
       },
       schools,
+      consolidatedSchools,
       academicYears,
       courses,
       gradeRules,
@@ -1065,6 +1068,10 @@ export const listConsolidatedStudents = async (req, res) => {
       return deny(res, "Selected Niswan is outside your permission.");
     }
 
+    if (schoolId && !await School.exists({ _id: schoolId, ...getNiswanSchoolFilter() })) {
+      return res.status(404).json({ success: false, error: "Niswan not found." });
+    }
+
     const courseExists = await Course.exists({ _id: courseId });
     if (!courseExists) {
       return res.status(404).json({ success: false, error: "Course not found." });
@@ -1120,6 +1127,8 @@ export const getConsolidatedMarksheet = async (req, res) => {
 
     const studentId = cleanString(req.query.studentId);
     const courseId = cleanString(req.query.courseId);
+    const selectedSchoolId = cleanString(req.query.schoolId);
+    if (selectedSchoolId && (!isObjectId(selectedSchoolId) || !assertSchoolAccess(access, selectedSchoolId))) return deny(res, "Selected Niswan is outside your permission.");
     if (!isObjectId(studentId) || !isObjectId(courseId)) {
       return res.status(400).json({ success: false, error: "Please select student and course." });
     }
@@ -1133,6 +1142,7 @@ export const getConsolidatedMarksheet = async (req, res) => {
     ]);
 
     if (!student || !course) return res.status(404).json({ success: false, error: "Student or course not found." });
+    if (selectedSchoolId && String(student.schoolId?._id || student.schoolId) !== selectedSchoolId) return res.status(400).json({ success: false, error: "Selected student does not belong to the selected Niswan." });
     if (!assertSchoolAccess(access, student.schoolId?._id || student.schoolId)) {
       return deny(res, "Selected student is outside your permitted Niswan scope.");
     }
@@ -1436,11 +1446,19 @@ export const printConsolidatedMarksheet = async (req, res) => {
 
     const studentId = cleanString(req.query.studentId);
     const courseId = cleanString(req.query.courseId);
+    const selectedSchoolId = cleanString(req.query.schoolId);
+    if (selectedSchoolId && (!isObjectId(selectedSchoolId) || !assertSchoolAccess(access, selectedSchoolId))) return deny(res, "Selected Niswan is outside your permission.");
     if (!isObjectId(studentId) || !isObjectId(courseId)) {
       return res.status(400).json({ success: false, error: "Please select student and course." });
     }
 
+    const selectedStudent = await Student.findById(studentId).select("schoolId").lean();
+    if (!selectedStudent) return res.status(404).json({ success: false, error: "Student or course not found." });
+    if (selectedSchoolId && String(selectedStudent.schoolId) !== selectedSchoolId) return res.status(400).json({ success: false, error: "Selected student does not belong to the selected Niswan." });
+    if (!assertSchoolAccess(access, selectedStudent.schoolId)) return deny(res, "Selected student is outside your permitted Niswan scope.");
+
     const data = await getConsolidatedData({ studentId, courseId });
+    if (selectedSchoolId && String(data.student?.schoolId?._id || data.student?.schoolId) !== selectedSchoolId) return res.status(400).json({ success: false, error: "Selected student does not belong to the selected Niswan." });
     if (!assertSchoolAccess(access, data.student?.schoolId?._id || data.student?.schoolId)) {
       return deny(res, "Selected student is outside your permitted Niswan scope.");
     }

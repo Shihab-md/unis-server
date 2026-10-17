@@ -1,3 +1,4 @@
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
 import multer from "multer";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
@@ -928,17 +929,25 @@ const updateSchool = async (req, res) => {
 const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleteSchool = await School.findOneAndDelete({ _id: id, ...getNiswanSchoolFilter() })
-    if (!deleteSchool) {
-      return res.status(404).json({ success: false, error: "Niswan not found" });
+    if (!/^[a-f0-9]{24}$/i.test(String(id || ""))) return res.status(400).json({ success: false, error: "Invalid Niswan." });
+    const scope = await getAccessContext(req.user);
+    if (!["superadmin", "hqadmin"].includes(scope.role) || !scope.isHQ || !scope.isActive) {
+      return res.status(403).json({ success: false, error: "You do not have permission to deactivate Niswans." });
     }
-
-    const redis = await getRedis();
-    await redis.set('totalSchools', String(await School.countDocuments(getNiswanSchoolFilter())));
-
-    return res.status(200).json({ success: true, deleteSchool })
+    const school = await School.findOneAndUpdate({ _id: id, ...getNiswanSchoolFilter() },
+      { $set: { active: "In-Active", updatedAt: new Date() } }, { new: true, runValidators: true });
+    if (!school) return res.status(404).json({ success: false, error: "Niswan not found" });
+    // Database success must not become a failed delete response when Redis is down.
+    let timer;
+    try {
+      await Promise.race([(async () => { const redis = await getRedis(); await redis.del(["schools", "totalSchools"]); })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("cache timeout")), 1500); })]);
+    }
+    catch (error) { console.warn("[deactivateSchool] cache refresh skipped:", error?.message || error); }
+    finally { clearTimeout(timer); }
+    return res.status(200).json({ success: true, message: "Niswan deactivated successfully.", resourceId: id, school, deleteSchool: school });
   } catch (error) {
-    return res.status(500).json({ success: false, error: "delete School server error" })
+    return res.status(500).json({ success: false, error: "Unable to deactivate Niswan." });
   }
 }
 

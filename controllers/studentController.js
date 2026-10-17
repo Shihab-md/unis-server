@@ -1,3 +1,4 @@
+import { assertProfileCoursesUnchanged } from "../utils/studentCoursePolicy.js";
 import multer from "multer";
 import { put } from "@vercel/blob";
 import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
@@ -483,6 +484,7 @@ const addStudent = async (req, res) => {
     req.body.schoolId = safeSchoolId;
 
     const schoolById = await School.findOne({ _id: safeSchoolId, ...getNiswanSchoolFilter() });
+    if (schoolById && schoolById.active !== "Active") return res.status(403).json({ success: false, code: "SC_SCHOOL_INACTIVE", error: "New admissions are not allowed for an inactive Niswan." });
     if (schoolById == null) {
       return res
         .status(404)
@@ -959,7 +961,7 @@ const importStudentsData = async (req, res) => {
     ];
 
     const schools = await School.find({ code: { $in: niswanCodes }, ...getNiswanSchoolFilter() })
-      .select("_id code districtStateId")
+      .select("_id code districtStateId active")
       .lean();
 
     const schoolMap = new Map();
@@ -1039,6 +1041,9 @@ const importStudentsData = async (req, res) => {
       const school = niswanCode ? schoolMap.get(niswanCode) : null;
       if (!school) {
         errors.push(`NiswanCode not available : ${niswanCode}`);
+      }
+      if (school && school.active !== "Active") {
+        errors.push("New admissions are not allowed for an inactive Niswan.");
       }
 
       const duplicateKey =
@@ -2688,6 +2693,10 @@ const updateStudent = async (req, res) => {
         console.log("AC Year : " + safeAcYear);
         const academicYearById = await AcademicYear.findById(safeAcYear).select("_id").session(session);
         if (!academicYearById) throw new Error("Academic Year Not exists");
+        const academicFilter = { studentId: student._id, acYear: academicYearById._id };
+        const prevAcademic = await Academic.findOne(academicFilter).session(session).lean();
+        assertProfileCoursesUnchanged(prevAcademic, req.body);
+
 
         // helpers
         const toNum = (v) => {
@@ -2695,23 +2704,7 @@ const updateStudent = async (req, res) => {
           return Number.isFinite(n) ? n : 0;
         };
 
-        const finalFees = (fees, discount) => Math.max(0, toNum(fees) - toNum(discount));
-
         const hostelFinalFeesVal = Math.max(0, toNum(hostelFees) - toNum(hostelDiscount));
-
-        const finalFees1Val = finalFees(fees1, discount1);
-        const finalFees2Val = finalFees(fees2, discount2);
-        const finalFees3Val = finalFees(fees3, discount3);
-        const finalFees4Val = finalFees(fees4, discount4);
-        const finalFees5Val = finalFees(fees5, discount5);
-
-        const totalFees =
-          finalFees1Val +
-          finalFees2Val +
-          finalFees3Val +
-          finalFees4Val +
-          finalFees5Val +
-          hostelFinalFeesVal;
 
         // 2) Update User (name + optional profileImage)
         const userUpdate = {
@@ -2775,157 +2768,26 @@ const updateStudent = async (req, res) => {
 
         if (!updatedStudent) throw new Error("Failed to update student");
 
-        // 4) Upsert Academic (per studentId + acYear)
-        const academicFilter = { studentId: student._id, acYear: academicYearById._id };
-
-
-        const prevAcademic = await Academic.findOne(academicFilter).session(session).lean(); // ✅ MODIFIED: compare old vs new slots
-        const academicUpdate = {
-          instituteId1: instituteId1 || null,
-          courseId1: courseId1 || null,
-          refNumber1,
-          year1,
-          fees1,
-          discount1,
-          finalFees1: finalFees1Val,
-          status1: instituteId1 && courseId1 ? "Admission" : null,
-
-          instituteId2: instituteId2 || null,
-          courseId2: courseId2 || null,
-          refNumber2,
-          year2,
-          fees2,
-          discount2,
-          finalFees2: finalFees2Val,
-          status2: instituteId2 && courseId2 ? "Admission" : null,
-
-          instituteId3: instituteId3 || null,
-          courseId3: courseId3 || null,
-          refNumber3,
-          year3,
-          fees3,
-          discount3,
-          finalFees3: finalFees3Val,
-          status3: instituteId3 && courseId3 ? "Admission" : null,
-
-          instituteId4: instituteId4 || null,
-          courseId4: courseId4 || null,
-          refNumber4,
-          year4,
-          fees4,
-          discount4,
-          finalFees4: finalFees4Val,
-          status4: instituteId4 && courseId4 ? "Admission" : null,
-
-          instituteId5: instituteId5 || null,
-          courseId5: courseId5 || null,
-          refNumber5,
-          year5,
-          fees5,
-          discount5,
-          finalFees5: finalFees5Val,
-          status5: instituteId5 && courseId5 ? "Admission" : null,
-        };
+        // 4) Update academic metadata while retaining saved courses and fees.
+        const academicUpdate = {};
+        for (let slot = 1; slot <= 5; slot++) {
+          for (const field of ["instituteId", "courseId", "fees", "discount", "finalFees", "status", "grade"]) academicUpdate[`${field}${slot}`] = prevAcademic[`${field}${slot}`] ?? null;
+          for (const field of ["refNumber", "year"]) {
+            const key = `${field}${slot}`; academicUpdate[key] = Object.hasOwn(req.body, key) ? req.body[key] : prevAcademic[key];
+          }
+        }
 
         const academicDoc = await Academic.findOneAndUpdate(
           academicFilter,
           { $set: academicUpdate },
-          { new: true, upsert: true, session }
+          { new: true, session }
         );
 
         if (!academicDoc?._id) throw new Error("Failed to upsert academic");
 
-        const courseNamesText = await getAcademicCourseNamesText(academicDoc, session);
+        // Profile edits preserve financial Accounts, invoices, payments, fee-paid flags,
+        // and Student.courses. Course changes use the explicit confirmed action.
 
-        // 5) Upsert Account (keyed by userId + acYear + academicId)
-        // ✅ FIX: userId MUST be student.userId (NOT student._id or updatedUser._id)
-        const accountFilter = {
-          userId: student.userId,
-          acYear: academicYearById._id,
-          academicId: academicDoc._id,
-        };
-
-        // ✅ MODIFIED: capture previous fees BEFORE update (otherwise feesChanged will always be false)
-        const prevAccountDoc = await Account.findOne(accountFilter).select("fees").session(session).lean();
-
-        const accountUpdate = {
-          userId: student.userId,
-          schoolId: safeSchoolId,
-          acYear: academicYearById._id,
-          academicId: academicDoc._id,
-          receiptNumber: prevAccountDoc?.receiptNumber || "Admission",
-          type: "fees",
-          fees: totalFees,
-          paidDate: Date.now(),
-          balance: 0,
-          remarks: "Admission-updated",
-        };
-
-        const accountDoc = await Account.findOneAndUpdate(
-          accountFilter,
-          { $set: accountUpdate },
-          { new: true, upsert: true, session }
-        );
-
-        if (!accountDoc?._id) throw new Error("Failed to upsert account");
-
-        // ✅ MODIFIED: Create invoices for *each changed slot* (course1..course5)
-        // - Prevent duplicates on profile-only updates
-        // - Fix: old code compared AFTER-update account fees (always same)
-        try {
-          const prevFees = Number(prevAccountDoc?.fees || 0);
-          const feesChanged = Math.round(prevFees * 100) !== Math.round(Number(totalFees) * 100);
-
-          const changedSlots = getChangedSlots(prevAcademic, {
-            instituteId1, courseId1, fees1, discount1,
-            instituteId2, courseId2, fees2, discount2,
-            instituteId3, courseId3, fees3, discount3,
-            instituteId4, courseId4, fees4, discount4,
-            instituteId5, courseId5, fees5, discount5,
-          });
-
-          if (feesChanged || changedSlots.length > 0) {
-            for (const slot of changedSlots) {
-              await createFeesInvoiceSafe({
-                schoolId: safeSchoolId,
-                studentId: student._id,
-                userId: student.userId,
-                acYear: academicYearById._id,
-                academicId: academicDoc._id,
-                courseId: slot.courseId,
-                courseNamesText,
-                totalFees: slot.finalFees,
-                source: "COURSE_CHANGE",
-                createdBy: user._id,
-                session,
-                notes: `Auto invoice (Update) - Slot ${slot.i}`,
-              });
-            }
-
-            // ✅ If new dues created, allow paying again (reset feesPaid)
-            //await Student.findByIdAndUpdate(
-            //  id,
-            //  { $set: { feesPaid: 0 } },
-            //  { session }
-            //);
-          }
-        } catch (e) {
-          // Don't fail the whole update if invoice creation fails
-          console.log("Invoice create skipped/failed:", e?.message || e);
-        }
-
-        // 6) Update Student.courses array based on courseId1..5 (unique, non-null)
-        const coursesArray = [courseId1, courseId2, courseId3, courseId4, courseId5]
-          .filter(Boolean)
-          .map(String);
-
-        const uniqueCourses = [...new Set(coursesArray)];
-
-        await Student.findByIdAndUpdate(
-          safeStudentId,
-          { $set: { courses: uniqueCourses } },
-          { session }
-        );
       });
 
       await session.endSession();
@@ -2947,8 +2809,9 @@ const updateStudent = async (req, res) => {
     } catch (txError) {
       await session.endSession();
       console.log(txError);
-      return res.status(500).json({
+      return res.status(txError?.status || 500).json({
         success: false,
+        code: txError?.code?.startsWith?.("SC_") ? txError.code : undefined,
         error: txError?.message || "update students server error",
       });
     }

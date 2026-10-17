@@ -1,3 +1,4 @@
+import { getStudentCourseChange, previewStudentCourseChange, saveStudentCourseChange } from "../controllers/studentCourseChangeController.js";
 import express from 'express'
 import authMiddleware from '../middleware/authMiddlware.js'
 import {
@@ -42,6 +43,14 @@ router.post('/add', authMiddleware,
   }),
   requirePermission(PERMISSIONS.STUDENT_CREATE, 'You do not have permission to create Students.'),
   upload.single('file'), requireBodySchoolAccess('schoolId'), addStudent)
+
+router.get('/:id/course-change', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_COURSE_CHANGE), getStudentCourseChange)
+router.post('/:id/course-change/preview', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_COURSE_CHANGE), previewStudentCourseChange)
+router.post('/:id/course-change', authMiddleware,
+  requirePermission(PERMISSIONS.STUDENT_COURSE_CHANGE),
+  auditMutation({ action: 'STUDENT_COURSE_CHANGE', resourceType: 'Student' }), saveStudentCourseChange)
 
 router.get('/edit/:id', authMiddleware,
   requirePermission(PERMISSIONS.STUDENT_EDIT, 'You do not have permission to edit Students.'),

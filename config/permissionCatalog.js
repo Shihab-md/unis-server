@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 12;
+export const PERMISSION_CATALOG_VERSION = 13;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -23,6 +23,7 @@ export const PERMISSIONS = Object.freeze({
   STUDENT_VIEW: "student.view",
   STUDENT_CREATE: "student.create",
   STUDENT_EDIT: "student.edit",
+  STUDENT_COURSE_CHANGE: "student.course.change",
   STUDENT_DELETE: "student.delete",
   STUDENT_PROMOTE: "student.promote",
   STUDENT_IMPORT: "student.import",
@@ -276,8 +277,8 @@ export const PERMISSION_CATALOG = Object.freeze([
   {
     key: PERMISSIONS.NISWAN_DELETE,
     category: "Niswans",
-    label: "Delete Niswans",
-    description: "Delete Niswans using the existing server business rules.",
+    label: "Deactivate Niswans",
+    description: "Deactivate Niswans while retaining all linked records and history.",
     requires: [PERMISSIONS.NISWAN_VIEW],
     editable: true,
     allowedRoles: NISWAN_MANAGE_SCOPE_ROLES,
@@ -401,6 +402,12 @@ export const PERMISSION_CATALOG = Object.freeze([
     requires: [PERMISSIONS.STUDENT_VIEW],
     editable: true,
     allowedRoles: STUDENT_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_COURSE_CHANGE,
+    category: "Students", label: "Change Student Course",
+    description: "Change a student's assigned course after reviewing fees. No invoice is created.",
+    requires: [PERMISSIONS.STUDENT_VIEW], editable: true, allowedRoles: ["superadmin", "hquser"],
   },
   {
     key: PERMISSIONS.STUDENT_DELETE,
@@ -1690,6 +1697,7 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
       accountant: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE, PERMISSIONS.TA_REVIEW_VIEW, PERMISSIONS.TA_APPROVE],
     },
   },
+  { version: 13, label: "Controlled Student course changes", permissionsByRole: { hquser: [PERMISSIONS.STUDENT_COURSE_CHANGE] } },
 ]);
 
 export const getInitialRolePermissionsForBootstrap = (role) => {
