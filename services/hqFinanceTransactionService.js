@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import HqFinanceState from "../models/HqFinanceState.js";
 import TravelClaim from "../models/TravelClaim.js";
+import TravelClaimUpload from "../models/TravelClaimUpload.js";
 import PayrollRun from "../models/PayrollRun.js";
 import StaffLeave from "../models/StaffLeave.js";
 import StaffAttendance from "../models/StaffAttendance.js";
@@ -13,6 +14,8 @@ export function initializeTaWorkflow() {
     // to insert the finance singleton or build indexes inside their transaction.
     await TravelClaim.createCollection();
     await TravelClaim.createIndexes();
+    await TravelClaimUpload.createCollection();
+    await TravelClaimUpload.createIndexes();
     await PayrollRun.createCollection();
     await StaffLeave.createCollection();
     await StaffAttendance.createCollection();

@@ -19,6 +19,21 @@ export function moneyPaise(value, allowZero = false) {
 export const isDateKey = (value) => typeof value === "string" && /^20\d{2}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 export const isMonthKey = (value) => typeof value === "string" && /^20\d{2}-(0[1-9]|1[0-2])$/.test(value);
+export function monthlyClaimInput(body = {}) {
+  if (!isMonthKey(body.monthKey)) failTa("TA_INVALID_MONTH");
+  if (typeof body.description !== "string") failTa("TA_MONTHLY_FIELDS");
+  const description = body.description.trim();
+  if (!description || description.length > 2000 || Buffer.from(description, "utf8").toString("utf8") !== description || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(description)) failTa("TA_MONTHLY_FIELDS");
+  return { monthKey: body.monthKey, description, requestedAmountPaise: moneyPaise(body.amount) };
+}
+export const isRequestKey = (key) => typeof key === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key);
+export const claimMonth = (claim) => claim.claimVersion === 2 ? claim.monthKey : claim.settlementMonth || String(claim.toDateKey || "").slice(0, 7);
+export const monthlyStatus = (status) => ["Approved", "PayrollReserved", "Paid"].includes(status) ? "Approved" : status === "Submitted" ? "Submitted" : "Rejected";
+export const claimMonthFilter = (monthKey) => ({ $or: [
+  { claimVersion: 2, monthKey },
+  { claimVersion: { $ne: 2 }, settlementMonth: monthKey },
+  { claimVersion: { $ne: 2 }, settlementMonth: null, toDateKey: { $regex: `^${monthKey}-` } },
+] });
 const field = (value, max) => { if (typeof value !== "string" || !value.trim() || value.trim().length > max || Buffer.from(value, "utf8").toString("utf8") !== value || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) failTa("TA_INVALID_FIELDS"); return value.trim(); };
 export function claimInput(body) {
   if (!isDateKey(body.fromDateKey) || !isDateKey(body.toDateKey) || body.fromDateKey > body.toDateKey) failTa("TA_INVALID_DATES");

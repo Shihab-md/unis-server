@@ -570,9 +570,9 @@ export const PERMISSION_CATALOG = Object.freeze([
   },
 
   { key: PERMISSIONS.TA_SELF_VIEW, category: "Travelling Allowance", label: "View Own TA Claims", description: "View own travel claims and evidence.", requires: [], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
-  { key: PERMISSIONS.TA_SELF_MANAGE, category: "Travelling Allowance", label: "Manage Own TA Claims", description: "Create, edit, submit or cancel own unallocated travel claims.", requires: [PERMISSIONS.TA_SELF_VIEW], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
+  { key: PERMISSIONS.TA_SELF_MANAGE, category: "Travelling Allowance", label: "Manage Own TA Claims", description: "Submit monthly TA with evidence or resubmit a rejected request.", requires: [PERMISSIONS.TA_SELF_VIEW], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
   { key: PERMISSIONS.TA_REVIEW_VIEW, category: "Travelling Allowance", label: "View TA Approvals", description: "View HQ travel claims and supporting evidence.", requires: [], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
-  { key: PERMISSIONS.TA_APPROVE, category: "Travelling Allowance", label: "Approve TA Claims", description: "Approve, reject or return another staff member's claim. Self-approval is blocked.", requires: [PERMISSIONS.TA_REVIEW_VIEW], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
+  { key: PERMISSIONS.TA_APPROVE, category: "Travelling Allowance", label: "Approve TA Claims", description: "Approve or reject another staff member's monthly TA. Self-approval is blocked.", requires: [PERMISSIONS.TA_REVIEW_VIEW], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
 
   {
     key: PERMISSIONS.PAYROLL_VIEW,

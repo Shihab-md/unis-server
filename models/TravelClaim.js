@@ -15,6 +15,12 @@ const event = new Schema({
   amountPaise: Number, payrollRunId: { type: Schema.Types.ObjectId, ref: "PayrollRun" },
 }, { _id: false });
 const schema = new Schema({
+  claimVersion: Number,
+  monthKey: String,
+  description: { type: String, maxlength: 2000 },
+  role: String,
+  employeeId: String,
+  supervisorId: String,
   requestKey: { type: String, required: true }, claimNumber: { type: String, required: true, unique: true },
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   staffType: { type: String, enum: ["Employee", "Supervisor"], required: true },
@@ -33,4 +39,15 @@ schema.index({ userId: 1, requestKey: 1 }, { unique: true });
 schema.index({ userId: 1, createdAt: -1 });
 schema.index({ status: 1, settlementMonth: 1, staffType: 1, staffId: 1 });
 schema.index({ payrollRunId: 1 });
+// Existing journey-based requests have no version 2 and are retained unchanged.
+schema.index({ staffType: 1, staffId: 1, monthKey: 1 }, { unique: true,
+  partialFilterExpression: { claimVersion: 2 }, name: "monthly_ta_staff_month_unique" });
+schema.index({ monthKey: 1, status: 1 }, { partialFilterExpression: { claimVersion: 2 } });
+schema.pre("validate", function () {
+  if (this.claimVersion === 2) {
+    if (!["Submitted", "Approved", "Rejected"].includes(this.status)) this.invalidate("status", "Invalid monthly TA status");
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(this.monthKey || "")) this.invalidate("monthKey", "Invalid monthly TA month");
+    if (!this.description?.trim()) this.invalidate("description", "Description required");
+  }
+});
 export default mongoose.model("TravelClaim", schema);

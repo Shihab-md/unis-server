@@ -5,7 +5,7 @@ import { getActorStaff } from "./attendanceAccessService.js";
 import { getRequestPermissions } from "./permissionService.js";
 import { PERMISSIONS } from "../config/permissionCatalog.js";
 import { withHqFinanceTransaction } from "./hqFinanceTransactionService.js";
-import { TA_SELF_ROLES, TA_REVIEW_ROLES, failTa, claimInput, assertRevision, assertEditable, indiaDateKey, moneyPaise, isMonthKey } from "../utils/travelClaimPolicy.js";
+import { TA_SELF_ROLES, TA_REVIEW_ROLES, failTa, assertRevision, moneyPaise, isMonthKey, claimMonth, monthlyStatus } from "../utils/travelClaimPolicy.js";
 
 export async function taAccess(req) {
   const role = String(req.user?.role || "").trim().toLowerCase();
@@ -36,66 +36,32 @@ export async function getReadableClaim(req, access, session = null) {
 }
 export function publicClaim(claim) {
   const value = claim.toObject ? claim.toObject() : claim;
-  return { ...value, evidence: (value.evidence || []).filter((e) => !e.removed).map((e) => ({
-    _id: e._id, uploadKey: e.uploadKey, name: e.name, mimeType: e.mimeType, size: e.size, uploadedAt: e.uploadedAt,
-  })) };
+  const isMonthly = value.claimVersion === 2;
+  const description = isMonthly ? value.description : [value.purpose, [value.fromPlace, value.toPlace].filter(Boolean).join(" → "), value.transport,
+    ...(value.expenses || []).map((e) => `${e.description}: ${(Number(e.amountPaise || 0) / 100).toFixed(2)}`)].filter(Boolean).join("\n");
+  return {
+    _id: value._id, claimNumber: value.claimNumber, userId: value.userId, staffType: value.staffType, staffId: value.staffId,
+    role: value.role || "", name: value.name, staffCode: value.staffCode,
+    employeeId: value.employeeId || (value.staffType === "Employee" ? value.staffCode : ""),
+    supervisorId: value.supervisorId || (value.staffType === "Supervisor" ? value.staffCode : ""),
+    monthKey: claimMonth(value), claimVersion: isMonthly ? 2 : 1, description,
+    requestedAmountPaise: value.requestedAmountPaise, approvedAmountPaise: value.approvedAmountPaise,
+    status: monthlyStatus(value.status), revision: Number(value.revision || 0),
+    decisionReason: value.decisionReason || "", submittedAt: value.submittedAt, decidedAt: value.decidedAt,
+    payrollRunId: value.payrollRunId, payrollMonth: value.payrollMonth, paidAt: value.paidAt,
+    history: value.history || [], createdAt: value.createdAt,
+    evidence: (value.evidence || []).filter((e) => !e.removed).map((e) => ({ _id: e._id, uploadKey: e.uploadKey, name: e.name, mimeType: e.mimeType, size: e.size, uploadedAt: e.uploadedAt })),
+  };
 }
 export const addTaHistory = (claim, action, userId, extra = {}) => {
   if (claim.history.length >= 200 && !["PayrollReserved", "PayrollReleased", "Paid"].includes(action)) failTa("TA_HISTORY_LIMIT", 409);
-  claim.history.push({ action, actorId: userId, at: new Date(), ...extra }); claim.revision += 1;
+  claim.history.push({ action, actorId: userId, at: new Date(), ...extra }); claim.revision = Number(claim.revision || 0) + 1;
 };
 
-export async function createClaim(req, access) {
-  if (!access.canManageOwn) failTa("TA_FORBIDDEN", 403);
-  const key = req.body.requestKey;
-  if (typeof key !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)) failTa("TA_INVALID_FIELDS");
-  const fields = claimInput(req.body);
-  return withHqFinanceTransaction(async (session) => {
-    const previous = await TravelClaim.findOne({ userId: req.user._id, requestKey: key }).session(session);
-    if (previous) { assertOwner(previous, req, access); return previous; }
-    const actor = access.actor; const id = new mongoose.Types.ObjectId();
-    const created = new TravelClaim({ ...fields, _id: id, requestKey: key, claimNumber: `TA-${id.toString().toUpperCase()}`,
-      staffType: actor.staffType, staffId: actor.staffId, userId: req.user._id,
-      name: actor.record.userId?.name || req.user.name || actor.record.employeeId || actor.record.supervisorId,
-      staffCode: actor.record.employeeId || actor.record.supervisorId || "", status: "Draft",
-    });
-    addTaHistory(created, "Created", req.user._id);
-    await created.save({ session }); return created;
-  });
-}
-
-export async function saveClaim(req, access) {
-  if (!access.canManageOwn) failTa("TA_FORBIDDEN", 403);
-  const fields = claimInput(req.body);
-  return withHqFinanceTransaction(async (session) => {
-    const claim = await getReadableClaim(req, access, session); assertOwner(claim, req, access);
-    assertRevision(claim, req.body.revision); assertEditable(claim);
-    Object.assign(claim, fields, { status: "Draft" });
-    addTaHistory(claim, "Edited", req.user._id);
-    await claim.save({ session }); return claim;
-  });
-}
-
-export async function setClaimStatus(req, access) {
-  if (!access.canManageOwn) failTa("TA_FORBIDDEN", 403);
-  return withHqFinanceTransaction(async (session) => {
-    const claim = await getReadableClaim(req, access, session); assertOwner(claim, req, access);
-    assertRevision(claim, req.body.revision);
-    const action = req.body.action;
-    if (action === "Submit") {
-      assertEditable(claim);
-      claimInput({ ...claim.toObject(), expenses: claim.expenses.map((row) => ({ description: row.description, amount: (row.amountPaise / 100).toFixed(2) })) });
-      if (claim.toDateKey > indiaDateKey()) failTa("TA_FUTURE_TRAVEL");
-      if (!claim.evidence.some((e) => !e.removed)) failTa("TA_EVIDENCE_REQUIRED");
-      claim.status = "Submitted"; claim.submittedAt = new Date(); claim.decisionReason = ""; claim.decidedBy = null; claim.decidedAt = null;
-    } else if (action === "Cancel") {
-      if (!["Draft", "Returned", "Submitted"].includes(claim.status) || claim.payrollRunId) failTa("TA_LOCKED", 409);
-      claim.status = "Cancelled";
-    } else failTa("TA_INVALID_FIELDS");
-    addTaHistory(claim, claim.status, req.user._id);
-    await claim.save({ session }); return claim;
-  });
-}
+// Older clients cannot create drafts, return requests or edit submitted evidence.
+export async function createClaim() { failTa("TA_MONTHLY_REQUIRED", 409); }
+export async function saveClaim() { failTa("TA_MONTHLY_REQUIRED", 409); }
+export async function setClaimStatus() { failTa("TA_MONTHLY_REQUIRED", 409); }
 
 export async function decideClaim(req, access) {
   if (!access.canApprove) failTa("TA_FORBIDDEN", 403);
@@ -105,21 +71,24 @@ export async function decideClaim(req, access) {
     assertRevision(claim, req.body.revision);
     if (claim.status !== "Submitted" || claim.payrollRunId) failTa("TA_LOCKED", 409);
     const decision = req.body.decision;
-    if (!["Approved", "Rejected", "Returned"].includes(decision)) failTa("TA_INVALID_FIELDS");
-    const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
-    if (Buffer.from(reason, "utf8").toString("utf8") !== reason || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(reason)) failTa("TA_INVALID_FIELDS");
-    if (reason.length > 1000 || ((decision === "Rejected" || decision === "Returned") && !reason)) failTa("TA_REASON_REQUIRED");
+    if (!["Approved", "Rejected"].includes(decision)) failTa("TA_MONTHLY_DECISION");
+    const reason = req.body.reason === undefined ? "" : req.body.reason;
+    if (typeof reason !== "string" || reason.trim().length > 1000 || Buffer.from(reason, "utf8").toString("utf8") !== reason || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(reason)) failTa("TA_INVALID_FIELDS");
+    if (decision === "Rejected" && !reason.trim()) failTa("TA_REJECTION_REASON");
     if (decision === "Approved") {
-      const amount = moneyPaise(req.body.approvedAmount);
-      if (amount > claim.requestedAmountPaise) failTa("TA_APPROVAL_AMOUNT");
-      if (amount < claim.requestedAmountPaise && !reason) failTa("TA_REASON_REQUIRED");
-      if (!isMonthKey(req.body.settlementMonth) || req.body.settlementMonth < claim.toDateKey.slice(0, 7)) failTa("TA_INVALID_MONTH");
-      const run = await PayrollRun.findOne({ monthKey: req.body.settlementMonth, organizationType: "HQ" }).session(session);
+      const monthKey = claimMonth(claim);
+      if (!isMonthKey(monthKey)) failTa("TA_INVALID_MONTH");
+      const run = await PayrollRun.findOne({ monthKey, organizationType: "HQ" }).session(session);
       if (run && ["Finalized", "Paid"].includes(run.status)) failTa("TA_MONTH_LOCKED", 409);
-      claim.approvedAmountPaise = amount; claim.settlementMonth = req.body.settlementMonth;
+      // Approval accepts the submitted total exactly; correction requires rejection.
+      if (req.body.approvedAmount !== undefined && moneyPaise(req.body.approvedAmount) !== claim.requestedAmountPaise) failTa("TA_MONTHLY_DECISION");
+      if (req.body.settlementMonth !== undefined && req.body.settlementMonth !== monthKey) failTa("TA_MONTHLY_DECISION");
+      claim.approvedAmountPaise = claim.requestedAmountPaise; claim.settlementMonth = monthKey;
+      await PayrollRun.updateMany({ monthKey, organizationType: "HQ", status: { $in: ["Draft", "Reviewed"] }, items: { $elemMatch: { staffType: claim.staffType, staffId: claim.staffId } } },
+        { $set: { status: "Draft", needsRecalculation: true, reviewedBy: null, reviewedAt: null, updatedAt: new Date() }, $inc: { revision: 1 } }, { session });
     }
-    claim.status = decision; claim.decidedBy = req.user._id; claim.decidedAt = new Date(); claim.decisionReason = reason;
-    addTaHistory(claim, decision, req.user._id, { reason, amountPaise: claim.approvedAmountPaise });
+    claim.status = decision; claim.decidedBy = req.user._id; claim.decidedAt = new Date(); claim.decisionReason = reason.trim();
+    addTaHistory(claim, decision, req.user._id, { reason: reason.trim(), amountPaise: claim.approvedAmountPaise });
     await claim.save({ session }); return claim;
   });
 }
