@@ -940,17 +940,40 @@ export const getSchoolListReport = async (req, res) => {
     if (filters.supervisorId) match.supervisorId = new mongoose.Types.ObjectId(filters.supervisorId);
     if (filters.districtStateId) match.districtStateId = new mongoose.Types.ObjectId(filters.districtStateId);
     if (filters.status) match.active = filters.status;
+    const projection = buildSchoolFinalProjectStage();
+    projection.$project._reportSupervisorRef = 1;
     const schools = await School.aggregate([
-      { $match: match }, ...await buildSchoolCountsPipeline(), ...buildSchoolPopulatePipeline(),
-      buildSchoolFinalProjectStage(), { $sort: { code: 1, _id: 1 } },
+      { $match: match }, { $set: { _reportSupervisorRef: "$supervisorId" } },
+      ...await buildSchoolCountsPipeline(), ...buildSchoolPopulatePipeline(),
+      projection, { $sort: { code: 1, _id: 1 } },
     ]);
-    const rows = schools.map(s => ({
-      code: s.code || "", nameEnglish: s.nameEnglish || "", nameNative: s.nameNative || "", nameArabic: s.nameArabic || "",
-      address: s.address || "", city: s.city || "", districtState: [s.districtStateId?.district, s.districtStateId?.state].filter(Boolean).join(", "),
-      incharge1: s.incharge1 || "", incharge1Number: s.incharge1Number == null ? "" : String(s.incharge1Number), active: s.active || "",
-      supervisorRecordId: s.supervisorId?._id ? String(s.supervisorId._id) : "", supervisorCode: s.supervisorId?.supervisorId || "", supervisorName: s.supervisorId?.userId?.name || "",
-      studentCount: Number(s.studentCount || 0), employeeCount: Number(s.employeeCount || 0),
-    })).filter(row => schoolReportSearch(row, filters.search));
+    // Some older Niswans store the Supervisor's User ID. Resolve both forms
+    // without exposing salary, bank details or unrelated profile fields.
+    const references = schools.map(s => s._reportSupervisorRef).filter(Boolean);
+    const supervisors = references.length ? await Supervisor.find({ $or: [{ _id: { $in: references } }, { userId: { $in: references } }] })
+      .select("supervisorId userId contactNumber").populate("userId", "name").lean() : [];
+    const supervisorMap = new Map();
+    for (const item of supervisors) {
+      supervisorMap.set(String(item._id), item);
+      if (item.userId?._id) supervisorMap.set(String(item.userId._id), item);
+    }
+    const rows = schools.map(s => {
+      const supervisor = supervisorMap.get(String(s._reportSupervisorRef || ""));
+      return {
+        code: s.code || "", nameEnglish: s.nameEnglish || "", nameNative: s.nameNative || "", nameArabic: s.nameArabic || "",
+        address: s.address || "", city: s.city || "", districtState: [s.districtStateId?.district, s.districtStateId?.state].filter(Boolean).join(", "),
+        incharge1: s.incharge1 || "", incharge1Number: s.incharge1Number == null ? "" : String(s.incharge1Number), active: s.active || "",
+        supervisorRecordId: supervisor ? String(supervisor._id) : "", supervisorCode: supervisor?.supervisorId || "", supervisorName: supervisor?.userId?.name || "",
+        supervisorContact: supervisor?.contactNumber == null ? "" : String(supervisor.contactNumber),
+        studentCount: Number(s.studentCount || 0), employeeCount: Number(s.employeeCount || 0),
+        studentCountsByCourse: (Array.isArray(s.studentCountsByCourse) ? s.studentCountsByCourse : []).map(item => ({
+          courseId: item.courseId ? String(item.courseId) : null, courseName: item.courseName || "", count: Number(item.count || 0),
+        })),
+        employeeCountsByRole: (Array.isArray(s.employeeCountsByRole) ? s.employeeCountsByRole : []).map(item => ({
+          role: item.role ? toCamelCase(item.role) : "", count: Number(item.count || 0),
+        })),
+      };
+    }).filter(row => schoolReportSearch(row, filters.search));
     const singleIds = [...new Set(rows.map(row => row.supervisorRecordId).filter(Boolean))];
     const supervisorId = access.role === "supervisor" ? access.supervisorId : filters.supervisorId || (singleIds.length === 1 && rows.every(row => row.supervisorRecordId) ? singleIds[0] : null);
     const [supervisor, districtState] = await Promise.all([
@@ -961,7 +984,7 @@ export const getSchoolListReport = async (req, res) => {
     return res.json({ success: true, report: {
       generatedAt: new Date().toISOString(), filters: { ...filters, districtStateName: districtState ? [districtState.district, districtState.state].filter(Boolean).join(", ") : "" },
       supervisor: supervisor ? { code: supervisor.supervisorId, name: supervisor.userId?.name || "" } : null,
-      showSupervisorColumn: !supervisor, totalNiswans: rows.length,
+      showSupervisorColumn: !supervisor, showSupervisorDetails: access.role !== "supervisor", totalNiswans: rows.length,
       totalStudents: rows.reduce((sum, row) => sum + row.studentCount, 0), totalStaff: rows.reduce((sum, row) => sum + row.employeeCount, 0), rows,
     } });
   } catch (error) {

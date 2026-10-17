@@ -1,6 +1,6 @@
 const trim = (value) => String(value ?? "").trim();
 
-export const SERVER_VERSION = "9_20_39";
+export const SERVER_VERSION = "9_20_40";
 
 const hasStagingRuntimeSignal = () => {
   const values = [
