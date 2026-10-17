@@ -121,7 +121,7 @@ const addEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -150,12 +150,6 @@ const addEmployee = async (req, res) => {
     const roleNorm = String(role || "").toLowerCase().trim();
     const emailNorm = String(email || "").toLowerCase().trim();
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     const organizationType = normalizeOrganizationType(
       req.employeeOrganizationType || (HQ_EMPLOYEE_ROLE_SET.has(roleNorm) ? ORGANIZATION_TYPES.HQ : ORGANIZATION_TYPES.NISWAN)
@@ -256,7 +250,7 @@ const addEmployee = async (req, res) => {
             maritalStatus,
             doj,
             salary,
-            travellingAllowance: normalizedTravellingAllowance,
+            
             otherDesignation: String(otherDesignation || "").trim(),
             activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
             bankAccountDetails: String(bankAccountDetails || "").trim(),
@@ -431,8 +425,6 @@ const importEmployeesData = async (req, res) => {
       if (!dateOrderValidation.ok) errors.push(dateOrderValidation.error);
 
       const salary = Number(safeStr(r.salary));
-      const travellingAllowanceRaw = safeStr(r.travellingAllowance);
-      const travellingAllowance = travellingAllowanceRaw === "" ? 0 : Number(travellingAllowanceRaw);
 
       // ✅ Required validations
       if (!isNonEmpty(schoolIdRaw)) errors.push("schoolId is missing");
@@ -444,7 +436,6 @@ const importEmployeesData = async (req, res) => {
       if (!isNonEmpty(address)) errors.push("address is missing");
       if (!isNonEmpty(role)) errors.push("role is missing");
       if (!Number.isFinite(salary)) errors.push("salary is invalid");
-      if (!Number.isFinite(travellingAllowance) || travellingAllowance < 0) errors.push("travellingAllowance is invalid");
 
       // ✅ Only admin import allowed
       if (role !== "admin") errors.push("Only role=admin allowed for this import");
@@ -507,7 +498,7 @@ const importEmployeesData = async (req, res) => {
           maritalStatus,
           doj,
           salary,
-          travellingAllowance,
+
           otherDesignation,
           activitiesCarriedOut,
           bankAccountDetails,
@@ -877,7 +868,7 @@ const updateEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -937,12 +928,6 @@ const updateEmployee = async (req, res) => {
       }
     }
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     let updateUser;
     if (req.file) {
@@ -977,7 +962,7 @@ const updateEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance: normalizedTravellingAllowance,
+      
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),

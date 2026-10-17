@@ -35,7 +35,7 @@ const addSupervisor = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -65,12 +65,6 @@ const addSupervisor = async (req, res) => {
 
     console.log("user started");
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     if (!PASSWORD_REGEX.test(String(password || ""))) {
       return res.status(400).json({ success: false, error: "Password must be 8–64 characters with uppercase, lowercase, number and special character, with no spaces." });
@@ -113,7 +107,7 @@ const addSupervisor = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance: normalizedTravellingAllowance,
+      
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),
@@ -841,7 +835,7 @@ const updateSupervisor = async (req, res) => {
     const { id } = req.params;
     const { name, email, supervisorId, contactNumber, address, routeName, gender,
       qualification, fatherGuardianName, dob, maritalStatus, doj, jobType, salary,
-      travellingAllowance, otherDesignation, activitiesCarriedOut, bankAccountDetails,
+      otherDesignation, activitiesCarriedOut, bankAccountDetails,
       remarks, active } = req.body;
 
     const dobValidation = validateActualDate(dob, "Date of Birth");
@@ -877,12 +871,6 @@ const updateSupervisor = async (req, res) => {
         .json({ success: false, error: "User not found." });
     }
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     const normalizedSupervisorId = String(supervisorId || "").trim();
     const duplicateSupervisorId = await Supervisor.findOne({ supervisorId: normalizedSupervisorId, _id: { $ne: supervisor._id } }).select("_id").lean();
@@ -926,7 +914,7 @@ const updateSupervisor = async (req, res) => {
       qualification: toCamelCase(qualification),
       fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
       dob, maritalStatus, jobType,
-      doj, salary, travellingAllowance: normalizedTravellingAllowance,
+      doj, salary, 
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),

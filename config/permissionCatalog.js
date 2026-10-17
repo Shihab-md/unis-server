@@ -1,4 +1,4 @@
-export const PERMISSION_CATALOG_VERSION = 11;
+export const PERMISSION_CATALOG_VERSION = 12;
 
 export const PERMISSIONS = Object.freeze({
   ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
@@ -45,6 +45,11 @@ export const PERMISSIONS = Object.freeze({
 
   STUDENT_ATTENDANCE_REPORT_VIEW: "attendance.student.report.view",
   STAFF_ATTENDANCE_REPORT_VIEW: "attendance.staff.report.view",
+
+  TA_SELF_VIEW: "ta.self.view",
+  TA_SELF_MANAGE: "ta.self.manage",
+  TA_REVIEW_VIEW: "ta.review.view",
+  TA_APPROVE: "ta.review.approve",
 
   PAYROLL_VIEW: "payroll.view",
   PAYROLL_GENERATE: "payroll.generate",
@@ -563,6 +568,11 @@ export const PERMISSION_CATALOG = Object.freeze([
     editable: true,
     allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
   },
+
+  { key: PERMISSIONS.TA_SELF_VIEW, category: "Travelling Allowance", label: "View Own TA Claims", description: "View own travel claims and evidence.", requires: [], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
+  { key: PERMISSIONS.TA_SELF_MANAGE, category: "Travelling Allowance", label: "Manage Own TA Claims", description: "Create, edit, submit or cancel own unallocated travel claims.", requires: [PERMISSIONS.TA_SELF_VIEW], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
+  { key: PERMISSIONS.TA_REVIEW_VIEW, category: "Travelling Allowance", label: "View TA Approvals", description: "View HQ travel claims and supporting evidence.", requires: [], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
+  { key: PERMISSIONS.TA_APPROVE, category: "Travelling Allowance", label: "Approve TA Claims", description: "Approve, reject or return another staff member's claim. Self-approval is blocked.", requires: [PERMISSIONS.TA_REVIEW_VIEW], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
 
   {
     key: PERMISSIONS.PAYROLL_VIEW,
@@ -1583,6 +1593,7 @@ const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
     ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.supervisor,
     ...PHASE_6_PERMISSIONS_BY_ROLE.supervisor,
+    PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE,
     PERMISSIONS.MARKSHEET_VIEW,
     PERMISSIONS.MARKSHEET_ENTER,
     PERMISSIONS.MARKSHEET_ANNUAL,
@@ -1668,6 +1679,16 @@ export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
     label: "Payroll HQ-only policy normalization",
     permissionsByRole: {},
     normalizeToCurrentPolicy: true,
+  },
+  {
+    version: 12, label: "TA claims and approvals",
+    permissionsByRole: {
+      supervisor: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hquser: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hqstaff: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hqadmin: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE, PERMISSIONS.TA_REVIEW_VIEW, PERMISSIONS.TA_APPROVE],
+      accountant: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE, PERMISSIONS.TA_REVIEW_VIEW, PERMISSIONS.TA_APPROVE],
+    },
   },
 ]);
 

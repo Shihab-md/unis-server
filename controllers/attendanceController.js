@@ -4,6 +4,9 @@ import AcademicYear from "../models/AcademicYear.js";
 import Course from "../models/Course.js";
 import Employee from "../models/Employee.js";
 import PayrollRun from "../models/PayrollRun.js";
+import { withHqFinanceTransaction } from "../services/hqFinanceTransactionService.js";
+import { reservePayrollClaims, payrollTaAmount, assertPayrollClaims, settlePayrollClaims, assertPayrollRevision } from "../services/payrollTravelClaimService.js";
+import { failTa, moneyPaise, isMonthKey, TA_SELF_ROLES, TA_REVIEW_ROLES } from "../utils/travelClaimPolicy.js";
 import School from "../models/School.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import StaffLeave from "../models/StaffLeave.js";
@@ -47,6 +50,7 @@ const sendError = (res, error) => {
   if (status >= 500) console.log("[attendance]", error?.stack || error?.message || error);
   return res.status(status).json({
     success: false,
+    code: error?.name === "TaError" ? error.code : undefined,
     error: error?.message || "Attendance operation failed.",
   });
 };
@@ -176,6 +180,7 @@ const loadStaffRoster = async ({
   schoolId,
   includeInactive = false,
   staffCategory = "ALL",
+  session = null,
 }) => {
   const category = String(staffCategory || "ALL").trim().toUpperCase();
   const includeEmployees = organizationType !== "HQ" || ["ALL", "HQ_STAFF"].includes(category);
@@ -188,8 +193,8 @@ const loadStaffRoster = async ({
         ? { organizationType: ORGANIZATION_TYPES.HQ }
         : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId };
     if (!includeInactive) employeeFilter.active = "Active";
-    const employees = await Employee.find(employeeFilter)
-      .select("_id userId schoolId organizationType employeeId designation salary travellingAllowance active")
+    const employees = await Employee.find(employeeFilter).session(session)
+      .select("_id userId schoolId organizationType employeeId designation salary active")
       .populate({ path: "userId", select: "_id name email role" })
       .sort({ employeeId: 1 })
       .lean();
@@ -198,7 +203,7 @@ const loadStaffRoster = async ({
       userId: String(record.userId?._id || ""), staffCode: record.employeeId,
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role), designation: record.designation || "",
-      salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
+      salary: Number(record.salary || 0), 
       active: record.active,
       organizationType: record.organizationType || organizationType,
       schoolId: organizationType === ORGANIZATION_TYPES.HQ ? "" : String(record.schoolId || ""),
@@ -207,8 +212,8 @@ const loadStaffRoster = async ({
 
   if (includeMuavins) {
     const supervisorFilter = includeInactive ? {} : { active: "Active" };
-    const supervisors = await Supervisor.find(supervisorFilter)
-      .select("_id userId supervisorId salary travellingAllowance active jobType routeName")
+    const supervisors = await Supervisor.find(supervisorFilter).session(session)
+      .select("_id userId supervisorId salary active jobType routeName")
       .populate({ path: "userId", select: "_id name email role" })
       .sort({ supervisorId: 1 })
       .lean();
@@ -217,7 +222,7 @@ const loadStaffRoster = async ({
       userId: String(record.userId?._id || ""), staffCode: record.supervisorId,
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role || "supervisor"), designation: "Muavin",
-      salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
+      salary: Number(record.salary || 0), 
       active: record.active, organizationType: ORGANIZATION_TYPES.HQ, schoolId: "",
     })));
   }
@@ -347,6 +352,8 @@ export const getAttendanceMeta = async (req, res) => {
         canManageAnyStudents: access.canManageAnyStudents,
         canViewOwnStaffAttendance: access.canViewOwnStaffAttendance,
         canApplyOwnStaffLeave: access.canApplyOwnStaffLeave,
+        canViewOwnTaClaims: TA_SELF_ROLES.has(access.role) && access.actorStaff?.active === "Active" && access.actorOrganizationType === "HQ",
+        canReviewTaClaims: TA_REVIEW_ROLES.has(access.role) && (access.role === "superadmin" || (access.actorStaff?.active === "Active" && access.actorOrganizationType === "HQ")),
         canManagePayrollGlobally,
         canManageOwnNiswanPayroll,
         canViewOwnPayslip,
@@ -1346,7 +1353,7 @@ export const updateStaffLeaveStatus = async (req, res) => {
   }
 };
 
-const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, toDateKey }) => {
+const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, toDateKey, session = null }) => {
   const leaves = await StaffLeave.find({
     staffType,
     staffId,
@@ -1354,6 +1361,7 @@ const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, to
     fromDateKey: { $lte: toDateKey },
     toDateKey: { $gte: fromDateKey },
   })
+    .session(session)
     .select("fromDateKey toDateKey dayType isPaid")
     .lean();
 
@@ -1429,6 +1437,7 @@ export const listMyPayslips = async (req, res) => {
         const isHq = run.organizationType === ORGANIZATION_TYPES.HQ;
         return {
           payrollRunId: String(run._id),
+          taPolicyVersion: run.taPolicyVersion || 0,
           monthKey: run.monthKey,
           status: run.status,
           organizationType: run.organizationType,
@@ -1447,6 +1456,8 @@ export const listMyPayslips = async (req, res) => {
             role: item.role || "",
             monthlySalary: Number(item.monthlySalary || 0),
             travellingAllowance: Number(item.travellingAllowance || 0),
+            approvedTaClaims: Number(item.approvedTaClaims || 0),
+            travelClaimItems: item.travelClaimItems || [],
             grossSalary: Number(item.grossSalary || 0),
             attendanceRecordedDays: Number(item.attendanceRecordedDays || 0),
             absentUnits: Number(item.absentUnits || 0),
@@ -1484,107 +1495,126 @@ export const generatePayroll = async (req, res) => {
       scopeType: req.body?.scopeType,
       schoolId: req.body?.schoolId,
     });
-    const { fromDateKey, toDateKey } = monthRange(monthKey);
-    const staff = await loadStaffRoster({ ...scope, includeInactive: false });
-    const existing = await PayrollRun.findOne({
-      monthKey,
-      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
-    });
-    if (existing && ["Finalized", "Paid"].includes(existing.status)) {
-      const error = new Error("Finalized/Paid payroll cannot be regenerated.");
-      error.status = 409;
-      throw error;
-    }
-
-    const items = [];
-    for (const row of staff) {
-      const attendance = await StaffAttendance.find({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        dateKey: { $gte: fromDateKey, $lte: toDateKey },
-        status: { $nin: ["Holiday", "Weekly Off"] },
-      })
-        .select("status dateKey")
-        .lean();
-
-      const approvedLeaveByDate = await getApprovedLeaveUnitsByDate({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        fromDateKey,
-        toDateKey,
-      });
-
-      const attendanceByDate = new Map(attendance.map((record) => [record.dateKey, record]));
-      let absentUnits = 0;
-      let halfDayUnits = 0;
-      attendance.forEach((record) => {
-        const approvedLeave = approvedLeaveByDate.get(record.dateKey);
-        if (record.status === "Absent") absentUnits += 1;
-        // A Half Day generated by approved leave is handled by leave paid/unpaid rules below.
-        if (record.status === "Half Day" && !approvedLeave) halfDayUnits += 0.5;
-      });
-
-      let unpaidLeaveUnits = 0;
-      approvedLeaveByDate.forEach((leave, dateKey) => {
-        const attendanceRecord = attendanceByDate.get(dateKey);
-        if (!attendanceRecord) return;
-        if (!["Leave", "Half Day"].includes(attendanceRecord.status)) return;
-        if (!leave.isPaid) unpaidLeaveUnits += Number(leave.unit || 0);
-      });
-
-      // Missing/unmarked days are flagged by attendanceRecordedDays and are never silently
-      // treated as absence. Approved paid leave has no deduction; approved unpaid leave does.
-      const deductionUnits = Math.min(workingDays, absentUnits + halfDayUnits + unpaidLeaveUnits);
-      const payableDays = Math.max(0, workingDays - deductionUnits);
-      const monthlySalary = Number(row.salary || 0);
-      const travellingAllowance = Number(row.travellingAllowance || 0);
-      const grossSalary = monthlySalary + travellingAllowance;
-      const attendanceDeduction =
-        workingDays > 0 ? roundMoney((grossSalary / workingDays) * deductionUnits) : 0;
-      const netSalary = roundMoney(grossSalary - attendanceDeduction);
-
-      items.push({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        userId: row.userId,
-        staffCode: row.staffCode,
-        name: row.name,
-        role: row.role,
-        monthlySalary,
-        travellingAllowance,
-        grossSalary: roundMoney(grossSalary),
-        workingDays,
-        attendanceRecordedDays: attendance.length,
-        absentUnits,
-        halfDayUnits,
-        unpaidLeaveUnits,
-        payableDays,
-        attendanceDeduction,
-        manualAllowance: 0,
-        manualDeduction: 0,
-        netSalary,
-      });
-    }
-
-    const run = await PayrollRun.findOneAndUpdate(
-      {
+    if (!isMonthKey(monthKey)) failTa("TA_INVALID_MONTH");
+    const run = await withHqFinanceTransaction(async (session) => {
+      const { fromDateKey, toDateKey } = monthRange(monthKey);
+      const staff = await loadStaffRoster({ ...scope, includeInactive: false, session });
+      const existing = await PayrollRun.findOne({
         monthKey,
         ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
-      },
-      {
-        $set: {
-          organizationType: scope.organizationType,
-          schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
+      }).session(session);
+      if (existing && ["Finalized", "Paid"].includes(existing.status)) {
+        const error = new Error("Finalized/Paid payroll cannot be regenerated.");
+        error.status = 409;
+        throw error;
+      }
+
+      assertPayrollRevision(existing, req.body.expectedRevision);
+      const runId = existing?._id || new mongoose.Types.ObjectId();
+      const previousItems = new Map((existing?.items || []).map((item) => [`${item.staffType}:${item.staffId}`, item]));
+      const { byStaff, excluded } = await reservePayrollClaims({ runId, monthKey, staff, userId: req.user._id, session });
+      const items = [];
+      for (const row of staff) {
+        const attendance = await StaffAttendance.find({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          dateKey: { $gte: fromDateKey, $lte: toDateKey },
+          status: { $nin: ["Holiday", "Weekly Off"] },
+        })
+          .session(session)
+          .select("status dateKey")
+          .lean();
+
+        const approvedLeaveByDate = await getApprovedLeaveUnitsByDate({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          fromDateKey,
+          toDateKey, session,
+        });
+
+        const attendanceByDate = new Map(attendance.map((record) => [record.dateKey, record]));
+        let absentUnits = 0;
+        let halfDayUnits = 0;
+        attendance.forEach((record) => {
+          const approvedLeave = approvedLeaveByDate.get(record.dateKey);
+          if (record.status === "Absent") absentUnits += 1;
+          // A Half Day generated by approved leave is handled by leave paid/unpaid rules below.
+          if (record.status === "Half Day" && !approvedLeave) halfDayUnits += 0.5;
+        });
+
+        let unpaidLeaveUnits = 0;
+        approvedLeaveByDate.forEach((leave, dateKey) => {
+          const attendanceRecord = attendanceByDate.get(dateKey);
+          if (!attendanceRecord) return;
+          if (!["Leave", "Half Day"].includes(attendanceRecord.status)) return;
+          if (!leave.isPaid) unpaidLeaveUnits += Number(leave.unit || 0);
+        });
+
+        // Missing/unmarked days are flagged by attendanceRecordedDays and are never silently
+        // treated as absence. Approved paid leave has no deduction; approved unpaid leave does.
+        const deductionUnits = Math.min(workingDays, absentUnits + halfDayUnits + unpaidLeaveUnits);
+        const payableDays = Math.max(0, workingDays - deductionUnits);
+        const monthlySalary = roundMoney(Number(row.salary || 0));
+        if (!Number.isFinite(monthlySalary) || monthlySalary < 0) failTa("TA_INVALID_AMOUNT");
+        const travellingAllowance = 0;
+        const grossSalary = monthlySalary;
+        const travelClaimItems = byStaff.get(`${row.staffType}:${row.staffId}`) || [];
+        const approvedTaClaims = payrollTaAmount(travelClaimItems);
+        const previous = previousItems.get(`${row.staffType}:${row.staffId}`);
+        const manualAllowance = roundMoney(Number(previous?.manualAllowance || 0));
+        const manualDeduction = roundMoney(Number(previous?.manualDeduction || 0));
+        const attendanceDeduction =
+          workingDays > 0 ? roundMoney((grossSalary / workingDays) * deductionUnits) : 0;
+        const netSalary = roundMoney(grossSalary - attendanceDeduction + approvedTaClaims + manualAllowance - manualDeduction);
+
+        items.push({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          userId: row.userId,
+          staffCode: row.staffCode,
+          name: row.name,
+          role: row.role,
+          monthlySalary,
+          travellingAllowance, approvedTaClaims, travelClaimItems,
+          grossSalary: roundMoney(grossSalary),
           workingDays,
-          status: existing?.status === "Reviewed" ? "Reviewed" : "Draft",
-          items,
-          generatedBy: req.user._id,
-          updatedAt: new Date(),
+          attendanceRecordedDays: attendance.length,
+          absentUnits,
+          halfDayUnits,
+          unpaidLeaveUnits,
+          payableDays,
+          attendanceDeduction,
+          manualAllowance,
+          manualDeduction,
+          remarks: previous?.remarks || "",
+          netSalary,
+        });
+      }
+
+      const savedRun = await PayrollRun.findOneAndUpdate(
+        {
+          monthKey,
+          ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
         },
-        $setOnInsert: { createdAt: new Date() },
-      },
-      { upsert: true, new: true }
-    );
+        {
+          $set: {
+            organizationType: scope.organizationType,
+            schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
+            workingDays,
+            revision: Number(existing?.revision || 0) + 1,
+            status: "Draft", taPolicyVersion: 1, taExcludedClaims: excluded,
+            reviewedBy: null, reviewedAt: null,
+            items,
+            generatedBy: req.user._id,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: { _id: runId, createdAt: new Date() },
+        },
+        { upsert: true, new: true, session }
+      );
+
+      return savedRun;
+    });
 
     return res.json({
       success: true,
@@ -1606,24 +1636,27 @@ export const updatePayrollItem = async (req, res) => {
       throw error;
     }
 
-    const run = await PayrollRun.findById(runId);
-    if (!run) {
-      const error = new Error("Payroll run was not found.");
-      error.status = 404;
-      throw error;
-    }
-    if (["Finalized", "Paid"].includes(run.status)) {
-      const error = new Error("Finalized/Paid payroll cannot be edited.");
-      error.status = 409;
-      throw error;
-    }
+    const run = await withHqFinanceTransaction(async (session) => {
+      const run = await PayrollRun.findById(runId).session(session);
+      if (!run) {
+        const error = new Error("Payroll run was not found.");
+        error.status = 404;
+        throw error;
+      }
+      if (["Finalized", "Paid"].includes(run.status)) {
+        const error = new Error("Finalized/Paid payroll cannot be edited.");
+        error.status = 409;
+        throw error;
+      }
 
-    await resolvePayrollScope({
-      user: req.user,
-      scopeType: run.organizationType,
-      schoolId: String(run.schoolId || ""),
+      await resolvePayrollScope({
+        user: req.user,
+        scopeType: run.organizationType,
+        schoolId: String(run.schoolId || ""),
     });
 
+    assertPayrollRevision(run, req.body.expectedRevision);
+    if (run.taPolicyVersion !== 1) failTa("TA_RECALCULATE_REQUIRED", 409);
     const item = run.items.id(itemId);
     if (!item) {
       const error = new Error("Payroll item was not found.");
@@ -1631,18 +1664,21 @@ export const updatePayrollItem = async (req, res) => {
       throw error;
     }
 
-    item.manualAllowance = Math.max(0, Number(req.body?.manualAllowance || 0));
-    item.manualDeduction = Math.max(0, Number(req.body?.manualDeduction || 0));
+    item.manualAllowance = moneyPaise(req.body?.manualAllowance ?? 0, true) / 100;
+    item.manualDeduction = moneyPaise(req.body?.manualDeduction ?? 0, true) / 100;
     item.remarks = cleanText(req.body?.remarks, 1000);
     item.netSalary = roundMoney(
       Number(item.grossSalary || 0) -
         Number(item.attendanceDeduction || 0) +
-        Number(item.manualAllowance || 0) -
+        Number(item.manualAllowance || 0) + Number(item.approvedTaClaims || 0) -
         Number(item.manualDeduction || 0)
     );
 
     run.updatedAt = new Date();
-    await run.save();
+    run.status = "Draft"; run.reviewedBy = null; run.reviewedAt = null; run.revision = Number(run.revision || 0) + 1;
+    await run.save({ session });
+    return run;
+    });
 
     return res.json({ success: true, message: "Payroll adjustment updated.", run });
   } catch (error) {
@@ -1660,29 +1696,30 @@ export const updatePayrollStatus = async (req, res) => {
       throw error;
     }
 
-    const run = await PayrollRun.findById(runId);
-    if (!run) {
-      const error = new Error("Payroll run was not found.");
-      error.status = 404;
-      throw error;
-    }
+    const run = await withHqFinanceTransaction(async (session) => {
+      const run = await PayrollRun.findById(runId).session(session);
+      if (!run) {
+        const error = new Error("Payroll run was not found.");
+        error.status = 404;
+        throw error;
+      }
 
-    const statusPermission =
-      nextStatus === "Finalized"
-        ? PERMISSIONS.PAYROLL_FINALIZE
-        : nextStatus === "Paid"
-          ? PERMISSIONS.PAYROLL_PAY
-          : PERMISSIONS.PAYROLL_REVIEW;
-    await assertRequestPermission(
-      req,
-      statusPermission,
-      `You do not have permission to change Payroll status to ${nextStatus}.`
-    );
+      const statusPermission =
+        nextStatus === "Finalized"
+          ? PERMISSIONS.PAYROLL_FINALIZE
+          : nextStatus === "Paid"
+            ? PERMISSIONS.PAYROLL_PAY
+            : PERMISSIONS.PAYROLL_REVIEW;
+      await assertRequestPermission(
+        req,
+        statusPermission,
+        `You do not have permission to change Payroll status to ${nextStatus}.`
+      );
 
-    await resolvePayrollScope({
-      user: req.user,
-      scopeType: run.organizationType,
-      schoolId: String(run.schoolId || ""),
+      await resolvePayrollScope({
+        user: req.user,
+        scopeType: run.organizationType,
+        schoolId: String(run.schoolId || ""),
     });
 
     const allowedTransitions = {
@@ -1697,6 +1734,9 @@ export const updatePayrollStatus = async (req, res) => {
       throw error;
     }
 
+    if (run.status === nextStatus) return run;
+    assertPayrollRevision(run, req.body.expectedRevision);
+    if (["Draft", "Reviewed"].includes(run.status)) await assertPayrollClaims(run, session);
     if (nextStatus === "Finalized") {
       run.finalizedBy = req.user._id;
       run.finalizedAt = new Date();
@@ -1709,15 +1749,20 @@ export const updatePayrollStatus = async (req, res) => {
       }
       run.paidBy = req.user._id;
       run.paidAt = req.body?.paidAt ? new Date(req.body.paidAt) : new Date();
+      if (!Number.isFinite(run.paidAt.getTime())) failTa("TA_INVALID_FIELDS");
+      if (run.taPolicyVersion === 1) await settlePayrollClaims(run, req.user._id, session);
       run.paymentMethod = cleanText(req.body?.paymentMethod, 100);
       run.paymentReference = cleanText(req.body?.paymentReference, 200);
     }
-    if (nextStatus === "Reviewed") run.reviewedBy = req.user._id;
+    if (nextStatus === "Reviewed") { run.reviewedBy = req.user._id; run.reviewedAt = new Date(); }
+    run.revision = Number(run.revision || 0) + 1;
 
     run.status = nextStatus;
     run.remarks = cleanText(req.body?.remarks ?? run.remarks, 1000);
     run.updatedAt = new Date();
-    await run.save();
+    await run.save({ session });
+    return run;
+    });
 
     return res.json({ success: true, message: `Payroll status updated to ${nextStatus}.`, run });
   } catch (error) {

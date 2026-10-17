@@ -10,7 +10,9 @@ const payrollItemSchema = new Schema(
     name: { type: String, required: true },
     role: { type: String },
     monthlySalary: { type: Number, default: 0 },
-    travellingAllowance: { type: Number, default: 0 },
+    travellingAllowance: { type: Number, default: 0 }, // Historical fixed TA only.
+    approvedTaClaims: { type: Number, default: 0 },
+    travelClaimItems: { type: [{ claimId: { type: Schema.Types.ObjectId, ref: "TravelClaim", required: true }, claimNumber: String, approvedAmountPaise: Number }], default: [] },
     grossSalary: { type: Number, default: 0 },
     workingDays: { type: Number, required: true },
     attendanceRecordedDays: { type: Number, default: 0 },
@@ -28,6 +30,10 @@ const payrollItemSchema = new Schema(
 );
 
 const payrollRunSchema = new Schema({
+  taPolicyVersion: { type: Number },
+  revision: { type: Number, default: 0 },
+  reviewedAt: Date,
+  taExcludedClaims: { type: [{ claimId: { type: Schema.Types.ObjectId, ref: "TravelClaim" }, claimNumber: String, name: String }], default: [] },
   monthKey: { type: String, required: true, index: true }, // YYYY-MM
   organizationType: { type: String, enum: ["HQ", "NISWAN"], required: true, index: true },
   schoolId: { type: Schema.Types.ObjectId, ref: "School", index: true },

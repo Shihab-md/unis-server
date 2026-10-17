@@ -44,7 +44,7 @@ const getProfile = async (req, res) => {
     let user = null;
     if (["superadmin", "hqadmin", "accountant", "hquser", "hqstaff", "admin", "employee", "usthadh", "warden", "teacher", "staff"].includes(role)) {
       profileData = await Employee.findOne({ userId: userId })
-        .select("_id employeeId contactNumber address designation qualification fatherGuardianName dob gender maritalStatus doj salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active")
+        .select("_id employeeId contactNumber address designation qualification fatherGuardianName dob gender maritalStatus doj salary otherDesignation activitiesCarriedOut bankAccountDetails active")
         .populate({ path: "userId", select: "name email role profileImage preferredLanguage" })
         .lean();
     }

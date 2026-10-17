@@ -301,7 +301,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 
   const { page, limit, skip } = getPagination(req);
   const query = Employee.find(match)
-    .select("employeeId userId organizationType schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
+    .select("employeeId userId organizationType schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
     .populate({ path: "userId", select: "name email role" })
     .populate({ path: "schoolId", select: "code nameEnglish" })
     .sort({ employeeId: 1 });
@@ -330,7 +330,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
     maritalStatus: employee.maritalStatus || "-",
     qualification: employee.qualification || "-",
     hadhiya: sensitive ? Number(employee.salary || 0) : null,
-    travellingAllowance: sensitive ? Number(employee.travellingAllowance || 0) : null,
+
     otherDesignation: employee.otherDesignation || "-",
     activitiesCarriedOut: employee.activitiesCarriedOut || "-",
     bankAccountDetails: sensitive ? employee.bankAccountDetails || "-" : null,
@@ -421,7 +421,7 @@ async function getSupervisorRows(req, { exportAll = false } = {}) {
 
   const { page, limit, skip } = getPagination(req);
   const query = Supervisor.find(match)
-    .select("supervisorId userId contactNumber address routeName qualification fatherGuardianName dob doj gender maritalStatus salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails jobType active remarks")
+    .select("supervisorId userId contactNumber address routeName qualification fatherGuardianName dob doj gender maritalStatus salary otherDesignation activitiesCarriedOut bankAccountDetails jobType active remarks")
     .populate({ path: "userId", select: "name email role" })
     .sort({ supervisorId: 1 });
   if (!exportAll) query.skip(skip).limit(limit);
@@ -446,7 +446,7 @@ async function getSupervisorRows(req, { exportAll = false } = {}) {
     qualification: supervisor.qualification || "-",
     jobType: supervisor.jobType || "-",
     hadhiya: sensitive ? Number(supervisor.salary || 0) : null,
-    travellingAllowance: sensitive ? Number(supervisor.travellingAllowance || 0) : null,
+
     otherDesignation: supervisor.otherDesignation || "-",
     activitiesCarriedOut: supervisor.activitiesCarriedOut || "-",
     bankAccountDetails: sensitive ? supervisor.bankAccountDetails || "-" : null,
@@ -540,7 +540,7 @@ const flattenEmployeeExport = (row, sensitive) => ({
   Gender: row.gender,
   "Marital Status": row.maritalStatus,
   Qualification: row.qualification,
-  ...(sensitive ? { Hadhiya: row.hadhiya, "Travelling Allowance": row.travellingAllowance } : {}),
+  ...(sensitive ? { Hadhiya: row.hadhiya } : {}),
   "Other Designation": row.otherDesignation,
   "Activities carried out": row.activitiesCarriedOut,
   ...(sensitive ? { "Bank account details": row.bankAccountDetails } : {}),
@@ -563,7 +563,7 @@ const flattenSupervisorExport = (row, sensitive) => ({
   Route: row.routeName,
   Qualification: row.qualification,
   "Job Type": row.jobType,
-  ...(sensitive ? { Hadhiya: row.hadhiya, "Travelling Allowance": row.travellingAllowance } : {}),
+  ...(sensitive ? { Hadhiya: row.hadhiya } : {}),
   "Other Designation": row.otherDesignation,
   "Activities carried out": row.activitiesCarriedOut,
   ...(sensitive ? { "Bank account details": row.bankAccountDetails } : {}),
