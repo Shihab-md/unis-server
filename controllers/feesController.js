@@ -5,6 +5,8 @@ import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import { getNextNumber } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
+import { findAcademicYearBatchIds, scopeBatchesToAcademicYear } from "../utils/paymentBatchAcademicYear.js";
+
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
 export const listDueInvoicesForSchool = async (req, res) => {
@@ -363,7 +365,7 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       return res.status(400).json({ success: false, error: "Invalid acYear" });
     }
 
-    const q = { acYear };
+    const q = {};
     const isHQ = ["superadmin", "hqadmin", "accountant"].includes(role);
 
     if (isHQ) {
@@ -386,6 +388,18 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       q.status = { $in: ["PENDING_APPROVAL", "APPROVED", "REJECTED"] };
     }
 
+    const responseScope = {
+      academicYearScope: "INVOICE_ITEMS",
+      selectedAcademicYearId: String(acYear),
+    };
+    const matchingBatchIds = await findAcademicYearBatchIds({
+      FeeInvoice, PaymentBatchItem, acYear, schoolId: q.schoolId,
+    });
+    if (!matchingBatchIds.length) {
+      return res.status(200).json({ success: true, ...responseScope, batches: [] });
+    }
+    q._id = { $in: matchingBatchIds };
+
     const batches = await PaymentBatch.find(q)
       .select(
         // ✅ added proofDrive* fields
@@ -402,13 +416,14 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       .lean();
 
     if (!batches.length) {
-      return res.status(200).json({ success: true, batches: [] });
+      return res.status(200).json({ success: true, ...responseScope, batches: [] });
     }
 
     const batchIds = batches.map((b) => b._id);
 
     const items = await PaymentBatchItem.find({ batchId: { $in: batchIds } })
-      .select("batchId invoiceId studentId amount status error createdAt")
+      .select("batchId acYear invoiceId studentId amount status error createdAt")
+      .populate({ path: "acYear", select: "acYear" })
       .populate({
         path: "studentId",
         select: "rollNumber feesPaid userId",
@@ -439,19 +454,8 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       };
     });
 
-    const map = new Map();
-    for (const it of normalizedItems) {
-      const k = String(it.batchId);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(it);
-    }
-
-    const result = batches.map((b) => ({
-      ...b,
-      items: map.get(String(b._id)) || [],
-    }));
-
-    return res.status(200).json({ success: true, batches: result });
+    const result = scopeBatchesToAcademicYear(batches, normalizedItems, acYear);
+    return res.status(200).json({ success: true, ...responseScope, batches: result });
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });
