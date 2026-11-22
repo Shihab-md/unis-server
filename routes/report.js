@@ -19,7 +19,10 @@ import {
   exportNiswanReport,
 } from "../controllers/reportController.js";
 
+import studentYearEndReportRouter from "./studentYearEndReport.js";
+
 const router = express.Router();
+router.use("/student-year-end", studentYearEndReportRouter);
 router.get("/meta", authMiddleware, requirePermission(PERMISSIONS.REPORTS_VIEW), requireReportsRole, getReportMeta);
 router.get("/home", authMiddleware, requirePermission(PERMISSIONS.REPORTS_VIEW), requireReportsRole, getReportsHome);
 router.get("/home/export", authMiddleware, requirePermission(PERMISSIONS.REPORTS_EXPORT), requireReportsRole, exportReportsHome);
