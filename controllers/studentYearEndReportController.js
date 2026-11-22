@@ -20,7 +20,7 @@ const onError = (res, error) => res.status(error.status || 500).json({ success: 
 export async function getStudentYearEndSummary(req, res) {
   noCache(res);
   try {
-    const { entries, ...report } = await loadReport(req);
+    const { entries, excludedNextYearAdmissions, ...report } = await loadReport(req);
     return res.status(200).json({ success: true, report });
   } catch (error) { return onError(res, error); }
 }
@@ -44,6 +44,9 @@ export async function exportStudentYearEndReport(req, res) {
       { Field: "Academic Year", Value: report.academicYear.label }, { Field: "Next Academic Year", Value: report.nextAcademicYear.label },
       { Field: "Generated At (UTC)", Value: report.generatedAt }, { Field: "All Niswans Ready", Value: report.globalSummary.ready ? "Yes" : "No" },
       { Field: "Unassigned Students (all Niswans)", Value: report.globalSummary.unassignedStudentCount },
+      { Field: "Next-year admissions excluded (all Niswans)", Value: report.globalSummary.nextYearAdmissionsExcluded || 0 },
+      { Field: "Next-year admissions excluded (filtered scope)", Value: report.summary.nextYearAdmissionsExcluded || 0 },
+      { Field: "Next-year admission scope", Value: "Confirmed new next-year admissions are outside current-year counts. The separate sheet follows Niswan, Supervisor and Course filters; current-year status/decision filters do not apply to it." },
       { Field: "Scope", Value: "Niswan rows follow school/supervisor/course/status filters. Student rows additionally follow the decision filter. All pages included." },
       { Field: "Count rule", Value: "Students are unique. Course decisions count student-course entries. Needs Review students are included in Pending Students." },
       { Field: "Ownership", Value: "Niswan is the student's current Niswan. Historical transfer ownership is not stored on Academic records." },
@@ -56,14 +59,23 @@ export async function exportStudentYearEndReport(req, res) {
       "Course Entries": row.totalEntries, Promoted: row.promoted, "Not Promoted": row.notPromoted, Completed: row.completed,
       "Pending Entries": row.pending, "Needs Review Entries": row.needsReview, Status: row.status, "All Courses Status": row.allCoursesStatus }));
     const studentRows = entries.map((entry) => ({ "Niswan Code": entry.schoolCode, Niswan: entry.schoolName,
-      "Student ID": entry.studentId, "Roll Number": entry.rollNumber, "Student Name": entry.studentName,
+      "Student ID": entry.rollNumber || "-", "Roll Number": entry.rollNumber || "-", "Student Name": entry.studentName,
       "Student Status": entry.studentStatus, Course: entry.courseName, "Source Year": entry.sourceYear ?? "", "Source Status": entry.sourceStatus || "",
       "Final Year": entry.isFinalYear === null ? "Unknown" : entry.isFinalYear ? "Yes" : "No",
       "Next Course": entry.targetCourseName || "", "Next Study Year": entry.targetYear ?? "", Decision: entry.decision, Reason: YEAR_END_REASON_TEXT[entry.reasonCode] || "" }));
+    const courseNames = new Map(report.meta.courses.map((course) => [course._id, course.name]));
+    const futureRows = report.excludedNextYearAdmissions.map((admission) => ({
+      "Niswan Code": admission.schoolCode, Niswan: admission.schoolName, "Student ID": admission.rollNumber,
+      "Student Name": admission.studentName, "Admission Academic Year": report.nextAcademicYear.label,
+      "Courses / Years": admission.courseIds.map((id, index) => `${courseNames.get(id) || "Course details missing"}${admission.courseYears[index] === null ? "" : ` / ${admission.courseYears[index]}`}`).join("; "),
+      "Current-year handling": "Excluded - confirmed new next-year admission",
+      Evidence: admission.evidence === "ADMISSION_INVOICE" ? "Linked admission invoice" : "Successful student admission record",
+    }));
     return sendXLSXMulti(res, `Student_Year_End_${report.academicYear.label}`, [
       { name: "Report Info", rows: metadata }, { name: "Niswans", rows }, { name: "Course Decisions", rows: courses.map((course) => ({ Course: course.courseName || "Course details missing", Entries: course.entries,
         Promoted: course.promoted, "Not Promoted": course.notPromoted, Completed: course.completed, Pending: course.pending, "Needs Review": course.needsReview })) },
       { name: "Student Decisions", rows: studentRows },
+      { name: "Next-Year Admissions", rows: futureRows },
       { name: "Records To Review", rows: report.unassignedRecords.map((record) => ({ "Student ID": record.studentId, "Student Name": record.studentName,
         "Niswan Reference": record.schoolId, Reason: YEAR_END_REASON_TEXT[record.reasonCode] })) },
     ]);

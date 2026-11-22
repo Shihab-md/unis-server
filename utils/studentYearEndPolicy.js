@@ -111,7 +111,50 @@ const entriesBySchool = (entries) => {
   return grouped;
 };
 
-export function buildYearEndData({ schools, students, sourceAcademics, targetAcademics, courses, pendingFeeStudentIds = new Set(), targetYearExists }) {
+// Positive admission evidence is required: a target-year Admission label alone
+// is also produced by the legacy individual-promotion path.
+export function confirmedNextYearAdmissions({ students, schools, sourceAcademics, targetAcademics,
+  targetYearId, otherAcademicStudentIds = new Set(), invoices = [], creationAudits = [] }) {
+  if (!targetYearId) return [];
+  const sourceStudents = new Set(sourceAcademics.map((doc) => textId(doc.studentId)));
+  const schoolMap = new Map(schools.map((school) => [textId(school._id), school]));
+  const targets = new Map(), invoiceMap = new Map(), auditMap = new Map();
+  const append = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
+  for (const doc of targetAcademics) append(targets, textId(doc.studentId), doc);
+  for (const invoice of invoices) append(invoiceMap, textId(invoice.studentId), invoice);
+  for (const audit of creationAudits) append(auditMap, String(audit.resourceId || ""), audit);
+  const time = (value) => value === undefined || value === null || value === "" ? NaN : new Date(value).getTime();
+  const confirmed = [];
+  for (const student of students) {
+    const studentId = textId(student._id), schoolId = textId(student.schoolId), school = schoolMap.get(schoolId);
+    if (!school || student.active !== "Active" || sourceStudents.has(studentId) || otherAcademicStudentIds.has(studentId)) continue;
+    const records = targets.get(studentId) || [];
+    if (records.length !== 1 || textId(records[0].acYear) !== textId(targetYearId)) continue;
+    const academic = records[0], courseSlots = slots(academic);
+    if (!courseSlots.length || courseSlots.some((entry) => normalizeYearEndDecision(entry.status) !== "admission") ||
+      new Set(courseSlots.map((entry) => entry.courseId)).size !== courseSlots.length) continue;
+    const studentInvoices = (invoiceMap.get(studentId) || []).filter((invoice) => String(invoice.status || "") !== "CANCELLED");
+    if (studentInvoices.some((invoice) => textId(invoice.acYear) !== textId(targetYearId) &&
+      ["ADMISSION", "PROMOTE", "COURSE_CHANGE", "CERTIFICATE"].includes(String(invoice.source || "")))) continue;
+    const nextInvoices = studentInvoices.filter((invoice) => textId(invoice.acYear) === textId(targetYearId));
+    if (nextInvoices.some((invoice) => ["PROMOTE", "COURSE_CHANGE"].includes(String(invoice.source || "")))) continue;
+    const admissionInvoice = nextInvoices.find((invoice) => invoice.source === "ADMISSION" &&
+      ["ISSUED", "PARTIAL", "PAID"].includes(invoice.status) && textId(invoice.schoolId) === schoolId && (textId(invoice.academicId) === textId(academic._id) ||
+        (!textId(invoice.academicId) && courseSlots.some((entry) => entry.courseId === textId(invoice.courseId)))));
+    const createdAt = time(student.createdAt), academicCreatedAt = time(academic.createdAt);
+    const admissionAudit = (auditMap.get(studentId) || []).find((audit) => audit.action === "STUDENT_CREATE" && audit.resourceType === "Student" &&
+      audit.success === true && textId(audit.schoolId) === schoolId && Number.isFinite(createdAt) && Number.isFinite(academicCreatedAt) &&
+      createdAt <= academicCreatedAt && academicCreatedAt <= time(audit.createdAt));
+    if (!admissionInvoice && !admissionAudit) continue;
+    confirmed.push({ studentId, schoolId, schoolCode: school.code || "", schoolName: school.nameEnglish || "",
+      supervisorId: textId(school.supervisorId), studentName: student.userId?.name || "",
+      rollNumber: Number(student.feesPaid) === 1 ? student.rollNumber || "" : "-", academicId: textId(academic._id),
+      courseIds: courseSlots.map((entry) => entry.courseId), courseYears: courseSlots.map((entry) => Number.isFinite(entry.year) ? entry.year : null), evidence: admissionInvoice ? "ADMISSION_INVOICE" : "STUDENT_CREATION_AUDIT" });
+  }
+  return confirmed;
+}
+
+export function buildYearEndData({ schools, students, sourceAcademics, targetAcademics, courses, pendingFeeStudentIds = new Set(), targetYearExists, confirmedNextYearAdmissionIds = new Set() }) {
   const schoolMap = new Map(schools.map((school) => [textId(school._id), school]));
   const studentMap = new Map(students.map((student) => [textId(student._id), student]));
   const courseMap = new Map(courses.map((course) => [textId(course._id), course]));
@@ -146,11 +189,13 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
   for (const student of students) {
     const studentId = textId(student._id), school = schoolMap.get(textId(student.schoolId));
     if (!school || student.active !== "Active" || sourceMap.has(studentId)) continue;
-    // A target-year Admission alone cannot prove that this is a new intake:
-    // the legacy individual-promotion path also writes Admission. Require review.
+    // Only confirmed new next-year admissions are outside the current cohort.
+    if (confirmedNextYearAdmissionIds.has(studentId)) continue;
+    const hasNextAdmission = (targetMap.get(studentId) || []).some((academic) =>
+      slots(academic).some((entry) => normalizeYearEndDecision(entry.status) === "admission"));
     entries.push({ studentId, studentName: student.userId?.name || "", rollNumber: Number(student.feesPaid) === 1 ? student.rollNumber || "" : "-",
       schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active,
-      courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: "SOURCE_ACADEMIC_MISSING", isFinalYear: null });
+      courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: hasNextAdmission ? "NEXT_ADMISSION_UNVERIFIED" : "SOURCE_ACADEMIC_MISSING", isFinalYear: null });
   }
   const schoolEntriesById = entriesBySchool(entries);
   const schoolRows = schools.map((school) => {
@@ -199,4 +244,5 @@ export const YEAR_END_REASON_TEXT = Object.freeze({
   PENDING_FEE_INVOICE: "An unpaid fee invoice is blocking the decision.", FINAL_DECISION_PENDING: "The final-year completion or repeat decision is pending.",
   DECISION_PENDING: "The promotion or repeat decision is pending.", SOURCE_COURSES_MISSING: "The current academic record has no course entries.",
   SOURCE_ACADEMIC_MISSING: "The current academic-year record is missing.",
+  NEXT_ADMISSION_UNVERIFIED: "The next-year record could not be confirmed as a new admission. Check the enrolment history.",
 });
