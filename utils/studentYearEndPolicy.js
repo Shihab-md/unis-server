@@ -3,10 +3,15 @@ export const textId = (value) => String(value?._id ?? value ?? "");
 export const normalizeYearEndDecision = (value) => String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
 export const DECISIONS = Object.freeze({ PROMOTED: "PROMOTED", NOT_PROMOTED: "NOT_PROMOTED", COMPLETED: "COMPLETED", PENDING: "PENDING", NEEDS_REVIEW: "NEEDS_REVIEW" });
 const finished = new Set([DECISIONS.PROMOTED, DECISIONS.NOT_PROMOTED, DECISIONS.COMPLETED]);
+const storedStudyYear = (value) => {
+  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "number" && typeof value !== "string") return NaN;
+  return Number(value);
+};
 const slots = (academic) => Array.from({ length: 5 }, (_, i) => i + 1)
   .filter((slot) => academic?.[`courseId${slot}`])
   .map((slot) => ({ academicId: textId(academic._id), courseId: textId(academic[`courseId${slot}`]),
-    slot, year: Number(academic[`year${slot}`] || 0), status: academic[`status${slot}`] || "" }));
+    slot, year: storedStudyYear(academic[`year${slot}`]), status: academic[`status${slot}`] || "" }));
 
 export function courseProgression(course, courses) {
   if (!course) return { error: "COURSE_MISSING", isFinalYear: null };
@@ -24,20 +29,24 @@ export function courseProgression(course, courses) {
   const makthab = /Makthab_Level([1-4])/.exec(String(course.name || ""));
   const duration = makthab ? Number(makthab[1]) * 3 : Number(course.years || 0);
   if (!Number.isInteger(duration) || duration <= 0) return { error: "COURSE_DURATION_INVALID", isFinalYear: null };
-  return { duration, nextCourseId: textId(course._id) };
+  return { duration, nextCourseId: textId(course._id), allowZeroYear: Boolean(makthab && Number(makthab[1]) === 1) };
 }
 
 function classifyEntry(source, targetSlots, course, courses, duplicateSource, context) {
   const progression = courseProgression(course, courses);
-  const sourceYear = progression.sourceYear || source.year || (progression.duration === 1 ? 1 : 0);
-  const isFinalYear = progression.isFinalYear ?? (sourceYear > 0 ? sourceYear >= progression.duration : null);
+  // Makthab Level1 explicitly allows Year 0. Keep it distinct from a missing year.
+  const sourceYear = progression.sourceYear ?? (
+    progression.allowZeroYear && source.year === 0 ? 0 :
+      (source.year === null || source.year === 0) && progression.duration === 1 ? 1 : source.year
+  );
+  const isFinalYear = progression.isFinalYear ?? (Number.isInteger(sourceYear) && sourceYear >= 0 ? sourceYear >= progression.duration : null);
   const base = { courseId: source.courseId, courseName: course?.name || "", courseType: course?.type || "",
-    sourceAcademicId: source.academicId, sourceSlot: source.slot, sourceYear, sourceStatus: source.status,
+    sourceAcademicId: source.academicId, sourceSlot: source.slot, sourceYear: Number.isFinite(sourceYear) ? sourceYear : null, sourceStatus: source.status,
     isFinalYear, targetAcademicId: "", targetCourseName: "", targetYear: null };
   const outcome = (decision, reasonCode = "", extra = {}) => ({ ...base, decision, reasonCode, ...extra });
   if (duplicateSource) return outcome(DECISIONS.NEEDS_REVIEW, "SOURCE_DUPLICATE");
   if (progression.error) return outcome(DECISIONS.NEEDS_REVIEW, progression.error);
-  if (!Number.isInteger(sourceYear) || sourceYear < 1) return outcome(DECISIONS.NEEDS_REVIEW, "STUDY_YEAR_INVALID");
+  if (!Number.isInteger(sourceYear) || sourceYear < (progression.allowZeroYear ? 0 : 1)) return outcome(DECISIONS.NEEDS_REVIEW, "STUDY_YEAR_INVALID");
   const possibleIds = new Set([source.courseId, progression.nextCourseId].filter(Boolean));
   const matches = targetSlots.filter((slot) => possibleIds.has(slot.courseId));
   const sourceDecision = normalizeYearEndDecision(source.status);
@@ -50,7 +59,7 @@ function classifyEntry(source, targetSlots, course, courses, duplicateSource, co
   if (matches.length === 1) {
     const target = matches[0];
     const decision = normalizeYearEndDecision(target.status);
-    const extra = { targetAcademicId: target.academicId, targetYear: target.year,
+    const extra = { targetAcademicId: target.academicId, targetYear: Number.isFinite(target.year) ? target.year : null,
       targetCourseName: courses.find((item) => textId(item._id) === target.courseId)?.name || "" };
     if (decision === "notpromoted" && target.courseId === source.courseId && target.year === sourceYear)
       return outcome(DECISIONS.NOT_PROMOTED, "", extra);
@@ -93,9 +102,19 @@ export function summarizeEntries(entries) {
 }
 export const schoolProgressStatus = (counts) => !counts.totalStudents ? "NO_STUDENTS" : counts.needsReviewStudents ? "NEEDS_REVIEW" : counts.pendingStudents ? "PENDING" : "DONE";
 
+const entriesBySchool = (entries) => {
+  const grouped = new Map();
+  for (const entry of entries) {
+    if (!grouped.has(entry.schoolId)) grouped.set(entry.schoolId, []);
+    grouped.get(entry.schoolId).push(entry);
+  }
+  return grouped;
+};
+
 export function buildYearEndData({ schools, students, sourceAcademics, targetAcademics, courses, pendingFeeStudentIds = new Set(), targetYearExists }) {
   const schoolMap = new Map(schools.map((school) => [textId(school._id), school]));
   const studentMap = new Map(students.map((student) => [textId(student._id), student]));
+  const courseMap = new Map(courses.map((course) => [textId(course._id), course]));
   const sourceMap = new Map(), targetMap = new Map();
   const group = (map, docs) => { for (const doc of docs) { const id = textId(doc.studentId); if (!map.has(id)) map.set(id, []); map.get(id).push(doc); } };
   group(sourceMap, sourceAcademics); group(targetMap, targetAcademics);
@@ -117,7 +136,7 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
       schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active || "" };
     if (!uniqueSlots.length) entries.push({ ...common, courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: "SOURCE_COURSES_MISSING", isFinalYear: null });
     for (const source of uniqueSlots) {
-      const course = courses.find((item) => textId(item._id) === source.courseId);
+      const course = courseMap.get(source.courseId);
       const classification = classifyEntry(source, targets, course, courses, academics.length > 1 || duplicateCourses.has(source.courseId),
         { student, pendingFeeStudentIds, targetYearExists, targetAcademicCount: (targetMap.get(studentId) || []).length });
       entries.push({ ...common, ...classification });
@@ -133,14 +152,15 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
       schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active,
       courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: "SOURCE_ACADEMIC_MISSING", isFinalYear: null });
   }
+  const schoolEntriesById = entriesBySchool(entries);
   const schoolRows = schools.map((school) => {
-    const schoolEntries = entries.filter((entry) => entry.schoolId === textId(school._id));
+    const schoolEntries = schoolEntriesById.get(textId(school._id)) || [];
     const counts = summarizeEntries(schoolEntries);
     return { schoolId: textId(school._id), code: school.code || "", name: school.nameEnglish || "", active: school.active || "",
       supervisorId: textId(school.supervisorId), supervisorCode: school.supervisorId?.supervisorId || "",
       supervisorName: school.supervisorId?.userId?.name || "", contact: String(school.incharge1Number || school.contactNumber || ""),
       ...counts, status: schoolProgressStatus(counts) };
-  }).filter((row) => row.active === "Active" || row.totalStudents > 0);
+  }).filter((row) => row.totalStudents > 0);
   return { entries, schoolRows, unassignedRecords, unassignedStudentCount: unassignedStudentIds.size };
 }
 
@@ -148,11 +168,12 @@ export function filterYearEndData(data, filters = {}) {
   const matchedSchools = new Set(data.schoolRows.filter((row) =>
     (!filters.schoolId || row.schoolId === filters.schoolId) && (!filters.supervisorId || row.supervisorId === filters.supervisorId)).map((row) => row.schoolId));
   let entries = data.entries.filter((entry) => matchedSchools.has(entry.schoolId) && (!filters.courseId || entry.courseId === filters.courseId));
+  const scopedEntriesBySchool = entriesBySchool(entries);
   let rows = data.schoolRows.filter((row) => matchedSchools.has(row.schoolId)).map((row) => {
-    const scoped = entries.filter((entry) => entry.schoolId === row.schoolId);
+    const scoped = scopedEntriesBySchool.get(row.schoolId) || [];
     const counts = summarizeEntries(scoped);
     return { ...row, ...counts, status: schoolProgressStatus(counts), allCoursesStatus: row.status };
-  });
+  }).filter((row) => row.totalStudents > 0);
   if (filters.status) rows = rows.filter((row) => row.status === filters.status);
   const allowed = new Set(rows.map((row) => row.schoolId));
   entries = entries.filter((entry) => allowed.has(entry.schoolId));

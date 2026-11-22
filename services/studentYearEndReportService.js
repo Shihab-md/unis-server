@@ -76,14 +76,14 @@ export async function getStudentYearEndReport(query = {}) {
   if (activeCheck.length !== 1 || textId(activeCheck[0]._id) !== textId(current._id))
     throw fail(409, "ACTIVE_YEAR_CHANGED", "The Active academic year changed. Please refresh the report.");
   const globalSummary = { ...global.summary, unassignedStudentCount: data.unassignedStudentCount,
-    ready: Boolean(target) && data.unassignedStudentCount === 0 && global.summary.pendingStudents === 0 };
+    ready: Boolean(target) && global.summary.totalStudents > 0 && data.unassignedStudentCount === 0 && global.summary.pendingStudents === 0 };
   const supervisorOptions = [...new Map(data.schoolRows.filter((row) => row.supervisorId)
     .map((row) => [row.supervisorId, { _id: row.supervisorId, name: row.supervisorName, code: row.supervisorCode }])).values()];
   return { version: 1, generatedAt: new Date().toISOString(), academicYear: { _id: textId(current._id), label: current.acYear },
     nextAcademicYear: { _id: target ? textId(target._id) : "", label: targetLabel, configured: Boolean(target) },
     filters, globalSummary, summary: filtered.summary, rows: filtered.rows, entries: filtered.entries,
     unassignedRecords: data.unassignedRecords,
-    warnings: [...(!target ? ["NEXT_YEAR_MISSING"] : []), ...(data.unassignedStudentCount ? ["UNASSIGNED_STUDENTS"] : [])],
+    warnings: [...(global.summary.totalStudents === 0 ? ["NO_REPORT_STUDENTS"] : []), ...(!target ? ["NEXT_YEAR_MISSING"] : []), ...(data.unassignedStudentCount ? ["UNASSIGNED_STUDENTS"] : [])],
     meta: { schools: data.schoolRows.map((row) => ({ _id: row.schoolId, code: row.code, name: row.name })),
       supervisors: supervisorOptions, courses: courses.map((course) => ({ _id: textId(course._id), name: course.name, type: course.type })) } };
 }
@@ -92,6 +92,15 @@ export function yearEndStudentDetails(report) {
   const decision = report.filters.decision;
   const entries = report.entries.filter((entry) => !decision || (decision === "UNRESOLVED"
     ? ["PENDING", "NEEDS_REVIEW"].includes(entry.decision) : entry.decision === decision));
+  // Explicit ordering keeps pagination/export stable when MongoDB changes read order.
+  const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+  entries.sort((left, right) => {
+    for (const field of ["schoolCode", "rollNumber", "studentName", "studentId", "courseId"]) {
+      const result = collator.compare(String(left[field] || ""), String(right[field] || ""));
+      if (result) return result;
+    }
+    return 0;
+  });
   const groups = new Map();
   for (const entry of entries) {
     const key = entry.courseId || "MISSING";
