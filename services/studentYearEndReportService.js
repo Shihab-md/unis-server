@@ -11,7 +11,7 @@ import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import { buildYearEndData, filterYearEndData, confirmedNextYearAdmissions, textId } from "../utils/studentYearEndPolicy.js";
 
 const fail = (status, code, message) => Object.assign(new Error(message), { status, code });
-const academicFields = "studentId acYear createdAt " + Array.from({ length: 5 }, (_, i) => `courseId${i + 1} year${i + 1} status${i + 1}`).join(" ");
+const academicFields = "studentId acYear createdAt " + Array.from({ length: 5 }, (_, i) => `instituteId${i + 1} courseId${i + 1} year${i + 1} status${i + 1}`).join(" ");
 const allowedKeys = new Set(["schoolId", "supervisorId", "courseId", "status", "decision", "page", "limit"]);
 const optionalId = (value, label) => {
   if (value === undefined || value === "") return "";
@@ -91,20 +91,28 @@ export async function getStudentYearEndReport(query = {}) {
   const activeCheck = await AcademicYear.find({ active: "Active" }).select("_id").limit(2).lean();
   if (activeCheck.length !== 1 || textId(activeCheck[0]._id) !== textId(current._id))
     throw fail(409, "ACTIVE_YEAR_CHANGED", "The Active academic year changed. Please refresh the report.");
-  const globalSummary = { ...global.summary, unassignedStudentCount: data.unassignedStudentCount, nextYearAdmissionsExcluded: confirmedAdmissions.length,
+  const exclusionCounts = (entries) => ({ statusExcludedStudents: new Set(entries.map((entry) => entry.studentId)).size, statusExcludedEntries: entries.length });
+  const excludedByStatus = data.excludedByStatus.filter((entry) =>
+    (!filters.schoolId || entry.schoolId === filters.schoolId) && (!filters.supervisorId || entry.supervisorId === filters.supervisorId) &&
+    (!filters.courseId || entry.courseId === filters.courseId));
+  const globalSummary = { ...global.summary, ...exclusionCounts(data.excludedByStatus), unassignedStudentCount: data.unassignedStudentCount, nextYearAdmissionsExcluded: confirmedAdmissions.length,
     ready: Boolean(target) && global.summary.totalStudents > 0 && data.unassignedStudentCount === 0 && global.summary.pendingStudents === 0 };
-  const supervisorOptions = [...new Map(data.schoolRows.filter((row) => row.supervisorId)
+  const optionSchoolIds = new Set([...data.schoolRows.map((row) => row.schoolId), ...data.excludedByStatus.map((entry) => entry.schoolId), ...confirmedAdmissions.map((admission) => admission.schoolId)]);
+  const optionSchools = schools.map((school) => ({ schoolId: textId(school._id), code: school.code || "", name: school.nameEnglish || "",
+    supervisorId: textId(school.supervisorId), supervisorName: school.supervisorId?.userId?.name || "", supervisorCode: school.supervisorId?.supervisorId || "" }))
+    .filter((school) => optionSchoolIds.has(school.schoolId));
+  const supervisorOptions = [...new Map(optionSchools.filter((row) => row.supervisorId)
     .map((row) => [row.supervisorId, { _id: row.supervisorId, name: row.supervisorName, code: row.supervisorCode }])).values()];
   const excludedNextYearAdmissions = confirmedAdmissions.filter((admission) =>
     (!filters.schoolId || admission.schoolId === filters.schoolId) && (!filters.supervisorId || admission.supervisorId === filters.supervisorId) &&
     (!filters.courseId || admission.courseIds.includes(filters.courseId)));
   return { version: 1, generatedAt: new Date().toISOString(), academicYear: { _id: textId(current._id), label: current.acYear },
     nextAcademicYear: { _id: target ? textId(target._id) : "", label: targetLabel, configured: Boolean(target) },
-    filters, globalSummary, summary: { ...filtered.summary, nextYearAdmissionsExcluded: excludedNextYearAdmissions.length },
-    rows: filtered.rows, entries: filtered.entries, excludedNextYearAdmissions,
+    filters, globalSummary, summary: { ...filtered.summary, ...exclusionCounts(excludedByStatus), nextYearAdmissionsExcluded: excludedNextYearAdmissions.length },
+    rows: filtered.rows, entries: filtered.entries, excludedNextYearAdmissions, excludedByStatus,
     unassignedRecords: data.unassignedRecords,
     warnings: [...(global.summary.totalStudents === 0 ? ["NO_REPORT_STUDENTS"] : []), ...(!target ? ["NEXT_YEAR_MISSING"] : []), ...(data.unassignedStudentCount ? ["UNASSIGNED_STUDENTS"] : [])],
-    meta: { schools: data.schoolRows.map((row) => ({ _id: row.schoolId, code: row.code, name: row.name })),
+    meta: { schools: optionSchools.map((row) => ({ _id: row.schoolId, code: row.code, name: row.name })),
       supervisors: supervisorOptions, courses: courses.map((course) => ({ _id: textId(course._id), name: course.name, type: course.type })) } };
 }
 

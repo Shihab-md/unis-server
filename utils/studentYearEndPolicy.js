@@ -1,3 +1,4 @@
+import { schoolCourseProgression, schoolCourseInstitutes, schoolCourseFamily, sameSchoolInstitute } from "./schoolCourseReportPolicy.js";
 // Reporting only: never changes Academic, Student, fees or promotion decisions.
 export const textId = (value) => String(value?._id ?? value ?? "");
 export const normalizeYearEndDecision = (value) => String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
@@ -11,21 +12,11 @@ const storedStudyYear = (value) => {
 const slots = (academic) => Array.from({ length: 5 }, (_, i) => i + 1)
   .filter((slot) => academic?.[`courseId${slot}`])
   .map((slot) => ({ academicId: textId(academic._id), courseId: textId(academic[`courseId${slot}`]),
-    slot, year: storedStudyYear(academic[`year${slot}`]), status: academic[`status${slot}`] || "" }));
+    instituteId: textId(academic[`instituteId${slot}`]), slot, year: storedStudyYear(academic[`year${slot}`]), status: academic[`status${slot}`] || "" }));
 
-export function courseProgression(course, courses) {
+export function courseProgression(course, courses, context = {}) {
   if (!course) return { error: "COURSE_MISSING", isFinalYear: null };
-  if (course.type === "School Education") {
-    const order = Number(course.promotionOrder || 0);
-    if (!Number.isInteger(order) || order <= 0) return { error: "COURSE_ORDER_INVALID", isFinalYear: null };
-    const schoolCourses = courses.filter((item) => item.type === "School Education");
-    if (schoolCourses.filter((item) => Number(item.promotionOrder) === order).length !== 1)
-      return { error: "COURSE_ORDER_AMBIGUOUS", isFinalYear: null };
-    const next = schoolCourses.filter((item) => Number(item.promotionOrder) === order + 1);
-    if (next.length > 1 || (!next.length && schoolCourses.some((item) => Number(item.promotionOrder) > order)))
-      return { error: "COURSE_ORDER_GAP", isFinalYear: null };
-    return { sourceYear: order, nextYear: order + 1, nextCourseId: textId(next[0]?._id), isFinalYear: !next.length };
-  }
+  if (course.type === "School Education") return schoolCourseProgression(course, courses, context);
   const makthab = /Makthab_Level([1-4])/.exec(String(course.name || ""));
   const duration = makthab ? Number(makthab[1]) * 3 : Number(course.years || 0);
   if (!Number.isInteger(duration) || duration <= 0) return { error: "COURSE_DURATION_INVALID", isFinalYear: null };
@@ -33,22 +24,42 @@ export function courseProgression(course, courses) {
 }
 
 function classifyEntry(source, targetSlots, course, courses, duplicateSource, context) {
-  const progression = courseProgression(course, courses);
+  const progression = courseProgression(course, courses, { ...context, source, targetSlots });
   // Makthab Level1 explicitly allows Year 0. Keep it distinct from a missing year.
   const sourceYear = progression.sourceYear ?? (
     progression.allowZeroYear && source.year === 0 ? 0 :
       (source.year === null || source.year === 0) && progression.duration === 1 ? 1 : source.year
   );
-  const isFinalYear = progression.isFinalYear ?? (Number.isInteger(sourceYear) && sourceYear >= 0 ? sourceYear >= progression.duration : null);
+  const isFinalYear = progression.error ? null : progression.isFinalYear ?? (Number.isInteger(sourceYear) && sourceYear >= 0 ? sourceYear >= progression.duration : null);
   const base = { courseId: source.courseId, courseName: course?.name || "", courseType: course?.type || "",
     sourceAcademicId: source.academicId, sourceSlot: source.slot, sourceYear: Number.isFinite(sourceYear) ? sourceYear : null, sourceStatus: source.status,
     isFinalYear, targetAcademicId: "", targetCourseName: "", targetYear: null };
   const outcome = (decision, reasonCode = "", extra = {}) => ({ ...base, decision, reasonCode, ...extra });
   if (duplicateSource) return outcome(DECISIONS.NEEDS_REVIEW, "SOURCE_DUPLICATE");
-  if (progression.error) return outcome(DECISIONS.NEEDS_REVIEW, progression.error);
+  if (progression.error && !Number.isFinite(progression.sourceYear)) return outcome(DECISIONS.NEEDS_REVIEW, progression.error);
   if (!Number.isInteger(sourceYear) || sourceYear < (progression.allowZeroYear ? 0 : 1)) return outcome(DECISIONS.NEEDS_REVIEW, "STUDY_YEAR_INVALID");
-  const possibleIds = new Set([source.courseId, progression.nextCourseId].filter(Boolean));
+  const isSchool = course?.type === "School Education";
+  const family = isSchool ? schoolCourseFamily(course) : null;
+  const schoolTargets = isSchool ? targetSlots.filter((slot) => context.courseMap.get(slot.courseId)?.type === "School Education") : [];
+  const compatiblePath = (slot) => sameSchoolInstitute(source, slot) &&
+    (family === null || schoolCourseFamily(context.courseMap.get(slot.courseId)) === family);
+  const explicitSchoolTargets = schoolTargets.filter((slot) => ["promoted", "notpromoted"].includes(normalizeYearEndDecision(slot.status)));
+  if (isSchool && context.schoolSourceCount === 1 && explicitSchoolTargets.some((slot) => !compatiblePath(slot)))
+    return outcome(DECISIONS.NEEDS_REVIEW, "SCHOOL_TARGET_PATH_CONFLICT");
+  const possibleIds = new Set([source.courseId, progression.nextCourseId, ...(progression.nextCandidateIds || [])].filter(Boolean));
   const matches = targetSlots.filter((slot) => possibleIds.has(slot.courseId));
+  // A verified repeat uses the same course/year; selecting a next course is irrelevant.
+  if (isSchool && context.targetAcademicCount <= 1 && normalizeYearEndDecision(source.status) !== "completed" && matches.length === 1 &&
+    matches[0].courseId === source.courseId && matches[0].year === sourceYear &&
+    normalizeYearEndDecision(matches[0].status) === "notpromoted" && sameSchoolInstitute(source, matches[0]) &&
+    !schoolTargets.some((slot) => slot !== matches[0] && compatiblePath(slot)))
+    return outcome(DECISIONS.NOT_PROMOTED, "", { targetAcademicId: matches[0].academicId,
+      targetCourseName: course.name, targetYear: matches[0].year });
+  if (progression.error) return outcome(DECISIONS.NEEDS_REVIEW, progression.error);
+  if (isSchool && matches.some((slot) => !sameSchoolInstitute(source, slot)))
+    return outcome(DECISIONS.NEEDS_REVIEW, "SCHOOL_TARGET_PATH_CONFLICT");
+  if (isSchool && context.schoolSourceCount === 1 && explicitSchoolTargets.some((slot) => !possibleIds.has(slot.courseId)))
+    return outcome(DECISIONS.NEEDS_REVIEW, "SCHOOL_TARGET_PATH_CONFLICT");
   const sourceDecision = normalizeYearEndDecision(source.status);
   if (sourceDecision === "completed") {
     if (!isFinalYear) return outcome(DECISIONS.NEEDS_REVIEW, "NON_FINAL_COMPLETED");
@@ -64,12 +75,15 @@ function classifyEntry(source, targetSlots, course, courses, duplicateSource, co
     if (decision === "notpromoted" && target.courseId === source.courseId && target.year === sourceYear)
       return outcome(DECISIONS.NOT_PROMOTED, "", extra);
     const nextYear = progression.nextYear || sourceYear + 1;
-    if (decision === "promoted" && !isFinalYear && target.courseId === progression.nextCourseId && target.year === nextYear)
+    if (decision === "promoted" && !isFinalYear && target.courseId === progression.nextCourseId && target.year === nextYear) {
+      // One saved school target must not verify two overlapping source paths.
+      if (isSchool && context.schoolSources.some((other) => other.courseId !== source.courseId && sameSchoolInstitute(source, other) &&
+        Number(context.courseMap.get(other.courseId)?.promotionOrder) === sourceYear && schoolCourseFamily(context.courseMap.get(other.courseId)) === family))
+        return outcome(DECISIONS.NEEDS_REVIEW, "SOURCE_DUPLICATE", extra);
       return outcome(DECISIONS.PROMOTED, "", extra);
+    }
     return outcome(DECISIONS.NEEDS_REVIEW, ["admission", ""].includes(decision) ? "TARGET_DECISION_MISSING" : "TARGET_PROGRESSION_CONFLICT", extra);
   }
-  if (["Transferred", "In-Active", "Discontinued", "Graduated", "Alumni"].includes(String(context.student.active || "")))
-    return outcome(DECISIONS.NEEDS_REVIEW, "STUDENT_STATUS_REVIEW");
   if (!context.targetYearExists) return outcome(DECISIONS.NEEDS_REVIEW, "NEXT_YEAR_MISSING");
   if (Number(context.student.feesPaid || 0) !== 1) return outcome(DECISIONS.PENDING, "ADMISSION_FEES_INCOMPLETE");
   if (context.pendingFeeStudentIds.has(textId(context.student._id))) return outcome(DECISIONS.PENDING, "PENDING_FEE_INVOICE");
@@ -161,7 +175,9 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
   const sourceMap = new Map(), targetMap = new Map();
   const group = (map, docs) => { for (const doc of docs) { const id = textId(doc.studentId); if (!map.has(id)) map.set(id, []); map.get(id).push(doc); } };
   group(sourceMap, sourceAcademics); group(targetMap, targetAcademics);
-  const entries = [], unassignedStudentIds = new Set(), unassignedRecords = [];
+  let entries = [];
+  const courseInstitutes = schoolCourseInstitutes([...sourceAcademics, ...targetAcademics]);
+  const unassignedStudentIds = new Set(), unassignedRecords = [];
   for (const [studentId, academics] of sourceMap) {
     const student = studentMap.get(studentId);
     if (!student || !schoolMap.has(textId(student.schoolId))) {
@@ -175,13 +191,15 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
     const targets = (targetMap.get(studentId) || []).flatMap(slots);
     const duplicateCourses = new Set(sourceSlots.filter((entry, index) => sourceSlots.some((other, i) => i !== index && other.courseId === entry.courseId)).map((entry) => entry.courseId));
     const uniqueSlots = [...new Map(sourceSlots.map((entry) => [entry.courseId, entry])).values()];
+    const schoolSources = uniqueSlots.filter((slot) => courseMap.get(slot.courseId)?.type === "School Education");
     const common = { studentId, studentName: student.userId?.name || "", rollNumber: Number(student.feesPaid) === 1 ? student.rollNumber || "" : "-",
-      schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active || "" };
+      schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active || "", supervisorId: textId(school.supervisorId) };
     if (!uniqueSlots.length) entries.push({ ...common, courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: "SOURCE_COURSES_MISSING", isFinalYear: null });
     for (const source of uniqueSlots) {
       const course = courseMap.get(source.courseId);
       const classification = classifyEntry(source, targets, course, courses, academics.length > 1 || duplicateCourses.has(source.courseId),
-        { student, pendingFeeStudentIds, targetYearExists, targetAcademicCount: (targetMap.get(studentId) || []).length });
+        { student, pendingFeeStudentIds, targetYearExists, targetAcademicCount: (targetMap.get(studentId) || []).length, courseMap, courseInstitutes,
+          schoolSources, schoolSourceCount: schoolSources.length });
       entries.push({ ...common, ...classification });
     }
   }
@@ -197,6 +215,11 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
       schoolId: textId(school._id), schoolCode: school.code || "", schoolName: school.nameEnglish || "", studentStatus: student.active,
       courseId: "", courseName: "", decision: DECISIONS.NEEDS_REVIEW, reasonCode: hasNextAdmission ? "NEXT_ADMISSION_UNVERIFIED" : "SOURCE_ACADEMIC_MISSING", isFinalYear: null });
   }
+  // Exclusion is separate from an academic decision. Keep all verified outcomes.
+  const excludedStatuses = new Set(["inactive", "transferred", "discontinued", "graduated", "alumni"]);
+  const excludedByStatus = entries.filter((entry) => excludedStatuses.has(normalizeYearEndDecision(entry.studentStatus)) && !finished.has(entry.decision));
+  const excludedEntries = new Set(excludedByStatus);
+  entries = entries.filter((entry) => !excludedEntries.has(entry));
   const schoolEntriesById = entriesBySchool(entries);
   const schoolRows = schools.map((school) => {
     const schoolEntries = schoolEntriesById.get(textId(school._id)) || [];
@@ -206,7 +229,7 @@ export function buildYearEndData({ schools, students, sourceAcademics, targetAca
       supervisorName: school.supervisorId?.userId?.name || "", contact: String(school.incharge1Number || school.contactNumber || ""),
       ...counts, status: schoolProgressStatus(counts) };
   }).filter((row) => row.totalStudents > 0);
-  return { entries, schoolRows, unassignedRecords, unassignedStudentCount: unassignedStudentIds.size };
+  return { entries, schoolRows, excludedByStatus, unassignedRecords, unassignedStudentCount: unassignedStudentIds.size };
 }
 
 export function filterYearEndData(data, filters = {}) {
@@ -234,8 +257,10 @@ export const YEAR_END_REASON_TEXT = Object.freeze({
   STUDENT_RECORD_MISSING: "The academic record refers to a missing student.",
   NISWAN_RECORD_MISSING: "The student refers to a missing Niswan.",
   COURSE_MISSING: "Course details are missing.", COURSE_ORDER_INVALID: "School course progression is not configured.",
-  COURSE_ORDER_AMBIGUOUS: "More than one school course has the same progression order.",
-  COURSE_ORDER_GAP: "The next school course is missing or ambiguous.", COURSE_DURATION_INVALID: "Course duration is not configured.",
+  SCHOOL_PATH_UNDEFINED: "The school-course path cannot be identified reliably from the recorded course and institute.",
+  SCHOOL_NEXT_AMBIGUOUS: "More than one next course is configured within this school-course path.",
+  SCHOOL_TARGET_PATH_CONFLICT: "The next-year school course or institute does not match this school-course path.",
+  COURSE_ORDER_GAP: "A progression step is missing within this school-course path.", COURSE_DURATION_INVALID: "Course duration is not configured.",
   SOURCE_DUPLICATE: "More than one source academic record or course entry needs review.", STUDY_YEAR_INVALID: "The student's study year is missing or invalid.",
   NON_FINAL_COMPLETED: "A non-final course year is marked Completed.", COMPLETION_TARGET_CONFLICT: "A completed course also has a next-year entry.",
   TARGET_DUPLICATE: "More than one matching next-year course entry needs review.", TARGET_DECISION_MISSING: "A next-year record exists without an explicit promotion decision.",

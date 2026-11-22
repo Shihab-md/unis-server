@@ -20,7 +20,7 @@ const onError = (res, error) => res.status(error.status || 500).json({ success: 
 export async function getStudentYearEndSummary(req, res) {
   noCache(res);
   try {
-    const { entries, excludedNextYearAdmissions, ...report } = await loadReport(req);
+    const { entries, excludedNextYearAdmissions, excludedByStatus, ...report } = await loadReport(req);
     return res.status(200).json({ success: true, report });
   } catch (error) { return onError(res, error); }
 }
@@ -46,6 +46,12 @@ export async function exportStudentYearEndReport(req, res) {
       { Field: "Unassigned Students (all Niswans)", Value: report.globalSummary.unassignedStudentCount },
       { Field: "Next-year admissions excluded (all Niswans)", Value: report.globalSummary.nextYearAdmissionsExcluded || 0 },
       { Field: "Next-year admissions excluded (filtered scope)", Value: report.summary.nextYearAdmissionsExcluded || 0 },
+      { Field: "Students excluded by status (all Niswans)", Value: report.globalSummary.statusExcludedStudents || 0 },
+      { Field: "Students excluded by status (filtered scope)", Value: report.summary.statusExcludedStudents || 0 },
+      { Field: "Course entries excluded by status (filtered scope)", Value: report.summary.statusExcludedEntries || 0 },
+      { Field: "Status exclusion rule", Value: "Unresolved entries for In-Active, Transferred, Discontinued, Graduated and Alumni students are excluded. Verified Promoted, Not Promoted and Completed decisions remain. The exclusion student count can overlap with processed students who have a retained decision in another course; do not add it to workload totals." },
+      { Field: "Status exclusion scope", Value: "The separate sheet follows Niswan, Supervisor and Course filters, independently of status and decision filters. Students without a current-year academic record are not scanned for historical status exclusions." },
+      { Field: "School-course path rule", Value: "Read-only inference from exact school-course family labels and recorded institutes. Repeated source orders across paths do not block the report. Missing, ambiguous or conflicting next steps require review. Course masters and promotion actions are unchanged." },
       { Field: "Next-year admission scope", Value: "Confirmed new next-year admissions are outside current-year counts. The separate sheet follows Niswan, Supervisor and Course filters; current-year status/decision filters do not apply to it." },
       { Field: "Scope", Value: "Niswan rows follow school/supervisor/course/status filters. Student rows additionally follow the decision filter. All pages included." },
       { Field: "Count rule", Value: "Students are unique. Course decisions count student-course entries. Needs Review students are included in Pending Students." },
@@ -76,6 +82,11 @@ export async function exportStudentYearEndReport(req, res) {
         Promoted: course.promoted, "Not Promoted": course.notPromoted, Completed: course.completed, Pending: course.pending, "Needs Review": course.needsReview })) },
       { name: "Student Decisions", rows: studentRows },
       { name: "Next-Year Admissions", rows: futureRows },
+      { name: "Status Exclusions", rows: report.excludedByStatus.map((entry) => ({ "Niswan Code": entry.schoolCode, Niswan: entry.schoolName,
+        "Student ID": entry.rollNumber || "-", "Student Name": entry.studentName, "Student Status": entry.studentStatus,
+        Course: entry.courseName, "Source Year": entry.sourceYear ?? "", "Source Status": entry.sourceStatus || "",
+        "Report handling": "Excluded from unresolved workload by student status", "Previous classification": entry.decision,
+        "Diagnostic reason": YEAR_END_REASON_TEXT[entry.reasonCode] || "" })) },
       { name: "Records To Review", rows: report.unassignedRecords.map((record) => ({ "Student ID": record.studentId, "Student Name": record.studentName,
         "Niswan Reference": record.schoolId, Reason: YEAR_END_REASON_TEXT[record.reasonCode] })) },
     ]);
