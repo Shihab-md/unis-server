@@ -18,6 +18,7 @@ import { assertDriveFileWithinEnvironmentRoot, ensureEnvironmentDriveFolderPath 
 import * as fs from "fs";
 import * as path from "path";
 import getRedis from "../db/redis.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
@@ -1066,7 +1067,7 @@ const addCertificate = async (req, res) => {
       });
     }
 
-    const school = await School.findById({ _id: schoolId }).populate({
+    const school = await School.findOne({ _id: schoolId, ...getNiswanSchoolFilter() }).populate({
       path: "districtStateId",
       select: "district state",
     });

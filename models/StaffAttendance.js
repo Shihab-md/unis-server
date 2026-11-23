@@ -24,6 +24,7 @@ const staffAttendanceSchema = new Schema({
     enum: ["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"],
     required: true,
   },
+  requiresReview: { type: Boolean, default: false },
   inTime: { type: String, trim: true },
   outTime: { type: String, trim: true },
   remarks: { type: String, trim: true, maxlength: 500 },

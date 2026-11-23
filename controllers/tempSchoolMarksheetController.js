@@ -3,11 +3,6 @@ import {
   processTempSchoolMarksheetRows,
 } from "../services/tempSchoolMarksheetService.js";
 
-const canUseTempSchoolMarksheet = (req) => {
-  const role = String(req?.user?.role || "").toLowerCase();
-  return ["superadmin", "hquser"].includes(role);
-};
-
 const sendError = (res, error, fallbackMessage) => {
   const status = Number(error?.status) || 500;
   return res.status(status).json({
@@ -19,13 +14,6 @@ const sendError = (res, error, fallbackMessage) => {
 
 export const getTempSchoolTemplateInfo = async (req, res) => {
   try {
-    if (!canUseTempSchoolMarksheet(req)) {
-      return res.status(403).json({
-        success: false,
-        error: "You are not allowed to create temporary school marksheets.",
-      });
-    }
-
     // This verifies the configured SE-02 / MARKSHEET / NORMAL record AND
     // downloads/opens the uploaded PDF before the user starts a batch run.
     const template = await getTempSchoolMarksheetTemplateInfo();
@@ -46,13 +34,6 @@ export const getTempSchoolTemplateInfo = async (req, res) => {
 
 export const createTempSchoolMarksheets = async (req, res) => {
   try {
-    if (!canUseTempSchoolMarksheet(req)) {
-      return res.status(403).json({
-        success: false,
-        error: "You are not allowed to create temporary school marksheets.",
-      });
-    }
-
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!rows.length) {
       return res.status(400).json({

@@ -9,12 +9,15 @@ import {
 import authMiddleware from "../middleware/authMiddlware.js";
 import { requireInspectionCreateRole, requireInspectionReadRole, requireInspectionSchoolBodyAccess } from "../middleware/authorizationMiddleware.js";
 import { notifyOnSuccess } from "../middleware/notificationMiddleware.js";
+import { requirePermission } from "../middleware/permissionMiddleware.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
 
 const router = express.Router();
 
 router.post(
   "/add",
   authMiddleware,
+  requirePermission(PERMISSIONS.INSPECTION_CREATE, "You do not have permission to submit Inspection Reports."),
   requireInspectionCreateRole,
   uploadInspectionReportFiles,
   requireInspectionSchoolBodyAccess,
@@ -29,8 +32,8 @@ router.post(
   }),
   addInspectionReport
 );
-router.get("/", authMiddleware, requireInspectionReadRole, getInspectionReports);
-router.get("/my", authMiddleware, requireInspectionReadRole, getMyInspectionReports);
-router.get("/:id", authMiddleware, requireInspectionReadRole, getInspectionReportById);
+router.get("/", authMiddleware, requirePermission(PERMISSIONS.INSPECTION_VIEW, "You do not have permission to view Inspection Reports."), requireInspectionReadRole, getInspectionReports);
+router.get("/my", authMiddleware, requirePermission(PERMISSIONS.INSPECTION_VIEW, "You do not have permission to view Inspection Reports."), requireInspectionReadRole, getMyInspectionReports);
+router.get("/:id", authMiddleware, requirePermission(PERMISSIONS.INSPECTION_VIEW, "You do not have permission to view Inspection Reports."), requireInspectionReadRole, getInspectionReportById);
 
 export default router;

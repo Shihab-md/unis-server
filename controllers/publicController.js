@@ -1,12 +1,13 @@
 import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
 import Student from "../models/Student.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 export const getPublicStats = async (req, res) => {
   try {
     const [supervisorsCount, schoolsCount, studentsCount] = await Promise.all([
       Supervisor.countDocuments({ active: "Active" }),
-      School.countDocuments({ active: "Active" }),
+      School.countDocuments({ active: "Active", ...getNiswanSchoolFilter() }),
       Student.countDocuments({ active: "Active" }),
     ]);
 

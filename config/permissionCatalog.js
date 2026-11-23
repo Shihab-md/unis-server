@@ -1,0 +1,1740 @@
+export const PERMISSION_CATALOG_VERSION = 13;
+
+export const PERMISSIONS = Object.freeze({
+  ROLE_PERMISSIONS_MANAGE: "system.role_permissions.manage",
+
+  NISWAN_VIEW: "niswan.view",
+  NISWAN_CREATE: "niswan.create",
+  NISWAN_EDIT: "niswan.edit",
+  NISWAN_DELETE: "niswan.delete",
+
+  SUPERVISOR_LIST: "supervisor.list",
+  SUPERVISOR_VIEW: "supervisor.view",
+  SUPERVISOR_CREATE: "supervisor.create",
+  SUPERVISOR_EDIT: "supervisor.edit",
+  SUPERVISOR_DELETE: "supervisor.delete",
+
+  EMPLOYEE_VIEW: "employee.view",
+  EMPLOYEE_CREATE: "employee.create",
+  EMPLOYEE_EDIT: "employee.edit",
+  EMPLOYEE_DELETE: "employee.delete",
+  EMPLOYEE_IMPORT: "employee.import",
+
+  STUDENT_VIEW: "student.view",
+  STUDENT_CREATE: "student.create",
+  STUDENT_EDIT: "student.edit",
+  STUDENT_COURSE_CHANGE: "student.course.change",
+  STUDENT_DELETE: "student.delete",
+  STUDENT_PROMOTE: "student.promote",
+  STUDENT_IMPORT: "student.import",
+  STUDENT_CLEANUP: "student.cleanup",
+
+  STUDENT_ATTENDANCE_VIEW: "attendance.student.view",
+  STUDENT_ATTENDANCE_ENTER: "attendance.student.enter",
+  STUDENT_ATTENDANCE_FINALIZE: "attendance.student.finalize",
+
+  STAFF_ATTENDANCE_SELF_VIEW: "attendance.staff.self.view",
+  STAFF_ATTENDANCE_VIEW: "attendance.staff.view",
+  STAFF_ATTENDANCE_ENTER: "attendance.staff.enter",
+  STAFF_ATTENDANCE_FINALIZE: "attendance.staff.finalize",
+
+  STUDENT_LEAVE_VIEW: "leave.student.view",
+  STUDENT_LEAVE_MANAGE: "leave.student.manage",
+  STAFF_LEAVE_SELF_VIEW: "leave.staff.self.view",
+  STAFF_LEAVE_SELF_APPLY: "leave.staff.self.apply",
+  STAFF_LEAVE_APPROVE: "leave.staff.approve",
+
+  STUDENT_ATTENDANCE_REPORT_VIEW: "attendance.student.report.view",
+  STAFF_ATTENDANCE_REPORT_VIEW: "attendance.staff.report.view",
+
+  TA_SELF_VIEW: "ta.self.view",
+  TA_SELF_MANAGE: "ta.self.manage",
+  TA_REVIEW_VIEW: "ta.review.view",
+  TA_APPROVE: "ta.review.approve",
+
+  PAYROLL_VIEW: "payroll.view",
+  PAYROLL_GENERATE: "payroll.generate",
+  PAYROLL_ADJUST: "payroll.adjust",
+  PAYROLL_REVIEW: "payroll.review",
+  PAYROLL_FINALIZE: "payroll.finalize",
+  PAYROLL_PAY: "payroll.pay",
+  PAYSLIP_SELF_VIEW: "payslip.self.view",
+
+  EXAM_QUESTION_VIEW: "exam.question.view",
+  EXAM_QUESTION_CREATE: "exam.question.create",
+  EXAM_QUESTION_EDIT: "exam.question.edit",
+  EXAM_QUESTION_DELETE: "exam.question.delete",
+  EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW: "exam.question.download_tracking.view",
+
+  CERTIFICATE_VIEW: "certificate.view",
+  CERTIFICATE_GENERATE: "certificate.generate",
+  CERTIFICATE_REPRINT: "certificate.reprint",
+  CERTIFICATE_DUPLICATE_PRINT: "certificate.duplicate_print",
+  CERTIFICATE_BULK_IHS: "certificate.bulk_ihs",
+  TEMP_SCHOOL_MARKSHEET_CREATE: "marksheet.temp_school.create",
+
+  INSPECTION_VIEW: "inspection.view",
+  INSPECTION_CREATE: "inspection.create",
+
+  ACCOUNTS_VIEW: "accounts.view",
+  ACCOUNTS_SCHOOL_INVOICES_VIEW: "accounts.school_invoices.view",
+  ACCOUNTS_PAYMENT_BATCH_SUBMIT: "accounts.payment_batch.submit",
+  ACCOUNTS_BATCH_HISTORY_VIEW: "accounts.payment_batch.history.view",
+  ACCOUNTS_HQ_REVIEW_VIEW: "accounts.hq_review.view",
+  ACCOUNTS_HQ_APPROVE: "accounts.hq_review.approve",
+  ACCOUNTS_HQ_REJECT: "accounts.hq_review.reject",
+  ACCOUNTS_HQ_PENDING_INVOICES_VIEW: "accounts.hq_pending_invoices.view",
+  ACCOUNTS_HQ_MIGRATION_RUN: "accounts.hq_migration.run",
+
+  REPORTS_VIEW: "reports.view",
+  REPORTS_EXPORT: "reports.export",
+
+  NOTIFICATIONS_VIEW: "notifications.view",
+  NOTIFICATIONS_SEND: "notifications.send",
+  NOTIFICATIONS_SENT_HISTORY_VIEW: "notifications.sent_history.view",
+
+  HELP_DESK_VIEW: "helpdesk.view",
+  HELP_DESK_CREATE: "helpdesk.create",
+  HELP_DESK_REPLY: "helpdesk.reply",
+  HELP_DESK_STATUS_MANAGE: "helpdesk.status.manage",
+
+  MASTER_INSTITUTE_VIEW: "master.institute.view",
+  MASTER_INSTITUTE_CREATE: "master.institute.create",
+  MASTER_INSTITUTE_EDIT: "master.institute.edit",
+  MASTER_INSTITUTE_DELETE: "master.institute.delete",
+
+  MASTER_COURSE_VIEW: "master.course.view",
+  MASTER_COURSE_CREATE: "master.course.create",
+  MASTER_COURSE_EDIT: "master.course.edit",
+  MASTER_COURSE_DELETE: "master.course.delete",
+
+  MASTER_ACADEMIC_YEAR_VIEW: "master.academic_year.view",
+  MASTER_ACADEMIC_YEAR_CREATE: "master.academic_year.create",
+  MASTER_ACADEMIC_YEAR_EDIT: "master.academic_year.edit",
+  MASTER_ACADEMIC_YEAR_DELETE: "master.academic_year.delete",
+
+  MASTER_TEMPLATE_VIEW: "master.template.view",
+  MASTER_TEMPLATE_CREATE: "master.template.create",
+  MASTER_TEMPLATE_EDIT: "master.template.edit",
+  MASTER_TEMPLATE_DELETE: "master.template.delete",
+
+  MASTER_DISTRICT_STATE_VIEW: "master.district_state.view",
+  MASTER_DISTRICT_STATE_CREATE: "master.district_state.create",
+  MASTER_DISTRICT_STATE_EDIT: "master.district_state.edit",
+  MASTER_DISTRICT_STATE_DELETE: "master.district_state.delete",
+
+  MASTER_GRADE_VIEW: "master.grade.view",
+  MASTER_GRADE_CREATE: "master.grade.create",
+  MASTER_GRADE_EDIT: "master.grade.edit",
+  MASTER_GRADE_DELETE: "master.grade.delete",
+
+  MARKSHEET_VIEW: "marksheet.view",
+  MARKSHEET_ENTER: "marksheet.enter",
+  MARKSHEET_FINALIZE: "marksheet.finalize",
+  MARKSHEET_ANNUAL: "marksheet.annual",
+  MARKSHEET_CONSOLIDATED_VIEW: "marksheet.consolidated.view",
+  MARKSHEET_PDF: "marksheet.pdf",
+});
+
+// `allowedRoles` is a server-scope safety boundary, not a role-permission default.
+// Phase 4 introduces explicit HQ roles while keeping data scope independent from
+// permission assignment. Existing legacy Guest and HQ-Niswan compatibility stays
+// in place until the later organization-model phase.
+const NISWAN_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
+]);
+const NISWAN_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+const SUPERVISOR_LIST_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "guest",
+]);
+const SUPERVISOR_DETAIL_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "guest",
+]);
+const SUPERVISOR_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+const EMPLOYEE_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
+]);
+const EMPLOYEE_CREATE_UPDATE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "supervisor", "admin"]);
+const EMPLOYEE_DELETE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "supervisor", "admin"]);
+const EMPLOYEE_IMPORT_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+const STUDENT_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
+]);
+const STUDENT_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
+const STUDENT_HQ_BULK_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+const STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin", "teacher", "usthadh",
+]);
+const STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "admin", "teacher", "usthadh",
+]);
+const STAFF_ATTENDANCE_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin",
+]);
+const STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
+const STAFF_SELF_SCOPE_ROLES = Object.freeze([
+  "hqadmin", "accountant", "hquser", "hqstaff", "supervisor", "admin", "employee",
+  "teacher", "usthadh", "warden", "staff",
+]);
+const STUDENT_LEAVE_VIEW_SCOPE_ROLES = STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES;
+const STUDENT_LEAVE_MANAGE_SCOPE_ROLES = STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES;
+const STAFF_LEAVE_APPROVE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "admin"]);
+
+// Payroll is an HQ-only finance boundary independent from Niswan operations.
+// Only SuperAdmin, HQ Admin and Accountant may manage HQ Payroll. Own Payslips are
+// available only to HQ staff identities; Supervisor/Muavin is an HQ staff role.
+const PAYROLL_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant"]);
+const PAYSLIP_SELF_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "hqstaff", "supervisor",
+]);
+
+const EXAM_QUESTION_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "admin",
+]);
+const EXAM_QUESTION_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+const CERTIFICATE_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "guest",
+]);
+const CERTIFICATE_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+// HQ User keeps the two explicitly approved legacy HQ utilities even though it is
+// otherwise a read-only global role. Admin remains compatibility-only for a legacy
+// Admin Employee explicitly classified under the HQ organization; normal Niswan
+// Admin is still blocked.
+const CERTIFICATE_BULK_IHS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
+const TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "hquser", "admin"]);
+
+const INSPECTION_READ_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor",
+]);
+const INSPECTION_CREATE_SCOPE_ROLES = Object.freeze(["supervisor"]);
+
+const ACCOUNTS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant", "admin"]);
+const ACCOUNTS_HQ_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin", "accountant"]);
+const REPORTS_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "guest",
+]);
+const ALL_CURRENT_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "hqstaff", "supervisor", "admin",
+  "employee", "teacher", "usthadh", "student", "parent", "warden", "staff", "guest",
+]);
+const NOTIFICATION_BROADCAST_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+const HELP_DESK_SELF_SCOPE_ROLES = ALL_CURRENT_ROLES;
+const HELP_DESK_STATUS_SCOPE_ROLES = Object.freeze(["superadmin", "hqadmin"]);
+
+// Masters and system administration stay SuperAdmin-only in the new HQ model.
+// Legacy Guest keeps its previous read-only Master access for compatibility.
+const MASTER_READ_SCOPE_ROLES = Object.freeze(["superadmin", "guest"]);
+const MASTER_MANAGE_SCOPE_ROLES = Object.freeze(["superadmin"]);
+
+const MARKSHEET_VIEW_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin", "employee",
+  "teacher", "usthadh", "warden", "staff",
+]);
+const MARKSHEET_MANAGE_SCOPE_ROLES = Object.freeze([
+  "superadmin", "hqadmin", "supervisor", "admin", "employee", "teacher", "usthadh",
+  "warden", "staff",
+]);
+// Annual Exam Access controls which exam type may be opened; editing/finalizing still
+// requires separate permissions. Phase 4 global read roles therefore receive Annual
+// read access without receiving any marks-entry/finalization capability.
+const MARKSHEET_ANNUAL_SCOPE_ROLES = Object.freeze([
+  ...MARKSHEET_MANAGE_SCOPE_ROLES, "accountant", "hquser",
+]);
+
+export const PERMISSION_CATALOG = Object.freeze([
+  {
+    key: PERMISSIONS.NISWAN_VIEW,
+    category: "Niswans",
+    label: "View Niswans",
+    description: "Open the Niswan list/details within the user's existing server-controlled scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: NISWAN_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.NISWAN_CREATE,
+    category: "Niswans",
+    label: "Create Niswans",
+    description: "Create a new Niswan. Available only to roles with the existing global Niswan-management scope.",
+    requires: [PERMISSIONS.NISWAN_VIEW],
+    editable: true,
+    allowedRoles: NISWAN_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.NISWAN_EDIT,
+    category: "Niswans",
+    label: "Edit Niswans",
+    description: "Edit Niswan details within the existing global Niswan-management scope.",
+    requires: [PERMISSIONS.NISWAN_VIEW],
+    editable: true,
+    allowedRoles: NISWAN_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.NISWAN_DELETE,
+    category: "Niswans",
+    label: "Deactivate Niswans",
+    description: "Deactivate Niswans while retaining all linked records and history.",
+    requires: [PERMISSIONS.NISWAN_VIEW],
+    editable: true,
+    allowedRoles: NISWAN_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.SUPERVISOR_LIST,
+    category: "Supervisors / Muavins",
+    label: "View Muavin Directory",
+    description: "Open the Muavin directory using the current server visibility rules.",
+    requires: [],
+    editable: true,
+    allowedRoles: SUPERVISOR_LIST_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.SUPERVISOR_VIEW,
+    category: "Supervisors / Muavins",
+    label: "View Muavin Details",
+    description: "Open an individual Muavin detail record.",
+    requires: [PERMISSIONS.SUPERVISOR_LIST],
+    editable: true,
+    allowedRoles: SUPERVISOR_DETAIL_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.SUPERVISOR_CREATE,
+    category: "Supervisors / Muavins",
+    label: "Create Muavins",
+    description: "Create a new Muavin using the existing HQ management rules.",
+    requires: [PERMISSIONS.SUPERVISOR_LIST],
+    editable: true,
+    allowedRoles: SUPERVISOR_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.SUPERVISOR_EDIT,
+    category: "Supervisors / Muavins",
+    label: "Edit Muavins",
+    description: "Edit a Muavin record using the existing HQ management rules.",
+    requires: [PERMISSIONS.SUPERVISOR_LIST, PERMISSIONS.SUPERVISOR_VIEW],
+    editable: true,
+    allowedRoles: SUPERVISOR_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.SUPERVISOR_DELETE,
+    category: "Supervisors / Muavins",
+    label: "Delete Muavins",
+    description: "Delete a Muavin record using the existing HQ management rules.",
+    requires: [PERMISSIONS.SUPERVISOR_LIST, PERMISSIONS.SUPERVISOR_VIEW],
+    editable: true,
+    allowedRoles: SUPERVISOR_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.EMPLOYEE_VIEW,
+    category: "Employees",
+    label: "View Employees",
+    description: "View Employee records within the user's existing HQ, assigned-Niswan, own-Niswan or legacy read scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: EMPLOYEE_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EMPLOYEE_CREATE,
+    category: "Employees",
+    label: "Create Employees",
+    description: "Create Employees. Existing target-role and Niswan-scope restrictions still apply.",
+    requires: [PERMISSIONS.EMPLOYEE_VIEW],
+    editable: true,
+    allowedRoles: EMPLOYEE_CREATE_UPDATE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EMPLOYEE_EDIT,
+    category: "Employees",
+    label: "Edit Employees",
+    description: "Edit Employee records. Existing target-role, self-edit and Niswan-scope restrictions still apply.",
+    requires: [PERMISSIONS.EMPLOYEE_VIEW],
+    editable: true,
+    allowedRoles: EMPLOYEE_CREATE_UPDATE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EMPLOYEE_DELETE,
+    category: "Employees",
+    label: "Delete Employees",
+    description: "Delete Employee records. Existing self-delete, target-role and Niswan-scope restrictions still apply.",
+    requires: [PERMISSIONS.EMPLOYEE_VIEW],
+    editable: true,
+    allowedRoles: EMPLOYEE_DELETE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EMPLOYEE_IMPORT,
+    category: "Bulk Operations",
+    label: "Import Employees",
+    description: "Bulk-import Employees from the existing Excel workflow. The current SuperAdmin-only server rule remains mandatory.",
+    requires: [PERMISSIONS.EMPLOYEE_VIEW, PERMISSIONS.EMPLOYEE_CREATE],
+    editable: true,
+    allowedRoles: EMPLOYEE_IMPORT_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_VIEW,
+    category: "Students",
+    label: "View Students",
+    description: "View Student records within the user's existing server-controlled scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_CREATE,
+    category: "Students",
+    label: "Create Students",
+    description: "Create Students where the existing Student workflow and Niswan rules allow it.",
+    requires: [PERMISSIONS.STUDENT_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_EDIT,
+    category: "Students",
+    label: "Edit Students",
+    description: "Edit Student records within the existing Niswan and field-lock rules.",
+    requires: [PERMISSIONS.STUDENT_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_COURSE_CHANGE,
+    category: "Students", label: "Change Student Course",
+    description: "Change a student's assigned course after reviewing fees. No invoice is created.",
+    requires: [PERMISSIONS.STUDENT_VIEW], editable: true, allowedRoles: ["superadmin", "hquser"],
+  },
+  {
+    key: PERMISSIONS.STUDENT_DELETE,
+    category: "Students",
+    label: "Delete Students",
+    description: "Delete Student records within the existing Niswan scope.",
+    requires: [PERMISSIONS.STUDENT_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_PROMOTE,
+    category: "Students",
+    label: "Promote / Complete Students",
+    description: "Use the existing single/bulk Student promotion workflow within the user's permitted Niswan scope.",
+    requires: [PERMISSIONS.STUDENT_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_IMPORT,
+    category: "Bulk Operations",
+    label: "Import Students",
+    description: "Bulk-import Students from the existing Excel workflow. The existing HQ-only global-operation boundary remains mandatory.",
+    requires: [PERMISSIONS.STUDENT_VIEW, PERMISSIONS.STUDENT_CREATE],
+    editable: true,
+    allowedRoles: STUDENT_HQ_BULK_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_CLEANUP,
+    category: "Bulk Operations",
+    label: "Cleanup Students",
+    description: "Remove selected Students using the existing global cleanup workflow. The existing HQ-only boundary remains mandatory.",
+    requires: [PERMISSIONS.STUDENT_VIEW, PERMISSIONS.STUDENT_DELETE],
+    editable: true,
+    allowedRoles: STUDENT_HQ_BULK_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    category: "Student Attendance",
+    label: "View Student Attendance",
+    description: "View daily and monthly Student attendance within the existing Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    category: "Student Attendance",
+    label: "Enter Student Attendance",
+    description: "Create or edit non-finalized Student attendance within the existing Niswan Attendance scope.",
+    requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    category: "Student Attendance",
+    label: "Finalize Student Attendance",
+    description: "Finalize a Student attendance sheet. Finalized attendance remains locked by the existing business rules.",
+    requires: [PERMISSIONS.STUDENT_ATTENDANCE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_ENTER],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    category: "Staff Attendance",
+    label: "View Own Staff Attendance",
+    description: "View only the logged-in staff member's own monthly attendance when the login is linked to a staff record.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    category: "Staff Attendance",
+    label: "View Staff Attendance",
+    description: "View staff attendance rosters within the existing HQ or Niswan attendance-management scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    category: "Staff Attendance",
+    label: "Enter Staff Attendance",
+    description: "Create or edit non-finalized Staff attendance within the existing HQ or Niswan scope.",
+    requires: [PERMISSIONS.STAFF_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    category: "Staff Attendance",
+    label: "Finalize Staff Attendance",
+    description: "Finalize a Staff attendance sheet. Finalized attendance remains locked by the existing business rules.",
+    requires: [PERMISSIONS.STAFF_ATTENDANCE_VIEW, PERMISSIONS.STAFF_ATTENDANCE_ENTER],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_LEAVE_VIEW,
+    category: "Student Leave",
+    label: "View Student Leave",
+    description: "View Student leave records within the existing Student Attendance Niswan scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_LEAVE_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    category: "Student Leave",
+    label: "Manage Student Leave",
+    description: "Record and update Student leave using the existing approval/finalized-attendance rules.",
+    requires: [PERMISSIONS.STUDENT_LEAVE_VIEW, PERMISSIONS.STUDENT_ATTENDANCE_VIEW],
+    editable: true,
+    allowedRoles: STUDENT_LEAVE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    category: "Staff Leave",
+    label: "View Own Leave",
+    description: "View only the logged-in staff member's own leave history when linked to a staff record.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    category: "Staff Leave",
+    label: "Apply / Cancel Own Leave",
+    description: "Apply for own staff leave and cancel the user's own Pending or Approved leave using the existing leave rules.",
+    requires: [PERMISSIONS.STAFF_LEAVE_SELF_VIEW],
+    editable: true,
+    allowedRoles: STAFF_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_LEAVE_APPROVE,
+    category: "Staff Leave",
+    label: "Approve / Reject Staff Leave",
+    description: "Review Staff leave within the existing HQ/Niswan approval scope. Self-approval and Admin escalation rules remain enforced.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_LEAVE_APPROVE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+    category: "Attendance Reports",
+    label: "View Student Attendance Reports",
+    description: "View monthly Student attendance reports within the existing Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STUDENT_ATTENDANCE_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+    category: "Attendance Reports",
+    label: "View Staff Attendance Reports",
+    description: "View monthly Staff attendance reports within the existing HQ or Niswan Attendance scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: STAFF_ATTENDANCE_VIEW_SCOPE_ROLES,
+  },
+
+  { key: PERMISSIONS.TA_SELF_VIEW, category: "Travelling Allowance", label: "View Own TA Claims", description: "View own travel claims and evidence.", requires: [], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
+  { key: PERMISSIONS.TA_SELF_MANAGE, category: "Travelling Allowance", label: "Manage Own TA Claims", description: "Submit monthly TA with evidence or resubmit a rejected request.", requires: [PERMISSIONS.TA_SELF_VIEW], editable: true, allowedRoles: ["supervisor", "hqadmin", "hquser", "hqstaff", "accountant"] },
+  { key: PERMISSIONS.TA_REVIEW_VIEW, category: "Travelling Allowance", label: "View TA Approvals", description: "View HQ travel claims and supporting evidence.", requires: [], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
+  { key: PERMISSIONS.TA_APPROVE, category: "Travelling Allowance", label: "Approve TA Claims", description: "Approve or reject another staff member's monthly TA. Self-approval is blocked.", requires: [PERMISSIONS.TA_REVIEW_VIEW], editable: true, allowedRoles: ["superadmin", "hqadmin", "accountant"] },
+
+  {
+    key: PERMISSIONS.PAYROLL_VIEW,
+    category: "Payroll",
+    label: "View Payroll",
+    description: "View HQ salary Payroll runs. Payroll is not available for Niswans.",
+    requires: [],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_GENERATE,
+    category: "Payroll",
+    label: "Generate / Recalculate Payroll",
+    description: "Generate or recalculate Draft/Reviewed Payroll from salary, Attendance and approved unpaid Leave.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_ADJUST,
+    category: "Payroll",
+    label: "Adjust Payroll Items",
+    description: "Edit manual allowance, deduction and item remarks while Payroll is not Finalized/Paid.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_REVIEW,
+    category: "Payroll",
+    label: "Review Payroll",
+    description: "Move Payroll between Draft and Reviewed using the existing workflow rules.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_FINALIZE,
+    category: "Payroll",
+    label: "Finalize Payroll",
+    description: "Finalize a Reviewed Payroll run. Finalized salary items become locked.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYROLL_PAY,
+    category: "Payroll",
+    label: "Mark Payroll Paid",
+    description: "Mark a Finalized Payroll run as Paid and record payment method/reference.",
+    requires: [PERMISSIONS.PAYROLL_VIEW],
+    editable: true,
+    allowedRoles: PAYROLL_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.PAYSLIP_SELF_VIEW,
+    category: "Payslips",
+    label: "View Own Payslips",
+    description: "View only the logged-in HQ staff member's own Finalized/Paid Payroll salary items.",
+    requires: [],
+    editable: true,
+    allowedRoles: PAYSLIP_SELF_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.EXAM_QUESTION_VIEW,
+    category: "Exams / Questions",
+    label: "View Question Papers",
+    description: "View Exam Question Papers using the existing HQ-global or Niswan-targeted Question Paper scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_CREATE,
+    category: "Exams / Questions",
+    label: "Create Question Papers",
+    description: "Create and upload new Question Paper PDFs using the existing HQ Question Paper management scope.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_EDIT,
+    category: "Exams / Questions",
+    label: "Edit Question Papers",
+    description: "Edit Question Papers using the existing download-lock and publication-status business rules.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_DELETE,
+    category: "Exams / Questions",
+    label: "Delete Question Papers",
+    description: "Delete only Question Papers allowed by the existing Draft/download-lock rules.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW,
+    category: "Exams / Questions",
+    label: "View Question Download Tracking",
+    description: "View per-Niswan Question Paper download tracking within the existing HQ manager scope.",
+    requires: [PERMISSIONS.EXAM_QUESTION_VIEW],
+    editable: true,
+    allowedRoles: EXAM_QUESTION_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.CERTIFICATE_VIEW,
+    category: "Certificates",
+    label: "View Certificates",
+    description: "View Certificate list and Certificate details using the current Certificate read scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: CERTIFICATE_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_GENERATE,
+    category: "Certificates",
+    label: "Generate Certificates",
+    description: "Generate a new Certificate after the existing course-completion and Certificate-fee checks pass.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_REPRINT,
+    category: "Certificates",
+    label: "Reprint Certificates",
+    description: "Use the existing Certificate reprint workflow.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_DUPLICATE_PRINT,
+    category: "Certificates",
+    label: "Duplicate Print Certificates",
+    description: "Generate an existing Certificate's duplicate-print PDF using the current HQ Certificate scope.",
+    requires: [PERMISSIONS.CERTIFICATE_VIEW],
+    editable: true,
+    allowedRoles: CERTIFICATE_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.CERTIFICATE_BULK_IHS,
+    category: "Certificates",
+    label: "Create IHS Old Certificates",
+    description: "Create legacy IHS Certificates in bulk. For the Admin role this is effective only for a legacy Admin Employee classified under the HQ organization; normal Niswan Admin remains blocked by server scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: CERTIFICATE_BULK_IHS_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.INSPECTION_VIEW,
+    category: "Inspections",
+    label: "View Inspection Reports",
+    description: "View Inspection Reports using the existing HQ-global or Supervisor-own-report scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: INSPECTION_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.INSPECTION_CREATE,
+    category: "Inspections",
+    label: "Submit Inspection Reports",
+    description: "Submit an Inspection Report. Existing active-Muavin and assigned-Niswan checks remain mandatory.",
+    requires: [PERMISSIONS.INSPECTION_VIEW],
+    editable: true,
+    allowedRoles: INSPECTION_CREATE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.ACCOUNTS_VIEW,
+    category: "Accounts",
+    label: "Open Accounts",
+    description: "Open the Accounts module within the existing HQ or own-Niswan Accounts scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    category: "Accounts",
+    label: "View Invoice Payments",
+    description: "View due invoices and school-fee dashboard data within the existing Accounts Niswan scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    category: "Accounts",
+    label: "Submit Payment Batches",
+    description: "Upload payment proof and submit invoice payment batches using the existing Accounts scope and validation rules.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    category: "Accounts",
+    label: "View Sent / Received Batches",
+    description: "View payment-batch history within the existing HQ-global or own-Niswan scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW,
+    category: "Accounts",
+    label: "View Batches for Approval",
+    description: "View pending payment batches and batch details within the existing HQ Accounts scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_APPROVE,
+    category: "Accounts",
+    label: "Approve Payment Batches",
+    description: "Approve pending payment batches using the existing HQ Accounts validation and audit workflow.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_REJECT,
+    category: "Accounts",
+    label: "Reject Payment Batches",
+    description: "Reject pending payment batches with the existing required-reason and audit workflow.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW, PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_PENDING_INVOICES_VIEW,
+    category: "Accounts",
+    label: "View Pending HQ Invoices",
+    description: "View invoices not yet sent to HQ within the existing HQ Accounts scope.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.ACCOUNTS_HQ_MIGRATION_RUN,
+    category: "Accounts",
+    label: "Run Invoice Batch Migration",
+    description: "Run the existing HQ migration that creates payment batches from eligible invoices.",
+    requires: [PERMISSIONS.ACCOUNTS_VIEW],
+    editable: true,
+    allowedRoles: ACCOUNTS_HQ_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.REPORTS_VIEW,
+    category: "Reports",
+    label: "View Reports",
+    description: "View dashboard, Niswan, Student, Employee and Muavin reports within the existing report scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: REPORTS_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.REPORTS_EXPORT,
+    category: "Reports",
+    label: "Export Reports",
+    description: "Export permitted reports as CSV/XLSX using the same existing report data scope.",
+    requires: [PERMISSIONS.REPORTS_VIEW],
+    editable: true,
+    allowedRoles: REPORTS_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.NOTIFICATIONS_VIEW,
+    category: "Notifications",
+    label: "View Notifications",
+    description: "View and mark the signed-in user's own notification feed and maintain that user's push subscription.",
+    requires: [],
+    editable: true,
+    allowedRoles: ALL_CURRENT_ROLES,
+  },
+  {
+    key: PERMISSIONS.NOTIFICATIONS_SENT_HISTORY_VIEW,
+    category: "Notifications",
+    label: "View Sent Notification History",
+    description: "View broadcast-notification delivery history. Current server scope is SuperAdmin only.",
+    requires: [PERMISSIONS.NOTIFICATIONS_VIEW],
+    editable: true,
+    allowedRoles: NOTIFICATION_BROADCAST_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.NOTIFICATIONS_SEND,
+    category: "Notifications",
+    label: "Send Notifications",
+    description: "Send broadcast notifications using the current SuperAdmin-only targeting workflow.",
+    requires: [PERMISSIONS.NOTIFICATIONS_VIEW, PERMISSIONS.NOTIFICATIONS_SENT_HISTORY_VIEW],
+    editable: true,
+    allowedRoles: NOTIFICATION_BROADCAST_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.HELP_DESK_VIEW,
+    category: "Help Desk",
+    label: "View Help Desk",
+    description: "View Help Desk queries within the current role scope: own queries for normal users and received queries for SuperAdmin.",
+    requires: [],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_CREATE,
+    category: "Help Desk",
+    label: "Create Help Desk Queries",
+    description: "Create a new Help Desk query. SuperAdmin keeps the existing reply-only behavior.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_REPLY,
+    category: "Help Desk",
+    label: "Reply to Help Desk Queries",
+    description: "Reply within the existing Help Desk scope: own queries for normal users and received queries for SuperAdmin.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_SELF_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.HELP_DESK_STATUS_MANAGE,
+    category: "Help Desk",
+    label: "Manage Help Desk Status",
+    description: "Change Help Desk query status using the current SuperAdmin-only workflow.",
+    requires: [PERMISSIONS.HELP_DESK_VIEW],
+    editable: true,
+    allowedRoles: HELP_DESK_STATUS_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_VIEW,
+    category: "Masters - Institutes",
+    label: "View Institutes",
+    description: "Open the Institute maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_CREATE,
+    category: "Masters - Institutes",
+    label: "Create Institute",
+    description: "Create Institute master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_EDIT,
+    category: "Masters - Institutes",
+    label: "Edit Institute",
+    description: "Edit Institute master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_INSTITUTE_DELETE,
+    category: "Masters - Institutes",
+    label: "Delete Institute",
+    description: "Delete Institute master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_INSTITUTE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_COURSE_VIEW,
+    category: "Masters - Courses",
+    label: "View Courses",
+    description: "Open the Course maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_CREATE,
+    category: "Masters - Courses",
+    label: "Create Course",
+    description: "Create Course master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_EDIT,
+    category: "Masters - Courses",
+    label: "Edit Course",
+    description: "Edit Course master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_COURSE_DELETE,
+    category: "Masters - Courses",
+    label: "Delete Course",
+    description: "Delete Course master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_COURSE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW,
+    category: "Masters - Academic Years",
+    label: "View Academic Years",
+    description: "Open the Academic Year maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_CREATE,
+    category: "Masters - Academic Years",
+    label: "Create Academic Year",
+    description: "Create Academic Year master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_EDIT,
+    category: "Masters - Academic Years",
+    label: "Edit Academic Year",
+    description: "Edit Academic Year master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_ACADEMIC_YEAR_DELETE,
+    category: "Masters - Academic Years",
+    label: "Delete Academic Year",
+    description: "Delete Academic Year master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_VIEW,
+    category: "Masters - Templates",
+    label: "View Templates",
+    description: "Open the Template maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_CREATE,
+    category: "Masters - Templates",
+    label: "Create Template",
+    description: "Create Template master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_EDIT,
+    category: "Masters - Templates",
+    label: "Edit Template",
+    description: "Edit Template master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_TEMPLATE_DELETE,
+    category: "Masters - Templates",
+    label: "Delete Template",
+    description: "Delete Template master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_TEMPLATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_VIEW,
+    category: "Masters - Districts / States",
+    label: "View Districts / States",
+    description: "Open the District / State maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_CREATE,
+    category: "Masters - Districts / States",
+    label: "Create District / State",
+    description: "Create District / State master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_EDIT,
+    category: "Masters - Districts / States",
+    label: "Edit District / State",
+    description: "Edit District / State master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_DISTRICT_STATE_DELETE,
+    category: "Masters - Districts / States",
+    label: "Delete District / State",
+    description: "Delete District / State master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_DISTRICT_STATE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MASTER_GRADE_VIEW,
+    category: "Masters - Grade Master",
+    label: "View Grade Master",
+    description: "Open the Grade maintenance list/details. Shared reference-data lookups remain separate from this permission.",
+    requires: [],
+    editable: true,
+    allowedRoles: MASTER_READ_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_CREATE,
+    category: "Masters - Grade Master",
+    label: "Create Grade",
+    description: "Create Grade master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_EDIT,
+    category: "Masters - Grade Master",
+    label: "Edit Grade",
+    description: "Edit Grade master records using the existing HQ maintenance scope.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MASTER_GRADE_DELETE,
+    category: "Masters - Grade Master",
+    label: "Delete Grade",
+    description: "Delete Grade master records using the existing server business rules.",
+    requires: [PERMISSIONS.MASTER_GRADE_VIEW],
+    editable: true,
+    allowedRoles: MASTER_MANAGE_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.MARKSHEET_VIEW,
+    category: "Exams / Results",
+    label: "View Marksheets",
+    description: "View saved marksheets and load permitted Niswans/exams.",
+    requires: [],
+    editable: true,
+    allowedRoles: MARKSHEET_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MARKSHEET_ENTER,
+    category: "Exams / Results",
+    label: "Enter Draft Marks",
+    description: "Enter or edit Draft marksheets within the user's existing Niswan scope.",
+    requires: [PERMISSIONS.MARKSHEET_VIEW],
+    editable: true,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MARKSHEET_FINALIZE,
+    category: "Exams / Results",
+    label: "Finalize Marksheets",
+    description: "Finalize Draft marksheets. Finalized marksheets are locked.",
+    requires: [PERMISSIONS.MARKSHEET_VIEW, PERMISSIONS.MARKSHEET_ENTER],
+    editable: true,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MARKSHEET_ANNUAL,
+    category: "Exams / Results",
+    label: "Annual Exam Access",
+    description: "Allow Annual exam marksheet access in addition to Quarterly and Half Yearly.",
+    requires: [PERMISSIONS.MARKSHEET_VIEW],
+    editable: true,
+    allowedRoles: MARKSHEET_ANNUAL_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MARKSHEET_CONSOLIDATED_VIEW,
+    category: "Exams / Results",
+    label: "View Consolidated Marksheet",
+    description: "View and print consolidated marksheets.",
+    requires: [PERMISSIONS.MARKSHEET_VIEW],
+    editable: true,
+    allowedRoles: MARKSHEET_VIEW_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.MARKSHEET_PDF,
+    category: "Exams / Results",
+    label: "Official Marksheet PDF",
+    description: "Generate, regenerate and download official marksheet PDFs.",
+    requires: [PERMISSIONS.MARKSHEET_VIEW],
+    editable: true,
+    allowedRoles: MARKSHEET_MANAGE_SCOPE_ROLES,
+  },
+  {
+    key: PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+    category: "Marks / Results",
+    label: "Create Temp School Marksheets",
+    description: "Generate temporary school marksheets from the existing Excel workflow. For the Admin role this is effective only for a legacy Admin Employee classified under the HQ organization; normal Niswan Admin remains blocked by server scope.",
+    requires: [],
+    editable: true,
+    allowedRoles: TEMP_SCHOOL_MARKSHEET_SCOPE_ROLES,
+  },
+
+  {
+    key: PERMISSIONS.ROLE_PERMISSIONS_MANAGE,
+    category: "System Security",
+    label: "Manage Role Permissions",
+    description: "Manage permissions assigned to roles. Permanently locked to SuperAdmin.",
+    requires: [],
+    editable: false,
+    superadminOnly: true,
+    allowedRoles: ["superadmin"],
+  },
+]);
+
+export const PERMISSION_KEYS = Object.freeze(PERMISSION_CATALOG.map((item) => item.key));
+export const PERMISSION_KEY_SET = new Set(PERMISSION_KEYS);
+
+// Application roles remain source-controlled because adding a new role affects
+// authentication, data scope and many business modules. Once a role exists,
+// assignable business permissions are managed from the SuperAdmin screen.
+export const ROLE_DEFINITIONS = Object.freeze([
+  { key: "superadmin", label: "SuperAdmin", editable: false, scopeLabel: "All UNIS data and system scope" },
+  { key: "hqadmin", label: "HQ Admin", editable: true, scopeLabel: "Global HQ operational scope; Masters/System excluded" },
+  { key: "accountant", label: "Accountant", editable: true, scopeLabel: "Global read scope + Accounts management" },
+  { key: "hquser", label: "HQ User", editable: true, scopeLabel: "Global read-only HQ scope + approved HQ utilities" },
+  { key: "hqstaff", label: "HQ Staff", editable: true, scopeLabel: "Own HQ staff self-service only" },
+  { key: "supervisor", label: "Supervisor / Muavin", editable: true, scopeLabel: "Assigned Niswans + own HQ staff self-service" },
+  { key: "admin", label: "Niswan Admin", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "employee", label: "Employee (Legacy)", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "teacher", label: "Teacher", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "usthadh", label: "Usthadh", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "warden", label: "Warden", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "staff", label: "Staff", editable: true, scopeLabel: "Own Niswan only" },
+  { key: "student", label: "Student", editable: true, scopeLabel: "Self / linked student scope" },
+  { key: "parent", label: "Parent", editable: true, scopeLabel: "Self / linked student scope" },
+  // Compatibility only: some older installations may still contain Guest users.
+  { key: "guest", label: "Guest (Legacy)", editable: true, scopeLabel: "Legacy read-only scope" },
+]);
+
+export const ROLE_KEY_SET = new Set(ROLE_DEFINITIONS.map((item) => item.key));
+
+const PHASE_2_1_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.NISWAN_VIEW,
+    PERMISSIONS.NISWAN_CREATE,
+    PERMISSIONS.NISWAN_EDIT,
+    PERMISSIONS.NISWAN_DELETE,
+    PERMISSIONS.SUPERVISOR_LIST,
+    PERMISSIONS.SUPERVISOR_VIEW,
+    PERMISSIONS.SUPERVISOR_CREATE,
+    PERMISSIONS.SUPERVISOR_EDIT,
+    PERMISSIONS.SUPERVISOR_DELETE,
+    PERMISSIONS.EMPLOYEE_VIEW,
+    PERMISSIONS.EMPLOYEE_CREATE,
+    PERMISSIONS.EMPLOYEE_EDIT,
+    PERMISSIONS.STUDENT_VIEW,
+    PERMISSIONS.STUDENT_CREATE,
+    PERMISSIONS.STUDENT_EDIT,
+    PERMISSIONS.STUDENT_DELETE,
+    PERMISSIONS.STUDENT_PROMOTE,
+  ],
+  supervisor: [
+    PERMISSIONS.NISWAN_VIEW,
+    PERMISSIONS.SUPERVISOR_LIST,
+    PERMISSIONS.EMPLOYEE_VIEW,
+    PERMISSIONS.EMPLOYEE_CREATE,
+    PERMISSIONS.EMPLOYEE_EDIT,
+    PERMISSIONS.EMPLOYEE_DELETE,
+    PERMISSIONS.STUDENT_VIEW,
+  ],
+  admin: [
+    PERMISSIONS.NISWAN_VIEW,
+    PERMISSIONS.EMPLOYEE_VIEW,
+    PERMISSIONS.EMPLOYEE_CREATE,
+    PERMISSIONS.EMPLOYEE_EDIT,
+    PERMISSIONS.EMPLOYEE_DELETE,
+    PERMISSIONS.STUDENT_VIEW,
+    PERMISSIONS.STUDENT_CREATE,
+    PERMISSIONS.STUDENT_EDIT,
+    PERMISSIONS.STUDENT_DELETE,
+    PERMISSIONS.STUDENT_PROMOTE,
+  ],
+  employee: [],
+  teacher: [],
+  usthadh: [],
+  warden: [],
+  staff: [],
+  student: [],
+  parent: [],
+  guest: [
+    PERMISSIONS.NISWAN_VIEW,
+    PERMISSIONS.SUPERVISOR_LIST,
+    PERMISSIONS.SUPERVISOR_VIEW,
+    PERMISSIONS.EMPLOYEE_VIEW,
+    PERMISSIONS.STUDENT_VIEW,
+  ],
+});
+
+const PHASE_2_2_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STAFF_LEAVE_APPROVE,
+    PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+  ],
+  supervisor: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  admin: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_ENTER,
+    PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STAFF_LEAVE_APPROVE,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+    PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+  ],
+  employee: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  teacher: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+  ],
+  usthadh: [
+    PERMISSIONS.STUDENT_ATTENDANCE_VIEW,
+    PERMISSIONS.STUDENT_ATTENDANCE_ENTER,
+    PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_VIEW,
+    PERMISSIONS.STUDENT_LEAVE_MANAGE,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+    PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+  ],
+  warden: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  staff: [
+    PERMISSIONS.STAFF_ATTENDANCE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_VIEW,
+    PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+  ],
+  student: [],
+  parent: [],
+  guest: [],
+});
+
+const PHASE_2_3_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.EXAM_QUESTION_VIEW,
+    PERMISSIONS.EXAM_QUESTION_CREATE,
+    PERMISSIONS.EXAM_QUESTION_EDIT,
+    PERMISSIONS.EXAM_QUESTION_DELETE,
+    PERMISSIONS.EXAM_QUESTION_DOWNLOAD_TRACKING_VIEW,
+    PERMISSIONS.CERTIFICATE_VIEW,
+    PERMISSIONS.CERTIFICATE_GENERATE,
+    PERMISSIONS.CERTIFICATE_REPRINT,
+    PERMISSIONS.CERTIFICATE_DUPLICATE_PRINT,
+    PERMISSIONS.CERTIFICATE_BULK_IHS,
+    PERMISSIONS.INSPECTION_VIEW,
+  ],
+  supervisor: [
+    PERMISSIONS.INSPECTION_VIEW,
+    PERMISSIONS.INSPECTION_CREATE,
+  ],
+  admin: [
+    PERMISSIONS.EXAM_QUESTION_VIEW,
+  ],
+  employee: [],
+  teacher: [],
+  usthadh: [],
+  warden: [],
+  staff: [],
+  student: [],
+  parent: [],
+  guest: [
+    PERMISSIONS.CERTIFICATE_VIEW,
+  ],
+});
+
+const PHASE_2_4_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_REVIEW_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_APPROVE,
+    PERMISSIONS.ACCOUNTS_HQ_REJECT,
+    PERMISSIONS.ACCOUNTS_HQ_PENDING_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_HQ_MIGRATION_RUN,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  supervisor: [
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  admin: [
+    PERMISSIONS.ACCOUNTS_VIEW,
+    PERMISSIONS.ACCOUNTS_SCHOOL_INVOICES_VIEW,
+    PERMISSIONS.ACCOUNTS_PAYMENT_BATCH_SUBMIT,
+    PERMISSIONS.ACCOUNTS_BATCH_HISTORY_VIEW,
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  employee: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  teacher: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  usthadh: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  warden: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  staff: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  student: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  parent: [
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+  guest: [
+    PERMISSIONS.REPORTS_VIEW,
+    PERMISSIONS.REPORTS_EXPORT,
+    PERMISSIONS.NOTIFICATIONS_VIEW,
+    PERMISSIONS.HELP_DESK_VIEW,
+    PERMISSIONS.HELP_DESK_CREATE,
+    PERMISSIONS.HELP_DESK_REPLY,
+  ],
+});
+
+const PHASE_2_5_1_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.MASTER_INSTITUTE_VIEW, PERMISSIONS.MASTER_INSTITUTE_CREATE, PERMISSIONS.MASTER_INSTITUTE_EDIT, PERMISSIONS.MASTER_INSTITUTE_DELETE,
+    PERMISSIONS.MASTER_COURSE_VIEW, PERMISSIONS.MASTER_COURSE_CREATE, PERMISSIONS.MASTER_COURSE_EDIT, PERMISSIONS.MASTER_COURSE_DELETE,
+    PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW, PERMISSIONS.MASTER_ACADEMIC_YEAR_CREATE, PERMISSIONS.MASTER_ACADEMIC_YEAR_EDIT, PERMISSIONS.MASTER_ACADEMIC_YEAR_DELETE,
+    PERMISSIONS.MASTER_TEMPLATE_VIEW, PERMISSIONS.MASTER_TEMPLATE_CREATE, PERMISSIONS.MASTER_TEMPLATE_EDIT, PERMISSIONS.MASTER_TEMPLATE_DELETE,
+    PERMISSIONS.MASTER_DISTRICT_STATE_VIEW, PERMISSIONS.MASTER_DISTRICT_STATE_CREATE, PERMISSIONS.MASTER_DISTRICT_STATE_EDIT, PERMISSIONS.MASTER_DISTRICT_STATE_DELETE,
+    PERMISSIONS.MASTER_GRADE_VIEW, PERMISSIONS.MASTER_GRADE_CREATE, PERMISSIONS.MASTER_GRADE_EDIT, PERMISSIONS.MASTER_GRADE_DELETE,
+  ],
+  supervisor: [], admin: [], employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [],
+  guest: [
+    PERMISSIONS.MASTER_INSTITUTE_VIEW,
+    PERMISSIONS.MASTER_COURSE_VIEW,
+    PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW,
+    PERMISSIONS.MASTER_TEMPLATE_VIEW,
+    PERMISSIONS.MASTER_DISTRICT_STATE_VIEW,
+    PERMISSIONS.MASTER_GRADE_VIEW,
+  ],
+});
+
+const PHASE_2_5_2_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.STUDENT_IMPORT,
+    PERMISSIONS.STUDENT_CLEANUP,
+  ],
+  supervisor: [], admin: [], employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
+});
+
+const PHASE_2_5_2A_PERMISSIONS_BY_ROLE = Object.freeze({
+  hquser: [
+    PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+  ],
+  supervisor: [],
+  // Admin is a shared role. These assignments preserve the requested HQ Admin
+  // access, while requireHQOrHqAdmin keeps normal Niswan Admin blocked.
+  admin: [
+    PERMISSIONS.CERTIFICATE_BULK_IHS,
+    PERMISSIONS.TEMP_SCHOOL_MARKSHEET_CREATE,
+  ],
+  employee: [], teacher: [], usthadh: [], warden: [], staff: [], student: [], parent: [], guest: [],
+});
+
+const PHASE_6_PERMISSIONS_BY_ROLE = Object.freeze({
+  hqadmin: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  accountant: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  hquser: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  hqstaff: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  supervisor: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  admin: [
+    PERMISSIONS.PAYROLL_VIEW, PERMISSIONS.PAYROLL_GENERATE, PERMISSIONS.PAYROLL_ADJUST,
+    PERMISSIONS.PAYROLL_REVIEW, PERMISSIONS.PAYROLL_FINALIZE, PERMISSIONS.PAYROLL_PAY,
+    PERMISSIONS.PAYSLIP_SELF_VIEW,
+  ],
+  employee: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  teacher: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  usthadh: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  warden: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  staff: [PERMISSIONS.PAYSLIP_SELF_VIEW],
+  student: [], parent: [], guest: [],
+});
+
+// Phase 4 HQ role baselines are derived from the server-supported permission
+// boundary above. This avoids a second hard-coded permission matrix: a fresh HQ
+// role receives exactly the capabilities its scope is designed to enforce.
+const PHASE_4_HQ_ROLE_BASELINES = Object.freeze(
+  Object.fromEntries(
+    ["hqadmin", "accountant", "hquser", "hqstaff"].map((role) => [
+      role,
+      PERMISSION_CATALOG
+        .filter((item) => !Array.isArray(item.allowedRoles) || item.allowedRoles.includes(role))
+        .map((item) => item.key),
+    ])
+  )
+);
+
+// Fresh installations/roles get the complete current baseline once. After the
+// MongoDB row exists, source deployments never re-apply this seed.
+const INITIAL_ROLE_PERMISSION_SEED = Object.freeze({
+  hqadmin: PHASE_4_HQ_ROLE_BASELINES.hqadmin,
+  accountant: PHASE_4_HQ_ROLE_BASELINES.accountant,
+  hquser: PHASE_4_HQ_ROLE_BASELINES.hquser,
+  hqstaff: PHASE_4_HQ_ROLE_BASELINES.hqstaff,
+  supervisor: [
+    ...PHASE_2_1_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_2_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_3_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_4_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.supervisor,
+    ...PHASE_6_PERMISSIONS_BY_ROLE.supervisor,
+    PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE,
+    PERMISSIONS.MARKSHEET_VIEW,
+    PERMISSIONS.MARKSHEET_ENTER,
+    PERMISSIONS.MARKSHEET_ANNUAL,
+  ],
+  admin: [
+    ...PHASE_2_1_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_2_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_3_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_4_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.admin,
+    ...PHASE_6_PERMISSIONS_BY_ROLE.admin,
+    PERMISSIONS.MARKSHEET_VIEW,
+    PERMISSIONS.MARKSHEET_ENTER,
+    PERMISSIONS.MARKSHEET_FINALIZE,
+    PERMISSIONS.MARKSHEET_PDF,
+  ],
+  employee: [...PHASE_2_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_3_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_4_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.employee, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.employee, ...PHASE_6_PERMISSIONS_BY_ROLE.employee],
+  teacher: [...PHASE_2_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_3_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_4_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.teacher, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.teacher, ...PHASE_6_PERMISSIONS_BY_ROLE.teacher],
+  usthadh: [...PHASE_2_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_3_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_4_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.usthadh, ...PHASE_6_PERMISSIONS_BY_ROLE.usthadh],
+  warden: [...PHASE_2_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_3_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_4_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.warden, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.warden, ...PHASE_6_PERMISSIONS_BY_ROLE.warden],
+  staff: [...PHASE_2_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_3_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_4_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.staff, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.staff, ...PHASE_6_PERMISSIONS_BY_ROLE.staff],
+  student: [...PHASE_2_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_3_PERMISSIONS_BY_ROLE.student, ...PHASE_2_4_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.student, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.student, ...PHASE_6_PERMISSIONS_BY_ROLE.student],
+  parent: [...PHASE_2_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_3_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_4_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.parent, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.parent, ...PHASE_6_PERMISSIONS_BY_ROLE.parent],
+  guest: [...PHASE_2_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_3_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_4_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_1_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2_PERMISSIONS_BY_ROLE.guest, ...PHASE_2_5_2A_PERMISSIONS_BY_ROLE.guest, ...PHASE_6_PERMISSIONS_BY_ROLE.guest],
+});
+
+// Versioned permission-catalog migrations preserve intended access when a release
+// introduces a new permission key or explicitly extends an existing permission to
+// a newly supported server scope. They never reset or change previously configurable
+// permissions. After a migration runs, MongoDB remains the only assignment source
+// and subsequent UI changes are never overwritten by deployments.
+export const ROLE_PERMISSION_MIGRATIONS = Object.freeze([
+  {
+    version: 2,
+    label: "Phase 2.1 core operational permissions",
+    permissionsByRole: PHASE_2_1_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 3,
+    label: "Phase 2.2 Attendance and Leave permissions",
+    permissionsByRole: PHASE_2_2_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 4,
+    label: "Phase 2.3 Exams Questions, Certificates and Inspections permissions",
+    permissionsByRole: PHASE_2_3_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 5,
+    label: "Phase 2.4 Accounts, Reports, Notifications and Help Desk permissions",
+    permissionsByRole: PHASE_2_4_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 6,
+    label: "Phase 2.5.1 Masters maintenance permissions",
+    permissionsByRole: PHASE_2_5_1_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 7,
+    label: "Phase 2.5.2 Bulk Operations permissions",
+    permissionsByRole: PHASE_2_5_2_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 8,
+    label: "Phase 2.5.2A HQ Masters utility permissions",
+    permissionsByRole: PHASE_2_5_2A_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 9,
+    label: "Phase 4 explicit HQ role boundaries",
+    permissionsByRole: {},
+    normalizeToCurrentPolicy: true,
+  },
+  {
+    version: 10,
+    label: "Phase 6 Payroll and own Payslip permissions",
+    permissionsByRole: PHASE_6_PERMISSIONS_BY_ROLE,
+  },
+  {
+    version: 11,
+    label: "Payroll HQ-only policy normalization",
+    permissionsByRole: {},
+    normalizeToCurrentPolicy: true,
+  },
+  {
+    version: 12, label: "TA claims and approvals",
+    permissionsByRole: {
+      supervisor: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hquser: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hqstaff: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE],
+      hqadmin: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE, PERMISSIONS.TA_REVIEW_VIEW, PERMISSIONS.TA_APPROVE],
+      accountant: [PERMISSIONS.TA_SELF_VIEW, PERMISSIONS.TA_SELF_MANAGE, PERMISSIONS.TA_REVIEW_VIEW, PERMISSIONS.TA_APPROVE],
+    },
+  },
+  { version: 13, label: "Controlled Student course changes", permissionsByRole: { hquser: [PERMISSIONS.STUDENT_COURSE_CHANGE] } },
+]);
+
+export const getInitialRolePermissionsForBootstrap = (role) => {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const values = INITIAL_ROLE_PERMISSION_SEED[normalizedRole] || [];
+  return [...new Set(values.filter((key) => PERMISSION_KEY_SET.has(key)))];
+};
+
+export const getRolePermissionMigrationsAfter = (catalogVersion = 1) => {
+  const current = Number(catalogVersion || 1);
+  return ROLE_PERMISSION_MIGRATIONS.filter((migration) => migration.version > current).sort(
+    (a, b) => a.version - b.version
+  );
+};
+
+export const getPermissionDefinition = (key) =>
+  PERMISSION_CATALOG.find((item) => item.key === String(key || "")) || null;
+
+export const isPermissionAllowedForRole = (key, role) => {
+  const definition = getPermissionDefinition(key);
+  if (!definition) return false;
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  return !Array.isArray(definition.allowedRoles) || definition.allowedRoles.includes(normalizedRole);
+};
+
+export const validatePermissionDependencies = (permissions = []) => {
+  const selected = new Set(Array.isArray(permissions) ? permissions : []);
+  const errors = [];
+
+  for (const item of PERMISSION_CATALOG) {
+    if (!selected.has(item.key)) continue;
+    for (const required of item.requires || []) {
+      if (!selected.has(required)) {
+        errors.push(`${item.label} requires ${getPermissionDefinition(required)?.label || required}.`);
+      }
+    }
+  }
+
+  return errors;
+};

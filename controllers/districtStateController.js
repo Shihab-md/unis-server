@@ -6,6 +6,7 @@ import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
 import mongoose from "mongoose";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
+import { ORGANIZATION_TYPES, SCHOOL_RECORD_TYPES } from "../config/organizationPolicy.js";
 
 const addDistrictState = async (req, res) => {
   try {
@@ -56,6 +57,7 @@ const getDistrictNiswanCountMap = async (districtStateIds = []) => {
     {
       $match: {
         districtStateId: { $in: districtStateIds },
+        recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
       },
     },
     {
@@ -96,6 +98,7 @@ const getDistrictEmployeeCountMap = async (districtStateIds = []) => {
     {
       $match: {
         districtStateId: { $in: districtStateIds },
+        recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ },
       },
     },
 
@@ -107,6 +110,7 @@ const getDistrictEmployeeCountMap = async (districtStateIds = []) => {
           {
             $match: {
               $expr: { $eq: ["$schoolId", "$$sid"] },
+              organizationType: ORGANIZATION_TYPES.NISWAN,
               active: { $in: ["Active", "In-Active"] },
             },
           },

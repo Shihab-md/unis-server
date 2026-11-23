@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const staffLeaveSchema = new Schema({
+  revision: { type: Number, default: 0 },
+  history: { type: [{ fromStatus: String, toStatus: String, isPaid: Boolean,
+    actorId: { type: Schema.Types.ObjectId, ref: "User" }, at: { type: Date, default: Date.now },
+  }], default: [] },
   staffType: { type: String, enum: ["Employee", "Supervisor"], required: true, index: true },
   staffId: { type: Schema.Types.ObjectId, required: true, index: true },
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },

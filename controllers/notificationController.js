@@ -10,10 +10,14 @@ import Student from "../models/Student.js";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
 import { createUserNotification, getWebPushReadiness } from "../services/notificationService.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const VALID_TARGET_ROLES = new Set([
   "superadmin",
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "supervisor",
   "admin",
   "employee",
@@ -26,7 +30,10 @@ const VALID_TARGET_ROLES = new Set([
 ]);
 
 const EMPLOYEE_LINKED_ROLES = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "admin",
   "employee",
   "teacher",
@@ -42,7 +49,8 @@ const clamp = (value, min, max, fallback) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.trunc(n))) : fallback;
 };
 
-const isSuperAdmin = (req) => String(req.user?.role || "").toLowerCase() === "superadmin";
+const isNotificationManager = (req) =>
+  ["superadmin", "hqadmin"].includes(String(req.user?.role || "").toLowerCase());
 
 const normalizeRoles = (roles = []) => {
   const source = Array.isArray(roles) ? roles : [roles];
@@ -142,7 +150,7 @@ const getTargetNiswansForHistory = async ({ selectAllSchools, selectedSchoolIds 
 
   if (!selectedSchoolIds.length) return [];
 
-  const schools = await School.find({ _id: { $in: selectedSchoolIds } })
+  const schools = await School.find({ _id: { $in: selectedSchoolIds }, ...getNiswanSchoolFilter() })
     .select("code nameEnglish")
     .sort({ code: 1 })
     .lean();
@@ -171,7 +179,9 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
       {
         $match: {
           active: "Active",
-          ...(hasSchoolFilter ? { schoolId: { $in: selectedSchoolIds } } : {}),
+          ...(hasSchoolFilter
+            ? { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId: { $in: selectedSchoolIds } }
+            : {}),
         },
       },
       {
@@ -218,7 +228,7 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
     let supervisorObjectIds = [];
 
     if (hasSchoolFilter) {
-      const schools = await School.find({ _id: { $in: selectedSchoolIds } })
+      const schools = await School.find({ _id: { $in: selectedSchoolIds }, ...getNiswanSchoolFilter() })
         .select("supervisorId")
         .lean();
 
@@ -244,7 +254,7 @@ const getTargetUserIds = async ({ targetRoles = [], selectedSchoolIds = [], sele
     addIds(targetUserIds, supervisors.map((item) => item.userId));
   }
 
-  // Direct global/system roles. hquser/admin/staff-like roles are handled through Employee above.
+  // Direct system roles. HQ employee-backed and staff-like roles are handled through Employee above.
   const directRoles = roles.filter((role) => role === "superadmin");
 
   if (directRoles.length > 0) {
@@ -328,7 +338,7 @@ export const getUnreadCount = async (req, res) => {
     // Superadmin Notification page is intentionally Sent Details only.
     // The bell badge must therefore not count hidden received Notification rows.
     // Sent history count is shown inside the Notifications page pagination, not in the bell.
-    if (isSuperAdmin(req)) {
+    if (isNotificationManager(req)) {
       return res.status(200).json({
         success: true,
         unreadCount: 0,
@@ -499,10 +509,10 @@ export const unregisterWebPushSubscription = async (req, res) => {
 
 export const sendBroadcastNotification = async (req, res) => {
   try {
-    if (!isSuperAdmin(req)) {
+    if (!isNotificationManager(req)) {
       return res.status(403).json({
         success: false,
-        error: "Only superadmin can send notifications.",
+        error: "Only an authorized HQ notification manager can send notifications.",
       });
     }
 
@@ -593,10 +603,10 @@ export const sendBroadcastNotification = async (req, res) => {
 
 export const listBroadcastNotifications = async (req, res) => {
   try {
-    if (!isSuperAdmin(req)) {
+    if (!isNotificationManager(req)) {
       return res.status(403).json({
         success: false,
-        error: "Only superadmin can view sent notification history.",
+        error: "Only an authorized HQ notification manager can view sent notification history.",
       });
     }
 

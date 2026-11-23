@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { Schema } from "mongoose";
 
 const schoolSchema = new Schema({
+  recordType: { type: String, enum: ["NISWAN", "LEGACY_HQ"], default: "NISWAN", index: true },
   code: { type: String, required: true, unique: true, index: true },
   nameEnglish: { type: String, required: true },
   nameArabic: { type: String },
@@ -61,6 +62,7 @@ schoolSchema.virtual('studentsCount').
   get(function () { return this._studentsCount; }).
   set(function (count) { this._studentsCount = count; });
 
+schoolSchema.index({ recordType: 1, active: 1, code: 1 });
 schoolSchema.index({ supervisorId: 1 });
 schoolSchema.index({ active: 1 });
 schoolSchema.index({ supervisorId: 1, districtStateId: 1, active: 1, code: 1 });

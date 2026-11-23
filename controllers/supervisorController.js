@@ -4,6 +4,7 @@ import { getBlobReadWriteToken } from "../utils/runtimeEnvironment.js";
 import Supervisor from "../models/Supervisor.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
+import { ORGANIZATION_TYPES, SCHOOL_RECORD_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase } from "./commonController.js";
@@ -34,7 +35,7 @@ const addSupervisor = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -64,12 +65,6 @@ const addSupervisor = async (req, res) => {
 
     console.log("user started");
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     if (!PASSWORD_REGEX.test(String(password || ""))) {
       return res.status(400).json({ success: false, error: "Password must be 8–64 characters with uppercase, lowercase, number and special character, with no spaces." });
@@ -112,7 +107,7 @@ const addSupervisor = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance: normalizedTravellingAllowance,
+      
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),
@@ -209,6 +204,7 @@ const getSupervisorEmployeeCountMap = async (schoolMatch) => {
           {
             $match: {
               $expr: { $eq: ["$schoolId", "$$schId"] },
+              organizationType: ORGANIZATION_TYPES.NISWAN,
               active: "Active",
             },
           },
@@ -601,8 +597,8 @@ const getSupervisorStudentCountMap = async (schoolMatch) => {
 const getSupervisorStatsMaps = async (supervisorIds = null) => {
   const schoolMatch =
     Array.isArray(supervisorIds) && supervisorIds.length > 0
-      ? { supervisorId: { $in: supervisorIds } }
-      : { supervisorId: { $ne: null } };
+      ? { supervisorId: { $in: supervisorIds }, recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ } }
+      : { supervisorId: { $ne: null }, recordType: { $ne: SCHOOL_RECORD_TYPES.LEGACY_HQ } };
 
   const [schoolCountMap, employeeCountMap, studentCountMap] = await Promise.all([
     getSupervisorSchoolCountMap(schoolMatch),
@@ -744,7 +740,7 @@ const getBySupFilter = async (req, res) => {
 
     // If school is selected, resolve its supervisorId
     if (isValidParam(supSchoolId)) {
-      const school = await School.findById(supSchoolId)
+      const school = await School.findOne({ _id: supSchoolId, ...getNiswanSchoolFilter() })
         .select("supervisorId")
         .lean();
 
@@ -839,7 +835,7 @@ const updateSupervisor = async (req, res) => {
     const { id } = req.params;
     const { name, email, supervisorId, contactNumber, address, routeName, gender,
       qualification, fatherGuardianName, dob, maritalStatus, doj, jobType, salary,
-      travellingAllowance, otherDesignation, activitiesCarriedOut, bankAccountDetails,
+      otherDesignation, activitiesCarriedOut, bankAccountDetails,
       remarks, active } = req.body;
 
     const dobValidation = validateActualDate(dob, "Date of Birth");
@@ -875,12 +871,6 @@ const updateSupervisor = async (req, res) => {
         .json({ success: false, error: "User not found." });
     }
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     const normalizedSupervisorId = String(supervisorId || "").trim();
     const duplicateSupervisorId = await Supervisor.findOne({ supervisorId: normalizedSupervisorId, _id: { $ne: supervisor._id } }).select("_id").lean();
@@ -924,7 +914,7 @@ const updateSupervisor = async (req, res) => {
       qualification: toCamelCase(qualification),
       fatherGuardianName: fatherGuardianName ? toCamelCase(fatherGuardianName) : "",
       dob, maritalStatus, jobType,
-      doj, salary, travellingAllowance: normalizedTravellingAllowance,
+      doj, salary, 
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),

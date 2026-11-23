@@ -1,0 +1,11 @@
+import express from "express";
+import authMiddleware from "../middleware/authMiddlware.js";
+import { requirePermission } from "../middleware/permissionMiddleware.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { requireStudentYearEndReportRole, getStudentYearEndSummary, getStudentYearEndStudents, exportStudentYearEndReport } from "../controllers/studentYearEndReportController.js";
+const router = express.Router();
+router.use(authMiddleware, requireStudentYearEndReportRole);
+router.get("/", requirePermission(PERMISSIONS.REPORTS_VIEW), getStudentYearEndSummary);
+router.get("/students", requirePermission(PERMISSIONS.REPORTS_VIEW), getStudentYearEndStudents);
+router.get("/export", requirePermission(PERMISSIONS.REPORTS_VIEW), requirePermission(PERMISSIONS.REPORTS_EXPORT), exportStudentYearEndReport);
+export default router;

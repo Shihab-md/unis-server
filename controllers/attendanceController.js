@@ -4,6 +4,9 @@ import AcademicYear from "../models/AcademicYear.js";
 import Course from "../models/Course.js";
 import Employee from "../models/Employee.js";
 import PayrollRun from "../models/PayrollRun.js";
+import { withHqFinanceTransaction } from "../services/hqFinanceTransactionService.js";
+import { reservePayrollClaims, payrollTaAmount, assertPayrollClaims, settlePayrollClaims, assertPayrollRevision } from "../services/payrollTravelClaimService.js";
+import { failTa, moneyPaise, isMonthKey, isDateKey, TA_SELF_ROLES, TA_REVIEW_ROLES } from "../utils/travelClaimPolicy.js";
 import School from "../models/School.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import StaffLeave from "../models/StaffLeave.js";
@@ -15,32 +18,57 @@ import {
   canApproveStaffLeave,
   getAttendanceAccess,
   getActorStaff,
-  getHqSchool,
   isObjectId,
   loadStaffByRef,
   normalizeRole,
   normalizeScopeType,
   resolveStaffScope,
+  resolvePayrollScope,
   resolveStudentScope,
   staffBelongsToScope,
 } from "../services/attendanceAccessService.js";
+import { assertLeaveRevision, assertLeaveTransition, assertPayrollPeriodOpen, invalidatePayrollPeriod, flagCancelledLeaveAttendance, assertAttendanceReviewed, failWorkflow, leaveText } from "../services/staffLeaveWorkflowService.js";
 import { validateNotFutureDateKey } from "../utils/dateRules.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { getRequestPermissions } from "../services/permissionService.js";
+import { ORGANIZATION_TYPES, getHqOrganizationSummary, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const STUDENT_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const STAFF_STATUSES = new Set(["Present", "Absent", "Leave", "Late", "Half Day", "Holiday", "Weekly Off"]);
 const LEAVE_STATUSES = new Set(["Pending", "Approved", "Rejected", "Cancelled"]);
 const PAYROLL_STATUSES = new Set(["Draft", "Reviewed", "Finalized", "Paid"]);
 
+const getOrganizationScopeFilter = (organizationType, schoolId) =>
+  organizationType === ORGANIZATION_TYPES.HQ
+    ? { organizationType: ORGANIZATION_TYPES.HQ }
+    : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId };
+
+const getScopeSchoolIdForWrite = (organizationType, schoolId) =>
+  organizationType === ORGANIZATION_TYPES.HQ ? null : schoolId;
+
 const sendError = (res, error) => {
   const status = Number(error?.status || 500);
   if (status >= 500) console.log("[attendance]", error?.stack || error?.message || error);
   return res.status(status).json({
     success: false,
+    code: ["TaError", "AttendanceWorkflowError"].includes(error?.name) ? error.code : undefined,
     error: error?.message || "Attendance operation failed.",
   });
 };
 
 const cleanText = (value, max = 1000) => String(value ?? "").trim().slice(0, max);
+
+const hasRequestPermission = async (req, permission) => {
+  const permissions = await getRequestPermissions(req);
+  return permissions.includes(String(permission || ""));
+};
+
+const assertRequestPermission = async (req, permission, message) => {
+  if (await hasRequestPermission(req, permission)) return;
+  const error = new Error(message || "You do not have permission to perform this action.");
+  error.status = 403;
+  throw error;
+};
 
 const validDateKey = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 const validMonthKey = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
@@ -153,6 +181,7 @@ const loadStaffRoster = async ({
   schoolId,
   includeInactive = false,
   staffCategory = "ALL",
+  session = null,
 }) => {
   const category = String(staffCategory || "ALL").trim().toUpperCase();
   const includeEmployees = organizationType !== "HQ" || ["ALL", "HQ_STAFF"].includes(category);
@@ -160,10 +189,13 @@ const loadStaffRoster = async ({
   const rows = [];
 
   if (includeEmployees) {
-    const employeeFilter = { schoolId };
+    const employeeFilter =
+      organizationType === ORGANIZATION_TYPES.HQ
+        ? { organizationType: ORGANIZATION_TYPES.HQ }
+        : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId };
     if (!includeInactive) employeeFilter.active = "Active";
-    const employees = await Employee.find(employeeFilter)
-      .select("_id userId schoolId employeeId designation salary travellingAllowance active")
+    const employees = await Employee.find(employeeFilter).session(session)
+      .select("_id userId schoolId organizationType employeeId designation salary active")
       .populate({ path: "userId", select: "_id name email role" })
       .sort({ employeeId: 1 })
       .lean();
@@ -172,15 +204,17 @@ const loadStaffRoster = async ({
       userId: String(record.userId?._id || ""), staffCode: record.employeeId,
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role), designation: record.designation || "",
-      salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
-      active: record.active, schoolId: String(record.schoolId || ""),
+      salary: Number(record.salary || 0), 
+      active: record.active,
+      organizationType: record.organizationType || organizationType,
+      schoolId: organizationType === ORGANIZATION_TYPES.HQ ? "" : String(record.schoolId || ""),
     })));
   }
 
   if (includeMuavins) {
     const supervisorFilter = includeInactive ? {} : { active: "Active" };
-    const supervisors = await Supervisor.find(supervisorFilter)
-      .select("_id userId supervisorId salary travellingAllowance active jobType routeName")
+    const supervisors = await Supervisor.find(supervisorFilter).session(session)
+      .select("_id userId supervisorId salary active jobType routeName")
       .populate({ path: "userId", select: "_id name email role" })
       .sort({ supervisorId: 1 })
       .lean();
@@ -189,8 +223,8 @@ const loadStaffRoster = async ({
       userId: String(record.userId?._id || ""), staffCode: record.supervisorId,
       name: record.userId?.name || "", email: record.userId?.email || "",
       role: normalizeRole(record.userId?.role || "supervisor"), designation: "Muavin",
-      salary: Number(record.salary || 0), travellingAllowance: Number(record.travellingAllowance || 0),
-      active: record.active, schoolId: String(schoolId || ""),
+      salary: Number(record.salary || 0), 
+      active: record.active, organizationType: ORGANIZATION_TYPES.HQ, schoolId: "",
     })));
   }
 
@@ -214,7 +248,7 @@ const getApprovedStudentLeaveMap = async ({ studentIds, dateKey }) => {
   return new Map(leaves.map((leave) => [String(leave.studentId), leave]));
 };
 
-const getApprovedStaffLeaveMap = async ({ staffRows, dateKey }) => {
+const getApprovedStaffLeaveMap = async ({ staffRows, dateKey, session = null }) => {
   if (!staffRows.length) return new Map();
   const employeeIds = staffRows.filter((row) => row.staffType === "Employee").map((row) => row.staffId);
   const supervisorIds = staffRows.filter((row) => row.staffType === "Supervisor").map((row) => row.staffId);
@@ -229,6 +263,7 @@ const getApprovedStaffLeaveMap = async ({ staffRows, dateKey }) => {
     fromDateKey: { $lte: dateKey },
     toDateKey: { $gte: dateKey },
   })
+    .session(session)
     .select("_id staffType staffId leaveType isPaid dayType reason")
     .lean();
 
@@ -245,10 +280,10 @@ const assertNoFinalizedStudentAttendanceInRange = async ({ studentId, fromDateKe
   }
 };
 
-const assertNoFinalizedStaffAttendanceInRange = async ({ staffType, staffId, fromDateKey, toDateKey }) => {
+const assertNoFinalizedStaffAttendanceInRange = async ({ staffType, staffId, fromDateKey, toDateKey, session = null }) => {
   const finalized = await StaffAttendance.findOne({
     staffType, staffId, dateKey: { $gte: fromDateKey, $lte: toDateKey }, isFinalized: true,
-  }).select("_id dateKey").lean();
+  }).session(session).select("_id dateKey").lean();
   if (finalized) {
     const error = new Error(`Leave cannot be changed because staff attendance for ${finalized.dateKey} is already finalized.`);
     error.status = 409; throw error;
@@ -278,11 +313,22 @@ const countStatuses = (rows = []) => {
 export const getAttendanceMeta = async (req, res) => {
   try {
     const access = await getAttendanceAccess(req.user);
+    const permissionSet = new Set(await getRequestPermissions(req));
+    const canManagePayrollGlobally =
+      permissionSet.has(PERMISSIONS.PAYROLL_VIEW) &&
+      ["superadmin", "hqadmin", "accountant"].includes(access.role);
+    // Payroll is HQ-only. Keep the legacy response field false for mixed-version
+    // frontend compatibility; no Niswan role may manage Payroll.
+    const canManageOwnNiswanPayroll = false;
+    const canViewOwnPayslip =
+      permissionSet.has(PERMISSIONS.PAYSLIP_SELF_VIEW) &&
+      Boolean(access.actorStaff?.staffId) &&
+      access.actorStaff?.organizationType === ORGANIZATION_TYPES.HQ;
     const [academicYears, courses, schools] = await Promise.all([
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).select("_id code name type years").sort({ promotionOrder: 1, code: 1 }).lean(),
-      access.isSuperAdmin
-        ? School.find({ active: "Active" }).select("_id code nameEnglish active").sort({ code: 1 }).lean()
+      access.isSuperAdmin || canManagePayrollGlobally
+        ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish active").sort({ code: 1 }).lean()
         : Promise.resolve([]),
     ]);
 
@@ -308,6 +354,11 @@ export const getAttendanceMeta = async (req, res) => {
         canManageAnyStudents: access.canManageAnyStudents,
         canViewOwnStaffAttendance: access.canViewOwnStaffAttendance,
         canApplyOwnStaffLeave: access.canApplyOwnStaffLeave,
+        canViewOwnTaClaims: TA_SELF_ROLES.has(access.role) && access.actorStaff?.active === "Active" && access.actorOrganizationType === "HQ",
+        canReviewTaClaims: TA_REVIEW_ROLES.has(access.role) && (access.role === "superadmin" || (access.actorStaff?.active === "Active" && access.actorOrganizationType === "HQ")),
+        canManagePayrollGlobally,
+        canManageOwnNiswanPayroll,
+        canViewOwnPayslip,
         actorSchoolId: access.actorSchoolId,
         actorStaff: access.actorStaff
           ? {
@@ -319,7 +370,7 @@ export const getAttendanceMeta = async (req, res) => {
             }
           : null,
       },
-      hqSchool: access.hqSchool,
+      hqOrganization: access.hqOrganization,
       defaultScopeType,
       defaultSchoolId,
       schools: schools.map((school) => ({
@@ -352,7 +403,7 @@ export const getStudentRoster = async (req, res) => {
     const { schoolId, school } = await resolveStudentScope({
       user: req.user,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     const academicYearId = String(req.query.academicYearId || "");
     const courseId = String(req.query.courseId || "");
@@ -454,6 +505,11 @@ export const saveStudentAttendance = async (req, res) => {
 
     const finalize = Boolean(req.body?.finalize);
     if (finalize) {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STUDENT_ATTENDANCE_FINALIZE,
+        "You do not have permission to finalize Student attendance."
+      );
       const rosterIds = roster.map((student) => String(student._id));
       const submittedSet = new Set(submittedIds);
       if (submittedIds.length !== rosterIds.length || rosterIds.some((id) => !submittedSet.has(id))) {
@@ -557,7 +613,7 @@ export const getStudentMonthlyAttendance = async (req, res) => {
     await resolveStudentScope({
       user: req.user,
       schoolId: String(student.schoolId),
-      requireManage: true,
+      requireManage: false,
     });
 
     const records = await StudentAttendance.find({
@@ -646,7 +702,7 @@ export const createStudentLeave = async (req, res) => {
     }
 
     const role = normalizeRole(req.user?.role);
-    const autoApprove = ["superadmin", "admin", "teacher", "usthadh"].includes(role);
+    const autoApprove = ["superadmin", "hqadmin", "admin", "teacher", "usthadh"].includes(role);
     if (autoApprove) {
       await assertNoFinalizedStudentAttendanceInRange({ studentId, fromDateKey, toDateKey });
     }
@@ -679,7 +735,7 @@ export const listStudentLeaves = async (req, res) => {
     const { schoolId } = await resolveStudentScope({
       user: req.user,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
 
     const filter = { schoolId };
@@ -757,7 +813,7 @@ export const getStaffRoster = async (req, res) => {
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
 
     const staffCategory =
@@ -769,7 +825,7 @@ export const getStaffRoster = async (req, res) => {
     }));
 
     const finalizedFilter = {
-      organizationType: scope.organizationType, schoolId: scope.schoolId, dateKey, isFinalized: true,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
       ...(scope.organizationType === "HQ"
         ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
         : { staffType: "Employee" }),
@@ -813,6 +869,7 @@ export const getStaffRoster = async (req, res) => {
               isFinalized: Boolean(attendance.isFinalized),
             }
           : null,
+        requiresReview: Boolean(attendance?.requiresReview),
         status: effectiveStatus,
         inTime: attendance?.inTime || "",
         outTime: attendance?.outTime || "",
@@ -848,106 +905,123 @@ export const saveStaffAttendance = async (req, res) => {
       requireManage: true,
     });
 
-    const staffCategory =
-      scope.organizationType === "HQ" ? normalizeHqStaffCategory(req.body?.staffCategory) : "NISWAN_STAFF";
-    const roster = await loadStaffRoster({ ...scope, staffCategory });
-    const rosterMap = new Map(roster.map((row) => [`${row.staffType}:${row.staffId}`, row]));
-    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-    if (!rows.length) {
-      const error = new Error("No staff attendance rows were provided.");
-      error.status = 400;
-      throw error;
-    }
-
-    const submittedKeys = rows.map((row) => `${String(row?.staffType || "")}:${String(row?.staffId || "")}`);
-    if (new Set(submittedKeys).size !== rows.length) {
-      const error = new Error("Duplicate or missing staff attendance rows were submitted.");
-      error.status = 400; throw error;
-    }
     const finalize = Boolean(req.body?.finalize);
-    if (finalize) {
-      const rosterKeys = [...rosterMap.keys()];
-      const submittedSet = new Set(submittedKeys);
-      if (submittedKeys.length !== rosterKeys.length || rosterKeys.some((key) => !submittedSet.has(key))) {
-        const error = new Error("Every active staff member in the selected attendance sheet must be marked before finalizing.");
-        error.status = 400; throw error;
-      }
-    }
-    const finalizedRecord = await StaffAttendance.findOne({
-      organizationType: scope.organizationType, schoolId: scope.schoolId, dateKey, isFinalized: true,
-      ...(scope.organizationType === "HQ"
-        ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
-        : { staffType: "Employee" }),
-    }).select("_id").lean();
-    if (finalizedRecord) {
-      const error = new Error("Finalized staff attendance is locked and cannot be edited.");
-      error.status = 409; throw error;
-    }
-    const leaveMap = await getApprovedStaffLeaveMap({ staffRows: roster, dateKey });
-    const operations = [];
-
-    for (const row of rows) {
-      const staffType = String(row?.staffType || "");
-      const staffId = String(row?.staffId || "");
-      const key = `${staffType}:${staffId}`;
-      const staff = rosterMap.get(key);
-      if (!staff) {
-        const error = new Error("One or more staff records are outside the selected Attendance scope.");
-        error.status = 403;
-        throw error;
-      }
-
-      const approvedLeave = leaveMap.get(key);
-      const requestedStatus = approvedLeave
-        ? approvedLeave.dayType === "Half Day"
-          ? "Half Day"
-          : "Leave"
-        : String(row?.status || "");
-      if (!STAFF_STATUSES.has(requestedStatus)) {
-        const error = new Error(`Invalid staff attendance status: ${requestedStatus}`);
+    const savedCount = await withHqFinanceTransaction(async (session) => {
+      const staffCategory =
+        scope.organizationType === "HQ" ? normalizeHqStaffCategory(req.body?.staffCategory) : "NISWAN_STAFF";
+      const roster = await loadStaffRoster({ ...scope, staffCategory, session });
+      const rosterMap = new Map(roster.map((row) => [`${row.staffType}:${row.staffId}`, row]));
+      const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      if (!rows.length) {
+        const error = new Error("No staff attendance rows were provided.");
         error.status = 400;
         throw error;
       }
 
-      const setData = {
-        staffType,
-        staffId,
-        userId: staff.userId,
-        schoolId: scope.schoolId,
-        organizationType: scope.organizationType,
-        dateKey,
-        status: requestedStatus,
-        inTime: cleanText(row?.inTime, 20),
-        outTime: cleanText(row?.outTime, 20),
-        remarks: cleanText(row?.remarks, 500),
-        markedBy: req.user._id,
-        updatedAt: new Date(),
-      };
+      const submittedKeys = rows.map((row) => `${String(row?.staffType || "")}:${String(row?.staffId || "")}`);
+      if (new Set(submittedKeys).size !== rows.length) {
+        const error = new Error("Duplicate or missing staff attendance rows were submitted.");
+        error.status = 400; throw error;
+      }
       if (finalize) {
-        setData.isFinalized = true;
-        setData.finalizedBy = req.user._id;
-        setData.finalizedAt = new Date();
+        await assertRequestPermission(
+          req,
+          PERMISSIONS.STAFF_ATTENDANCE_FINALIZE,
+          "You do not have permission to finalize Staff attendance."
+        );
+        const rosterKeys = [...rosterMap.keys()];
+        const submittedSet = new Set(submittedKeys);
+        if (submittedKeys.length !== rosterKeys.length || rosterKeys.some((key) => !submittedSet.has(key))) {
+          const error = new Error("Every active staff member in the selected attendance sheet must be marked before finalizing.");
+          error.status = 400; throw error;
+        }
+      }
+      const finalizedRecord = await StaffAttendance.findOne({
+        ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId), dateKey, isFinalized: true,
+        ...(scope.organizationType === "HQ"
+          ? { staffType: staffCategory === "MUAVIN" ? "Supervisor" : "Employee" }
+          : { staffType: "Employee" }),
+      }).session(session).select("_id").lean();
+      if (finalizedRecord) {
+        const error = new Error("Finalized staff attendance is locked and cannot be edited.");
+        error.status = 409; throw error;
+      }
+      const leaveMap = await getApprovedStaffLeaveMap({ staffRows: roster, dateKey, session });
+      const previousRecords = roster.length ? await StaffAttendance.find({ dateKey, $or: roster.map((row) => ({ staffType: row.staffType, staffId: row.staffId })) }).session(session).lean() : [];
+      const previousByStaff = new Map(previousRecords.map((record) => [`${record.staffType}:${record.staffId}`, record]));
+      const operations = [];
+
+      for (const row of rows) {
+        const staffType = String(row?.staffType || "");
+        const staffId = String(row?.staffId || "");
+        const key = `${staffType}:${staffId}`;
+        const staff = rosterMap.get(key);
+        if (!staff) {
+          const error = new Error("One or more staff records are outside the selected Attendance scope.");
+          error.status = 403;
+          throw error;
+        }
+
+        const approvedLeave = leaveMap.get(key);
+        const requestedStatus = approvedLeave
+          ? approvedLeave.dayType === "Half Day"
+            ? "Half Day"
+            : "Leave"
+          : String(row?.status || "");
+        if (!STAFF_STATUSES.has(requestedStatus)) {
+          const error = new Error(`Invalid staff attendance status: ${requestedStatus}`);
+          error.status = 400;
+          throw error;
+        }
+
+        const previous = previousByStaff.get(key);
+        const sourceChanged = !previous || previous.status !== requestedStatus || previous.requiresReview;
+        const period = { staffType, staffId, organizationType: scope.organizationType, fromDateKey: dateKey, toDateKey: dateKey };
+        if (sourceChanged) { await assertPayrollPeriodOpen(period, session); await invalidatePayrollPeriod(period, session); }
+
+        const setData = {
+          requiresReview: false,
+          staffType,
+          staffId,
+          userId: staff.userId,
+          schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
+          organizationType: scope.organizationType,
+          dateKey,
+          status: requestedStatus,
+          inTime: cleanText(row?.inTime, 20),
+          outTime: cleanText(row?.outTime, 20),
+          remarks: cleanText(row?.remarks, 500),
+          markedBy: req.user._id,
+          updatedAt: new Date(),
+        };
+        if (finalize) {
+          setData.isFinalized = true;
+          setData.finalizedBy = req.user._id;
+          setData.finalizedAt = new Date();
+        }
+
+        const update = {
+          $set: setData,
+          $setOnInsert: { createdAt: new Date() },
+        };
+        operations.push({
+          updateOne: {
+            filter: { staffType, staffId, dateKey },
+            update,
+            upsert: true,
+          },
+        });
       }
 
-      const update = {
-        $set: setData,
-        $setOnInsert: { createdAt: new Date() },
-      };
-      operations.push({
-        updateOne: {
-          filter: { staffType, staffId, dateKey },
-          update,
-          upsert: true,
-        },
-      });
-    }
+      if (operations.length) await StaffAttendance.bulkWrite(operations, { ordered: true, session });
 
-    if (operations.length) await StaffAttendance.bulkWrite(operations, { ordered: true });
+      return operations.length;
+    });
 
     return res.json({
       success: true,
       message: finalize ? "Staff attendance finalized successfully." : "Staff attendance saved successfully.",
-      savedCount: operations.length,
+      savedCount,
     });
   } catch (error) {
     return sendError(res, error);
@@ -1007,18 +1081,17 @@ export const getStaffMonthlyAttendance = async (req, res) => {
       throw error;
     }
 
-    const hq = await getHqSchool();
     const organizationType =
-      staff.staffType === "Supervisor" || String(staff.schoolId || "") === String(hq?._id || "")
-        ? "HQ"
-        : "NISWAN";
-    const schoolId = organizationType === "HQ" ? String(hq?._id || "") : String(staff.schoolId || "");
+      staff.staffType === "Supervisor" || staff.organizationType === ORGANIZATION_TYPES.HQ
+        ? ORGANIZATION_TYPES.HQ
+        : ORGANIZATION_TYPES.NISWAN;
+    const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? "" : String(staff.schoolId || "");
 
     const scope = await resolveStaffScope({
       user: req.user,
       scopeType: organizationType,
       schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     if (!(await staffBelongsToScope({ staff, organizationType: scope.organizationType, schoolId: scope.schoolId }))) {
       const error = new Error("Staff member is outside your authorized Attendance scope.");
@@ -1054,86 +1127,91 @@ export const getStaffMonthlyAttendance = async (req, res) => {
 
 export const createMyStaffLeave = async (req, res) => {
   try {
-    const actor = await getActorStaff(req.user);
-    if (!actor?.staffId || String(actor.active || "").toLowerCase() !== "active") {
-      const error = new Error("Your login is not linked to an active staff record.");
-      error.status = 403;
-      throw error;
-    }
+    const leave = await withHqFinanceTransaction(async (session) => {
+      const actor = await getActorStaff(req.user);
+      if (!actor?.staffId || String(actor.active || "").toLowerCase() !== "active") {
+        const error = new Error("Your login is not linked to an active staff record.");
+        error.status = 403;
+        throw error;
+      }
 
-    const hq = await getHqSchool();
-    const organizationType =
-      actor.staffType === "Supervisor" || String(actor.schoolId || "") === String(hq?._id || "")
-        ? "HQ"
-        : "NISWAN";
-    const schoolId = organizationType === "HQ" ? hq?._id : actor.schoolId;
-    if (!schoolId) {
-      const error = new Error("Unable to resolve your Attendance organization.");
-      error.status = 400;
-      throw error;
-    }
+      const organizationType =
+        actor.staffType === "Supervisor" || actor.organizationType === ORGANIZATION_TYPES.HQ
+          ? ORGANIZATION_TYPES.HQ
+          : ORGANIZATION_TYPES.NISWAN;
+      const schoolId = organizationType === ORGANIZATION_TYPES.HQ ? null : actor.schoolId;
+      if (organizationType === ORGANIZATION_TYPES.NISWAN && !schoolId) {
+        const error = new Error("Unable to resolve your Attendance organization.");
+        error.status = 400;
+        throw error;
+      }
 
-    const fromDateKey = requireDateKey(req.body?.fromDateKey, "From date");
-    const toDateKey = requireDateKey(req.body?.toDateKey, "To date");
-    enumerateDateKeys(fromDateKey, toDateKey);
+      const fromDateKey = requireDateKey(req.body?.fromDateKey, "From date");
+      const toDateKey = requireDateKey(req.body?.toDateKey, "To date");
+      if (!isDateKey(fromDateKey) || !isDateKey(toDateKey)) failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      enumerateDateKeys(fromDateKey, toDateKey);
+      if (req.body?.dayType !== undefined && !["Full Day", "Half Day"].includes(req.body.dayType)) failWorkflow("LEAVE_INVALID_FIELDS", 400);
 
-    const dayType = req.body?.dayType === "Half Day" ? "Half Day" : "Full Day";
-    if (dayType === "Half Day" && fromDateKey !== toDateKey) {
-      const error = new Error("Half Day leave must use the same From and To date.");
-      error.status = 400;
-      throw error;
-    }
+      const dayType = req.body?.dayType === "Half Day" ? "Half Day" : "Full Day";
+      if (dayType === "Half Day" && fromDateKey !== toDateKey) {
+        const error = new Error("Half Day leave must use the same From and To date.");
+        error.status = 400;
+        throw error;
+      }
 
-    await assertNoFinalizedStaffAttendanceInRange({
-      staffType: actor.staffType, staffId: actor.staffId, fromDateKey, toDateKey,
-    });
+      await assertNoFinalizedStaffAttendanceInRange({
+        staffType: actor.staffType, staffId: actor.staffId, fromDateKey, toDateKey, session,
+      });
 
-    const leaveType = cleanText(req.body?.leaveType, 100);
-    const reason = cleanText(req.body?.reason, 1000);
-    if (!leaveType || !reason) {
-      const error = new Error("Leave Type and Reason are required.");
-      error.status = 400;
-      throw error;
-    }
+      await assertPayrollPeriodOpen({ ...actor, organizationType, fromDateKey, toDateKey }, session);
 
-    const overlapping = await StaffLeave.findOne({
-      staffType: actor.staffType,
-      staffId: actor.staffId,
-      status: { $in: ["Pending", "Approved"] },
-      fromDateKey: { $lte: toDateKey },
-      toDateKey: { $gte: fromDateKey },
-    }).lean();
-    if (overlapping) {
-      const error = new Error("An overlapping Pending/Approved leave already exists.");
-      error.status = 409;
-      throw error;
-    }
+      const leaveType = leaveText(req.body?.leaveType, 100, true);
+      const reason = leaveText(req.body?.reason, 1000, true);
+      if (Buffer.from(reason, "utf8").toString("utf8") !== reason || Buffer.from(leaveType, "utf8").toString("utf8") !== leaveType) failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      if (!leaveType || !reason) {
+        const error = new Error("Leave Type and Reason are required.");
+        error.status = 400;
+        throw error;
+      }
 
-    const leave = await StaffLeave.create({
-      staffType: actor.staffType,
-      staffId: actor.staffId,
-      userId: actor.userId,
-      schoolId,
-      organizationType,
-      leaveType,
-      isPaid: true,
-      fromDateKey,
-      toDateKey,
-      dayType,
-      reason,
-      remarks: cleanText(req.body?.remarks, 1000),
-      status: normalizeRole(req.user?.role) === "superadmin" ? "Approved" : "Pending",
-      requestedBy: req.user._id,
-      decidedBy: normalizeRole(req.user?.role) === "superadmin" ? req.user._id : undefined,
-      decidedAt: normalizeRole(req.user?.role) === "superadmin" ? new Date() : undefined,
+      const overlapping = await StaffLeave.findOne({
+        staffType: actor.staffType,
+        staffId: actor.staffId,
+        status: { $in: ["Pending", "Approved"] },
+        fromDateKey: { $lte: toDateKey },
+        toDateKey: { $gte: fromDateKey },
+      }).session(session).lean();
+      if (overlapping) {
+        const error = new Error("An overlapping Pending/Approved leave already exists.");
+        error.status = 409;
+        throw error;
+      }
+
+      const leave = new StaffLeave({
+        revision: 1, history: [{ toStatus: "Pending", actorId: req.user._id, at: new Date(), isPaid: true }],
+        staffType: actor.staffType,
+        staffId: actor.staffId,
+        userId: actor.userId,
+        schoolId,
+        organizationType,
+        leaveType,
+        isPaid: true,
+        fromDateKey,
+        toDateKey,
+        dayType,
+        reason,
+        remarks: leaveText(req.body?.remarks, 1000),
+        status: "Pending",
+        requestedBy: req.user._id,
+      });
+
+      await leave.save({ session });
+      return leave;
     });
 
     return res.status(201).json({
       success: true,
-      message:
-        normalizeRole(req.user?.role) === "superadmin"
-          ? "Leave recorded successfully."
-          : "Leave application submitted successfully.",
+      message: "Leave application submitted successfully.",
       leave,
     });
   } catch (error) {
@@ -1211,7 +1289,7 @@ export const listStaffLeaveApprovals = async (req, res) => {
     // their own request in the approval queue.
     leaves = leaves.filter((leave) => {
       if (String(leave.userId?._id || leave.userId || "") === String(req.user?._id || "")) return false;
-      if (!access.isSuperAdmin && normalizeRole(leave.userId?.role) === "admin") return false;
+      if (!access.isSuperAdmin && ["hqadmin", "admin"].includes(normalizeRole(leave.userId?.role))) return false;
       return true;
     });
 
@@ -1231,48 +1309,80 @@ export const updateStaffLeaveStatus = async (req, res) => {
       throw error;
     }
 
-    const leave = await StaffLeave.findById(leaveId);
-    if (!leave) {
-      const error = new Error("Staff leave was not found.");
-      error.status = 404;
-      throw error;
-    }
+    const leave = await withHqFinanceTransaction(async (session) => {
+      const leave = await StaffLeave.findById(leaveId).session(session);
+      if (!leave) {
+        const error = new Error("Staff leave was not found.");
+        error.status = 404;
+        throw error;
+      }
 
-    if (nextStatus === "Cancelled") {
-      if (String(leave.userId) !== String(req.user?._id)) {
+      if (nextStatus === "Cancelled") {
+        if (String(leave.userId) === String(req.user?._id)) {
+          await assertRequestPermission(
+            req,
+            PERMISSIONS.STAFF_LEAVE_SELF_APPLY,
+            "You do not have permission to cancel your own staff leave."
+          );
+        } else {
+          await assertRequestPermission(
+            req,
+            PERMISSIONS.STAFF_LEAVE_APPROVE,
+            "You do not have permission to cancel this staff leave."
+          );
+          const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
+          if (!allowed) {
+            const error = new Error("You are not authorized to cancel this staff leave.");
+            error.status = 403;
+            throw error;
+          }
+        }
+      } else {
+        await assertRequestPermission(
+          req,
+          PERMISSIONS.STAFF_LEAVE_APPROVE,
+          "You do not have permission to approve/reject Staff leave."
+        );
         const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
         if (!allowed) {
-          const error = new Error("You are not authorized to cancel this staff leave.");
+          const error = new Error("You are not authorized to approve/reject this staff leave.");
           error.status = 403;
           throw error;
         }
       }
-    } else {
-      const allowed = await canApproveStaffLeave({ approverUser: req.user, leave });
-      if (!allowed) {
-        const error = new Error("You are not authorized to approve/reject this staff leave.");
-        error.status = 403;
-        throw error;
+
+      assertLeaveRevision(leave, req.body?.revision);
+      assertLeaveTransition(leave, nextStatus);
+      if (nextStatus === "Approved" && typeof req.body?.isPaid !== "boolean") failWorkflow("LEAVE_INVALID_FIELDS", 400);
+      const affectsAttendance = nextStatus === "Approved" || leave.status === "Approved";
+      if (affectsAttendance) {
+        await assertPayrollPeriodOpen(leave, session);
+        await assertNoFinalizedStaffAttendanceInRange({
+          staffType: leave.staffType, staffId: leave.staffId,
+          fromDateKey: leave.fromDateKey, toDateKey: leave.toDateKey, session,
+        });
       }
-    }
 
-    if (nextStatus === "Approved" || (leave.status === "Approved" && nextStatus !== "Approved")) {
-      await assertNoFinalizedStaffAttendanceInRange({
-        staffType: leave.staffType, staffId: leave.staffId,
-        fromDateKey: leave.fromDateKey, toDateKey: leave.toDateKey,
-      });
-    }
+      const previousStatus = leave.status;
+      if (affectsAttendance) {
+        await invalidatePayrollPeriod(leave, session);
+        if (nextStatus === "Cancelled") await flagCancelledLeaveAttendance(leave, req.user._id, session);
+      }
+      if (["Approved", "Rejected"].includes(nextStatus)) {
+        if (nextStatus === "Approved") leave.isPaid = req.body.isPaid;
+        leave.decidedBy = req.user._id;
+        leave.decidedAt = new Date();
+      }
 
-    if (["Approved", "Rejected"].includes(nextStatus)) {
-      leave.isPaid = req.body?.isPaid !== undefined ? Boolean(req.body.isPaid) : leave.isPaid;
-      leave.decidedBy = req.user._id;
-      leave.decidedAt = new Date();
-    }
+      leave.history.push({ fromStatus: previousStatus, toStatus: nextStatus, actorId: req.user._id, at: new Date(), isPaid: leave.isPaid });
+      leave.revision = Number(leave.revision || 0) + 1;
+      leave.status = nextStatus;
+      leave.remarks = req.body?.remarks === undefined ? leave.remarks : leaveText(req.body.remarks, 1000);
+      leave.updatedAt = new Date();
+      await leave.save({ session });
+      return leave;
 
-    leave.status = nextStatus;
-    leave.remarks = cleanText(req.body?.remarks ?? leave.remarks, 1000);
-    leave.updatedAt = new Date();
-    await leave.save();
+    });
 
     return res.json({ success: true, message: `Staff leave ${nextStatus.toLowerCase()}.`, leave });
   } catch (error) {
@@ -1280,7 +1390,7 @@ export const updateStaffLeaveStatus = async (req, res) => {
   }
 };
 
-const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, toDateKey }) => {
+const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, toDateKey, session = null }) => {
   const leaves = await StaffLeave.find({
     staffType,
     staffId,
@@ -1288,6 +1398,7 @@ const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, to
     fromDateKey: { $lte: toDateKey },
     toDateKey: { $gte: fromDateKey },
   })
+    .session(session)
     .select("fromDateKey toDateKey dayType isPaid")
     .lean();
 
@@ -1312,20 +1423,95 @@ const getApprovedLeaveUnitsByDate = async ({ staffType, staffId, fromDateKey, to
 export const listPayrollRuns = async (req, res) => {
   try {
     const monthKey = requireMonthKey(req.query.month);
-    const scope = await resolveStaffScope({
+    const scope = await resolvePayrollScope({
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
     });
 
     const run = await PayrollRun.findOne({
       monthKey,
-      organizationType: scope.organizationType,
-      schoolId: scope.schoolId,
+      ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
     }).lean();
 
     return res.json({ success: true, run });
+  } catch (error) {
+    return sendError(res, error);
+  }
+};
+
+export const listMyPayslips = async (req, res) => {
+  try {
+    const actor = await getActorStaff(req.user);
+    if (!actor?.staffId) {
+      const error = new Error("Your login is not linked to a staff record.");
+      error.status = 403;
+      throw error;
+    }
+    if (actor.organizationType !== ORGANIZATION_TYPES.HQ) {
+      const error = new Error("Payslips are available only for HQ staff.");
+      error.status = 403;
+      throw error;
+    }
+
+    const runs = await PayrollRun.find({
+      organizationType: ORGANIZATION_TYPES.HQ,
+      status: { $in: ["Finalized", "Paid"] },
+      items: { $elemMatch: { staffType: actor.staffType, staffId: actor.staffId } },
+    })
+      .populate({ path: "schoolId", select: "_id code nameEnglish recordType" })
+      .sort({ monthKey: -1 })
+      .limit(36)
+      .lean();
+
+    const hq = getHqOrganizationSummary();
+    const payslips = runs
+      .map((run) => {
+        const item = (run.items || []).find(
+          (row) => row.staffType === actor.staffType && String(row.staffId) === String(actor.staffId)
+        );
+        if (!item) return null;
+        const isHq = run.organizationType === ORGANIZATION_TYPES.HQ;
+        return {
+          payrollRunId: String(run._id),
+          taPolicyVersion: run.taPolicyVersion || 0,
+          monthKey: run.monthKey,
+          status: run.status,
+          organizationType: run.organizationType,
+          organizationCode: isHq ? hq.code : run.schoolId?.code || "",
+          organizationName: isHq ? hq.nameEnglish : run.schoolId?.nameEnglish || "",
+          workingDays: run.workingDays,
+          finalizedAt: run.finalizedAt || null,
+          paidAt: run.paidAt || null,
+          paymentMethod: run.paymentMethod || "",
+          paymentReference: run.paymentReference || "",
+          item: {
+            staffType: item.staffType,
+            staffId: String(item.staffId),
+            staffCode: item.staffCode || "",
+            name: item.name || "",
+            role: item.role || "",
+            monthlySalary: Number(item.monthlySalary || 0),
+            travellingAllowance: Number(item.travellingAllowance || 0),
+            approvedTaClaims: Number(item.approvedTaClaims || 0),
+            travelClaimItems: item.travelClaimItems || [],
+            grossSalary: Number(item.grossSalary || 0),
+            attendanceRecordedDays: Number(item.attendanceRecordedDays || 0),
+            absentUnits: Number(item.absentUnits || 0),
+            halfDayUnits: Number(item.halfDayUnits || 0),
+            unpaidLeaveUnits: Number(item.unpaidLeaveUnits || 0),
+            payableDays: Number(item.payableDays || 0),
+            attendanceDeduction: Number(item.attendanceDeduction || 0),
+            manualAllowance: Number(item.manualAllowance || 0),
+            manualDeduction: Number(item.manualDeduction || 0),
+            netSalary: Number(item.netSalary || 0),
+            remarks: item.remarks || "",
+          },
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({ success: true, payslips });
   } catch (error) {
     return sendError(res, error);
   }
@@ -1341,113 +1527,131 @@ export const generatePayroll = async (req, res) => {
       throw error;
     }
 
-    const scope = await resolveStaffScope({
+    const scope = await resolvePayrollScope({
       user: req.user,
       scopeType: req.body?.scopeType,
       schoolId: req.body?.schoolId,
-      requireManage: true,
     });
-    const { fromDateKey, toDateKey } = monthRange(monthKey);
-    const staff = await loadStaffRoster({ ...scope, includeInactive: false });
-    const existing = await PayrollRun.findOne({
-      monthKey,
-      organizationType: scope.organizationType,
-      schoolId: scope.schoolId,
-    });
-    if (existing && ["Finalized", "Paid"].includes(existing.status)) {
-      const error = new Error("Finalized/Paid payroll cannot be regenerated.");
-      error.status = 409;
-      throw error;
-    }
-
-    const items = [];
-    for (const row of staff) {
-      const attendance = await StaffAttendance.find({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        dateKey: { $gte: fromDateKey, $lte: toDateKey },
-        status: { $nin: ["Holiday", "Weekly Off"] },
-      })
-        .select("status dateKey")
-        .lean();
-
-      const approvedLeaveByDate = await getApprovedLeaveUnitsByDate({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        fromDateKey,
-        toDateKey,
-      });
-
-      const attendanceByDate = new Map(attendance.map((record) => [record.dateKey, record]));
-      let absentUnits = 0;
-      let halfDayUnits = 0;
-      attendance.forEach((record) => {
-        const approvedLeave = approvedLeaveByDate.get(record.dateKey);
-        if (record.status === "Absent") absentUnits += 1;
-        // A Half Day generated by approved leave is handled by leave paid/unpaid rules below.
-        if (record.status === "Half Day" && !approvedLeave) halfDayUnits += 0.5;
-      });
-
-      let unpaidLeaveUnits = 0;
-      approvedLeaveByDate.forEach((leave, dateKey) => {
-        const attendanceRecord = attendanceByDate.get(dateKey);
-        if (!attendanceRecord) return;
-        if (!["Leave", "Half Day"].includes(attendanceRecord.status)) return;
-        if (!leave.isPaid) unpaidLeaveUnits += Number(leave.unit || 0);
-      });
-
-      // Missing/unmarked days are flagged by attendanceRecordedDays and are never silently
-      // treated as absence. Approved paid leave has no deduction; approved unpaid leave does.
-      const deductionUnits = Math.min(workingDays, absentUnits + halfDayUnits + unpaidLeaveUnits);
-      const payableDays = Math.max(0, workingDays - deductionUnits);
-      const monthlySalary = Number(row.salary || 0);
-      const travellingAllowance = Number(row.travellingAllowance || 0);
-      const grossSalary = monthlySalary + travellingAllowance;
-      const attendanceDeduction =
-        workingDays > 0 ? roundMoney((grossSalary / workingDays) * deductionUnits) : 0;
-      const netSalary = roundMoney(grossSalary - attendanceDeduction);
-
-      items.push({
-        staffType: row.staffType,
-        staffId: row.staffId,
-        userId: row.userId,
-        staffCode: row.staffCode,
-        name: row.name,
-        role: row.role,
-        monthlySalary,
-        travellingAllowance,
-        grossSalary: roundMoney(grossSalary),
-        workingDays,
-        attendanceRecordedDays: attendance.length,
-        absentUnits,
-        halfDayUnits,
-        unpaidLeaveUnits,
-        payableDays,
-        attendanceDeduction,
-        manualAllowance: 0,
-        manualDeduction: 0,
-        netSalary,
-      });
-    }
-
-    const run = await PayrollRun.findOneAndUpdate(
-      {
+    if (!isMonthKey(monthKey)) failTa("TA_INVALID_MONTH");
+    const run = await withHqFinanceTransaction(async (session) => {
+      const { fromDateKey, toDateKey } = monthRange(monthKey);
+      const staff = await loadStaffRoster({ ...scope, includeInactive: false, session });
+      const existing = await PayrollRun.findOne({
         monthKey,
-        organizationType: scope.organizationType,
-        schoolId: scope.schoolId,
-      },
-      {
-        $set: {
+        ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
+      }).session(session);
+      if (existing && ["Finalized", "Paid"].includes(existing.status)) {
+        const error = new Error("Finalized/Paid payroll cannot be regenerated.");
+        error.status = 409;
+        throw error;
+      }
+
+      assertPayrollRevision(existing, req.body.expectedRevision);
+      const runId = existing?._id || new mongoose.Types.ObjectId();
+      const previousItems = new Map((existing?.items || []).map((item) => [`${item.staffType}:${item.staffId}`, item]));
+      const { byStaff, excluded } = await reservePayrollClaims({ runId, monthKey, staff, userId: req.user._id, session });
+      const items = [];
+      for (const row of staff) {
+        await assertAttendanceReviewed({ staffType: row.staffType, staffId: row.staffId, fromDateKey, toDateKey }, session);
+        const attendance = await StaffAttendance.find({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          dateKey: { $gte: fromDateKey, $lte: toDateKey },
+          status: { $nin: ["Holiday", "Weekly Off"] },
+        })
+          .session(session)
+          .select("status dateKey")
+          .lean();
+
+        const approvedLeaveByDate = await getApprovedLeaveUnitsByDate({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          fromDateKey,
+          toDateKey, session,
+        });
+
+        const attendanceByDate = new Map(attendance.map((record) => [record.dateKey, record]));
+        let absentUnits = 0;
+        let halfDayUnits = 0;
+        attendance.forEach((record) => {
+          const approvedLeave = approvedLeaveByDate.get(record.dateKey);
+          if (record.status === "Absent" && !approvedLeave) absentUnits += 1;
+          // A Half Day generated by approved leave is handled by leave paid/unpaid rules below.
+          if (record.status === "Half Day" && !approvedLeave) halfDayUnits += 0.5;
+        });
+
+        let unpaidLeaveUnits = 0;
+        approvedLeaveByDate.forEach((leave, dateKey) => {
+          const attendanceRecord = attendanceByDate.get(dateKey);
+          if (!attendanceRecord) return;
+          if (!leave.isPaid) unpaidLeaveUnits += Number(leave.unit || 0);
+        });
+
+        // Missing/unmarked days are flagged by attendanceRecordedDays and are never silently
+        // treated as absence. Approved paid leave has no deduction; approved unpaid leave does.
+        const deductionUnits = Math.min(workingDays, absentUnits + halfDayUnits + unpaidLeaveUnits);
+        const payableDays = Math.max(0, workingDays - deductionUnits);
+        const monthlySalary = roundMoney(Number(row.salary || 0));
+        if (!Number.isFinite(monthlySalary) || monthlySalary < 0) failTa("TA_INVALID_AMOUNT");
+        const travellingAllowance = 0;
+        const grossSalary = monthlySalary;
+        const travelClaimItems = byStaff.get(`${row.staffType}:${row.staffId}`) || [];
+        const approvedTaClaims = payrollTaAmount(travelClaimItems);
+        const previous = previousItems.get(`${row.staffType}:${row.staffId}`);
+        const manualAllowance = roundMoney(Number(previous?.manualAllowance || 0));
+        const manualDeduction = roundMoney(Number(previous?.manualDeduction || 0));
+        const attendanceDeduction =
+          workingDays > 0 ? roundMoney((grossSalary / workingDays) * deductionUnits) : 0;
+        const netSalary = roundMoney(grossSalary - attendanceDeduction + approvedTaClaims + manualAllowance - manualDeduction);
+
+        items.push({
+          staffType: row.staffType,
+          staffId: row.staffId,
+          userId: row.userId,
+          staffCode: row.staffCode,
+          name: row.name,
+          role: row.role,
+          monthlySalary,
+          travellingAllowance, approvedTaClaims, travelClaimItems,
+          grossSalary: roundMoney(grossSalary),
           workingDays,
-          status: existing?.status === "Reviewed" ? "Reviewed" : "Draft",
-          items,
-          generatedBy: req.user._id,
-          updatedAt: new Date(),
+          attendanceRecordedDays: attendance.length,
+          absentUnits,
+          halfDayUnits,
+          unpaidLeaveUnits,
+          payableDays,
+          attendanceDeduction,
+          manualAllowance,
+          manualDeduction,
+          remarks: previous?.remarks || "",
+          netSalary,
+        });
+      }
+
+      const savedRun = await PayrollRun.findOneAndUpdate(
+        {
+          monthKey,
+          ...getOrganizationScopeFilter(scope.organizationType, scope.schoolId),
         },
-        $setOnInsert: { createdAt: new Date() },
-      },
-      { upsert: true, new: true }
-    );
+        {
+          $set: {
+            organizationType: scope.organizationType,
+            schoolId: getScopeSchoolIdForWrite(scope.organizationType, scope.schoolId),
+            workingDays,
+            revision: Number(existing?.revision || 0) + 1,
+            status: "Draft", taPolicyVersion: 1, taExcludedClaims: excluded, needsRecalculation: false,
+            reviewedBy: null, reviewedAt: null,
+            items,
+            generatedBy: req.user._id,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: { _id: runId, createdAt: new Date() },
+        },
+        { upsert: true, new: true, session }
+      );
+
+      return savedRun;
+    });
 
     return res.json({
       success: true,
@@ -1469,25 +1673,27 @@ export const updatePayrollItem = async (req, res) => {
       throw error;
     }
 
-    const run = await PayrollRun.findById(runId);
-    if (!run) {
-      const error = new Error("Payroll run was not found.");
-      error.status = 404;
-      throw error;
-    }
-    if (["Finalized", "Paid"].includes(run.status)) {
-      const error = new Error("Finalized/Paid payroll cannot be edited.");
-      error.status = 409;
-      throw error;
-    }
+    const run = await withHqFinanceTransaction(async (session) => {
+      const run = await PayrollRun.findById(runId).session(session);
+      if (!run) {
+        const error = new Error("Payroll run was not found.");
+        error.status = 404;
+        throw error;
+      }
+      if (["Finalized", "Paid"].includes(run.status)) {
+        const error = new Error("Finalized/Paid payroll cannot be edited.");
+        error.status = 409;
+        throw error;
+      }
 
-    await resolveStaffScope({
-      user: req.user,
-      scopeType: run.organizationType,
-      schoolId: String(run.schoolId || ""),
-      requireManage: true,
+      await resolvePayrollScope({
+        user: req.user,
+        scopeType: run.organizationType,
+        schoolId: String(run.schoolId || ""),
     });
 
+    assertPayrollRevision(run, req.body.expectedRevision);
+    if (run.taPolicyVersion !== 1 || run.needsRecalculation) failTa("TA_RECALCULATE_REQUIRED", 409);
     const item = run.items.id(itemId);
     if (!item) {
       const error = new Error("Payroll item was not found.");
@@ -1495,18 +1701,21 @@ export const updatePayrollItem = async (req, res) => {
       throw error;
     }
 
-    item.manualAllowance = Math.max(0, Number(req.body?.manualAllowance || 0));
-    item.manualDeduction = Math.max(0, Number(req.body?.manualDeduction || 0));
+    item.manualAllowance = moneyPaise(req.body?.manualAllowance ?? 0, true) / 100;
+    item.manualDeduction = moneyPaise(req.body?.manualDeduction ?? 0, true) / 100;
     item.remarks = cleanText(req.body?.remarks, 1000);
     item.netSalary = roundMoney(
       Number(item.grossSalary || 0) -
         Number(item.attendanceDeduction || 0) +
-        Number(item.manualAllowance || 0) -
+        Number(item.manualAllowance || 0) + Number(item.approvedTaClaims || 0) -
         Number(item.manualDeduction || 0)
     );
 
     run.updatedAt = new Date();
-    await run.save();
+    run.status = "Draft"; run.reviewedBy = null; run.reviewedAt = null; run.revision = Number(run.revision || 0) + 1;
+    await run.save({ session });
+    return run;
+    });
 
     return res.json({ success: true, message: "Payroll adjustment updated.", run });
   } catch (error) {
@@ -1524,18 +1733,30 @@ export const updatePayrollStatus = async (req, res) => {
       throw error;
     }
 
-    const run = await PayrollRun.findById(runId);
-    if (!run) {
-      const error = new Error("Payroll run was not found.");
-      error.status = 404;
-      throw error;
-    }
+    const run = await withHqFinanceTransaction(async (session) => {
+      const run = await PayrollRun.findById(runId).session(session);
+      if (!run) {
+        const error = new Error("Payroll run was not found.");
+        error.status = 404;
+        throw error;
+      }
 
-    await resolveStaffScope({
-      user: req.user,
-      scopeType: run.organizationType,
-      schoolId: String(run.schoolId || ""),
-      requireManage: true,
+      const statusPermission =
+        nextStatus === "Finalized"
+          ? PERMISSIONS.PAYROLL_FINALIZE
+          : nextStatus === "Paid"
+            ? PERMISSIONS.PAYROLL_PAY
+            : PERMISSIONS.PAYROLL_REVIEW;
+      await assertRequestPermission(
+        req,
+        statusPermission,
+        `You do not have permission to change Payroll status to ${nextStatus}.`
+      );
+
+      await resolvePayrollScope({
+        user: req.user,
+        scopeType: run.organizationType,
+        schoolId: String(run.schoolId || ""),
     });
 
     const allowedTransitions = {
@@ -1550,6 +1771,9 @@ export const updatePayrollStatus = async (req, res) => {
       throw error;
     }
 
+    if (run.status === nextStatus) return run;
+    assertPayrollRevision(run, req.body.expectedRevision);
+    if (["Draft", "Reviewed"].includes(run.status)) await assertPayrollClaims(run, session);
     if (nextStatus === "Finalized") {
       run.finalizedBy = req.user._id;
       run.finalizedAt = new Date();
@@ -1562,15 +1786,20 @@ export const updatePayrollStatus = async (req, res) => {
       }
       run.paidBy = req.user._id;
       run.paidAt = req.body?.paidAt ? new Date(req.body.paidAt) : new Date();
+      if (!Number.isFinite(run.paidAt.getTime())) failTa("TA_INVALID_FIELDS");
+      if (run.taPolicyVersion === 1) await settlePayrollClaims(run, req.user._id, session);
       run.paymentMethod = cleanText(req.body?.paymentMethod, 100);
       run.paymentReference = cleanText(req.body?.paymentReference, 200);
     }
-    if (nextStatus === "Reviewed") run.reviewedBy = req.user._id;
+    if (nextStatus === "Reviewed") { run.reviewedBy = req.user._id; run.reviewedAt = new Date(); }
+    run.revision = Number(run.revision || 0) + 1;
 
     run.status = nextStatus;
     run.remarks = cleanText(req.body?.remarks ?? run.remarks, 1000);
     run.updatedAt = new Date();
-    await run.save();
+    await run.save({ session });
+    return run;
+    });
 
     return res.json({ success: true, message: `Payroll status updated to ${nextStatus}.`, run });
   } catch (error) {
@@ -1582,6 +1811,7 @@ export const getAttendanceOverview = async (req, res) => {
   try {
     const dateKey = requireAttendanceDateKey(req.query.date);
     const access = await getAttendanceAccess(req.user);
+    const permissionSet = new Set(await getRequestPermissions(req));
     const result = {
       dateKey,
       student: null,
@@ -1592,7 +1822,10 @@ export const getAttendanceOverview = async (req, res) => {
     const schoolId = String(req.query.schoolId || "");
     const scopeType = normalizeScopeType(req.query.scopeType);
 
-    if (access.canManageAnyStudents || access.canManageOwnNiswanStudents) {
+    if (
+      permissionSet.has(PERMISSIONS.STUDENT_ATTENDANCE_VIEW) &&
+      (access.canManageAnyStudents || access.canManageOwnNiswanStudents)
+    ) {
       try {
         const studentScope = await resolveStudentScope({ user: req.user, schoolId, requireManage: true });
         const studentQuery = { schoolId: studentScope.schoolId, active: "Active" };
@@ -1621,7 +1854,10 @@ export const getAttendanceOverview = async (req, res) => {
       }
     }
 
-    if (access.canManageHqStaff || access.canManageOwnNiswanStaff || access.isSuperAdmin) {
+    if (
+      permissionSet.has(PERMISSIONS.STAFF_ATTENDANCE_VIEW) &&
+      (access.canManageHqStaff || access.canManageOwnNiswanStaff || access.isSuperAdmin)
+    ) {
       try {
         const staffScope = await resolveStaffScope({
           user: req.user,
@@ -1665,14 +1901,14 @@ export const getAttendanceOverview = async (req, res) => {
       }
     }
 
-    if (access.isSuperAdmin) {
+    if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.isSuperAdmin) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({ status: "Pending" });
-    } else if (access.canManageHqStaff) {
+    } else if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.canManageHqStaff) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({
         status: "Pending",
         organizationType: "HQ",
       });
-    } else if (access.canManageOwnNiswanStaff) {
+    } else if (permissionSet.has(PERMISSIONS.STAFF_LEAVE_APPROVE) && access.canManageOwnNiswanStaff) {
       result.pendingStaffLeaveApprovals = await StaffLeave.countDocuments({
         status: "Pending",
         organizationType: "NISWAN",
@@ -1693,10 +1929,15 @@ export const getMonthlyAttendanceReport = async (req, res) => {
     const { fromDateKey, toDateKey } = monthRange(monthKey);
 
     if (kind === "student") {
+      await assertRequestPermission(
+        req,
+        PERMISSIONS.STUDENT_ATTENDANCE_REPORT_VIEW,
+        "You do not have permission to view Student attendance reports."
+      );
       const scope = await resolveStudentScope({
         user: req.user,
         schoolId: req.query.schoolId,
-        requireManage: true,
+        requireManage: false,
       });
 
       const records = await StudentAttendance.find({
@@ -1744,11 +1985,16 @@ export const getMonthlyAttendanceReport = async (req, res) => {
       return res.json({ success: true, kind: "student", monthKey, school: scope.school, rows });
     }
 
+    await assertRequestPermission(
+      req,
+      PERMISSIONS.STAFF_ATTENDANCE_REPORT_VIEW,
+      "You do not have permission to view Staff attendance reports."
+    );
     const scope = await resolveStaffScope({
       user: req.user,
       scopeType: req.query.scopeType,
       schoolId: req.query.schoolId,
-      requireManage: true,
+      requireManage: false,
     });
     const roster = await loadStaffRoster(scope);
     const or = roster.map((row) => ({ staffType: row.staffType, staffId: row.staffId }));

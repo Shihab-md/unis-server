@@ -10,6 +10,10 @@ import AcademicYear from "../models/AcademicYear.js";
 import Template from "../models/Template.js";
 import DistrictState from "../models/DistrictState.js";
 import Grade from "../models/Grade.js";
+import { getRolePermissions } from "../services/permissionService.js";
+import { PERMISSIONS } from "../config/permissionCatalog.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
+import { ORGANIZATION_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const SCHOOL_LINKED_ROLES = new Set([
   "admin",
@@ -66,9 +70,7 @@ const getGlobalSummary = async () => {
     );
 
     totalSchools = String(
-      await School.countDocuments({
-        code: { $ne: "UN-00-00001" },
-      })
+      await School.countDocuments(getNiswanSchoolFilter())
     );
 
     totalStudents = String(await Student.countDocuments());
@@ -103,8 +105,9 @@ const getSupervisorSummary = async (userId) => {
   }
 
   const schools = await School.find({
-    supervisorId: supervisor._id,
-    code: { $ne: "UN-00-00001" },
+    // Keep Dashboard and Employee List on the same assigned-Niswan compatibility scope.
+    supervisorId: { $in: [supervisor._id, userId] },
+    ...getNiswanSchoolFilter(),
   })
     .select("_id")
     .lean();
@@ -120,6 +123,7 @@ const getSupervisorSummary = async (userId) => {
 
   const [totalEmployees, totalStudents] = await Promise.all([
     Employee.countDocuments({
+      organizationType: ORGANIZATION_TYPES.NISWAN,
       schoolId: { $in: schoolIds },
       active: "Active",
     }),
@@ -143,15 +147,16 @@ const getSchoolLinkedRoleSummary = async (userId) => {
     userId,
     active: "Active",
   })
-    .select("schoolId")
+    .select("organizationType schoolId")
     .lean();
 
-  if (!employee?.schoolId) {
+  if (employee?.organizationType !== ORGANIZATION_TYPES.NISWAN || !employee?.schoolId) {
     return buildEmptySummary();
   }
 
   const [totalEmployees, totalStudents] = await Promise.all([
     Employee.countDocuments({
+      organizationType: ORGANIZATION_TYPES.NISWAN,
       schoolId: employee.schoolId,
       active: "Active",
     }),
@@ -178,8 +183,13 @@ const getSummary = async (req, res) => {
 
     let summary;
 
-    if (role === "superadmin" || role === "hquser") {
-      summary = await getGlobalSummary();
+    if (["superadmin", "hqadmin", "accountant", "hquser"].includes(role)) {
+      if (role === "superadmin") {
+        summary = await getGlobalSummary();
+      } else {
+        const access = await getAccessContext(req.user);
+        summary = access?.isHQ && access?.isActive ? await getGlobalSummary() : buildEmptySummary();
+      }
     } else if (role === "supervisor") {
       summary = await getSupervisorSummary(userId);
     } else if (SCHOOL_LINKED_ROLES.has(role)) {
@@ -188,9 +198,21 @@ const getSummary = async (req, res) => {
       summary = buildEmptySummary();
     }
 
+    // Phase 2.1: keep the dashboard endpoint shared by all authenticated roles,
+    // but do not return core-module counts after that module's view permission
+    // has been removed. Scope is still calculated exactly as before above.
+    const permissionSet = new Set(await getRolePermissions(role));
+    const visibleSummary = { ...summary };
+
+    if (!permissionSet.has(PERMISSIONS.EMPLOYEE_VIEW)) visibleSummary.totalEmployees = "0";
+    if (!permissionSet.has(PERMISSIONS.SUPERVISOR_LIST)) visibleSummary.totalSupervisors = "0";
+    if (!permissionSet.has(PERMISSIONS.NISWAN_VIEW)) visibleSummary.totalSchools = "0";
+    if (!permissionSet.has(PERMISSIONS.STUDENT_VIEW)) visibleSummary.totalStudents = "0";
+    if (!permissionSet.has(PERMISSIONS.CERTIFICATE_VIEW)) visibleSummary.totalCertificates = "0";
+
     return res.status(200).json({
       success: true,
-      ...summary,
+      ...visibleSummary,
     });
   } catch (e) {
     console.log("[getSummary] error:", e?.message || e);
@@ -235,14 +257,17 @@ const getMasterSummary = async (req, res) => {
       await redis.set("totalGrades", totalGrades, { EX: 60 });
     }
 
+    const permissions = await getRolePermissions(req.user?.role);
+    const visible = (permission, value) => permissions.includes(permission) ? value : "0";
+
     return res.status(200).json({
       success: true,
-      totalInstitutes,
-      totalCourses,
-      totalAcademicYears,
-      totalTemplates,
-      totalDistrictStates,
-      totalGrades,
+      totalInstitutes: visible(PERMISSIONS.MASTER_INSTITUTE_VIEW, totalInstitutes),
+      totalCourses: visible(PERMISSIONS.MASTER_COURSE_VIEW, totalCourses),
+      totalAcademicYears: visible(PERMISSIONS.MASTER_ACADEMIC_YEAR_VIEW, totalAcademicYears),
+      totalTemplates: visible(PERMISSIONS.MASTER_TEMPLATE_VIEW, totalTemplates),
+      totalDistrictStates: visible(PERMISSIONS.MASTER_DISTRICT_STATE_VIEW, totalDistrictStates),
+      totalGrades: visible(PERMISSIONS.MASTER_GRADE_VIEW, totalGrades),
     });
   } catch (error) {
     console.log(error.message);

@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import Academic from "../models/Academic.js";
 import { sendCSV, sendXLSX } from "../utils/reportExport.js";
 import { formatCompactDuration } from "../utils/profileDuration.js";
+import { ORGANIZATION_TYPES, getHqOrganizationSummary, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const oid = (id) => new mongoose.Types.ObjectId(String(id));
 const isObjectIdLike = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
@@ -37,11 +38,12 @@ const formatDate = (value) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const canViewSensitive = (role) => ["superadmin", "hquser"].includes(String(role || "").toLowerCase());
+const canViewSensitive = (role) => ["superadmin", "hqadmin", "accountant"].includes(String(role || "").toLowerCase());
+const canViewFinancialReportData = (role) => String(role || "").trim().toLowerCase() !== "hquser";
 
 async function getAccessibleSchoolIds({ role, schoolId, userId }) {
   const normalizedRole = String(role || "").toLowerCase();
-  if (normalizedRole === "superadmin" || normalizedRole === "hquser") return null;
+  if (["superadmin", "hqadmin", "accountant", "hquser"].includes(normalizedRole)) return null;
 
   if (normalizedRole === "admin") {
     return schoolId && isObjectIdLike(schoolId) ? [String(schoolId)] : [];
@@ -55,7 +57,7 @@ async function getAccessibleSchoolIds({ role, schoolId, userId }) {
     const possibleSupervisorIds = [];
     if (supervisor?._id) possibleSupervisorIds.push(supervisor._id);
     if (isObjectIdLike(uid)) possibleSupervisorIds.push(oid(uid));
-    const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } }).select("_id").lean();
+    const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds }, ...getNiswanSchoolFilter() }).select("_id").lean();
     return schools.map((school) => String(school._id));
   }
 
@@ -71,7 +73,7 @@ async function resolveSchoolScope({ allowedSchoolIds, schoolId, schoolCode, scho
   const hasSchoolFilter = Boolean(safeStr(schoolCode) || safeStr(schoolSearch));
   if (!hasSchoolFilter) return allowedSchoolIds;
 
-  const query = {};
+  const query = getNiswanSchoolFilter();
   if (allowedSchoolIds !== null) query._id = { $in: allowedSchoolIds.map(oid) };
   if (safeStr(schoolCode)) query.code = safeStr(schoolCode);
   if (safeStr(schoolSearch)) {
@@ -164,7 +166,7 @@ async function buildStudentReportMatch(req, payload) {
   return match;
 }
 
-const mapStudentRow = (student, { includeSensitive = false } = {}) => {
+const mapStudentRow = (student, { includeSensitive = false, includeFinancial = true } = {}) => {
   const row = {
     _id: student._id,
     rollNumber: student.rollNumber || "-",
@@ -179,7 +181,7 @@ const mapStudentRow = (student, { includeSensitive = false } = {}) => {
     courses: (student.courses || []).map((course) => course?.name).filter(Boolean).join(", ") || "-",
     status: student.active || "-",
     hostel: student.hostel || "No",
-    feesStatus: Number(student.feesPaid) === 1 ? "Paid" : "Unpaid",
+    ...(includeFinancial ? { feesStatus: Number(student.feesPaid) === 1 ? "Paid" : "Unpaid" } : {}),
     address: student.address || "-",
     city: student.city || "-",
   };
@@ -214,9 +216,13 @@ const mapStudentRow = (student, { includeSensitive = false } = {}) => {
     district: student.districtStateId?.district || "-",
     state: student.districtStateId?.state || "-",
     hostelRefNumber: student.hostelRefNumber || "-",
-    hostelFees: Number(student.hostelFees || 0),
-    hostelDiscount: Number(student.hostelDiscount || 0),
-    hostelFinalFees: Number(student.hostelFinalFees || 0),
+    ...(includeFinancial
+      ? {
+          hostelFees: Number(student.hostelFees || 0),
+          hostelDiscount: Number(student.hostelDiscount || 0),
+          hostelFinalFees: Number(student.hostelFinalFees || 0),
+        }
+      : {}),
     remarks: student.remarks || "-",
   };
 };
@@ -227,7 +233,8 @@ async function getStudentRows(req, { exportAll = false } = {}) {
   const match = await buildStudentReportMatch(req, payload);
   const { page, limit, skip } = getPagination(req);
   const normalizedRole = String(payload.role || "").toLowerCase();
-  const includeSensitive = ["superadmin", "hquser", "supervisor", "admin"].includes(normalizedRole);
+  const includeSensitive = ["superadmin", "hqadmin", "accountant", "hquser", "supervisor", "admin"].includes(normalizedRole);
+  const includeFinancial = canViewFinancialReportData(normalizedRole);
 
   const query = Student.find(match)
     .select(
@@ -246,8 +253,9 @@ async function getStudentRows(req, { exportAll = false } = {}) {
   const [records, total] = await Promise.all([query.lean(), Student.countDocuments(match)]);
   return {
     success: true,
-    rows: records.map((student) => mapStudentRow(student, { includeSensitive })),
+    rows: records.map((student) => mapStudentRow(student, { includeSensitive, includeFinancial })),
     canViewSensitive: includeSensitive,
+    canViewFinancial: includeFinancial,
     pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
   };
 }
@@ -293,7 +301,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 
   const { page, limit, skip } = getPagination(req);
   const query = Employee.find(match)
-    .select("employeeId userId schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
+    .select("employeeId userId organizationType schoolId contactNumber fatherGuardianName dob doj gender maritalStatus qualification salary otherDesignation activitiesCarriedOut bankAccountDetails active remarks")
     .populate({ path: "userId", select: "name email role" })
     .populate({ path: "schoolId", select: "code nameEnglish" })
     .sort({ employeeId: 1 });
@@ -301,14 +309,17 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 
   const [records, total] = await Promise.all([query.lean(), Employee.countDocuments(match)]);
   const sensitive = canViewSensitive(role);
+  const hq = getHqOrganizationSummary();
   const rows = records.map((employee) => ({
     _id: employee._id,
     employeeId: employee.employeeId || "-",
     name: employee.userId?.name || "-",
     email: employee.userId?.email || "-",
     role: employee.userId?.role || "-",
-    schoolCode: employee.schoolId?.code || "-",
-    schoolName: employee.schoolId?.nameEnglish || "-",
+    schoolCode:
+      employee.organizationType === ORGANIZATION_TYPES.HQ ? hq.code : employee.schoolId?.code || "-",
+    schoolName:
+      employee.organizationType === ORGANIZATION_TYPES.HQ ? hq.nameEnglish : employee.schoolId?.nameEnglish || "-",
     contactNumber: employee.contactNumber || "-",
     fatherGuardianName: employee.fatherGuardianName || "-",
     dob: employee.dob || null,
@@ -319,7 +330,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
     maritalStatus: employee.maritalStatus || "-",
     qualification: employee.qualification || "-",
     hadhiya: sensitive ? Number(employee.salary || 0) : null,
-    travellingAllowance: sensitive ? Number(employee.travellingAllowance || 0) : null,
+
     otherDesignation: employee.otherDesignation || "-",
     activitiesCarriedOut: employee.activitiesCarriedOut || "-",
     bankAccountDetails: sensitive ? employee.bankAccountDetails || "-" : null,
@@ -338,7 +349,7 @@ async function getEmployeeRows(req, { exportAll = false } = {}) {
 async function getAllowedSupervisorIds(payload) {
   const role = String(payload.role || "").toLowerCase();
   const userId = payload.id || payload._id || payload.userId;
-  if (role === "superadmin" || role === "hquser") return null;
+  if (["superadmin", "hqadmin", "accountant", "hquser"].includes(role)) return null;
 
   if (role === "supervisor") {
     const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
@@ -355,13 +366,13 @@ async function attachSupervisorCounts(supervisors) {
   const supervisorIds = supervisors.map((item) => item._id);
   if (!supervisorIds.length) return supervisors.map((item) => ({ ...item, niswansCount: 0, employeesCount: 0, studentsCount: 0 }));
 
-  const schools = await School.find({ supervisorId: { $in: supervisorIds } }).select("_id supervisorId").lean();
+  const schools = await School.find({ supervisorId: { $in: supervisorIds }, ...getNiswanSchoolFilter() }).select("_id supervisorId").lean();
   const schoolIds = schools.map((school) => school._id);
   const schoolToSupervisor = new Map(schools.map((school) => [String(school._id), String(school.supervisorId)]));
 
   const [employeeGroups, studentGroups] = await Promise.all([
     schoolIds.length
-      ? Employee.aggregate([{ $match: { schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
+      ? Employee.aggregate([{ $match: { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
       : [],
     schoolIds.length
       ? Student.aggregate([{ $match: { schoolId: { $in: schoolIds }, active: "Active" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
@@ -410,7 +421,7 @@ async function getSupervisorRows(req, { exportAll = false } = {}) {
 
   const { page, limit, skip } = getPagination(req);
   const query = Supervisor.find(match)
-    .select("supervisorId userId contactNumber address routeName qualification fatherGuardianName dob doj gender maritalStatus salary travellingAllowance otherDesignation activitiesCarriedOut bankAccountDetails jobType active remarks")
+    .select("supervisorId userId contactNumber address routeName qualification fatherGuardianName dob doj gender maritalStatus salary otherDesignation activitiesCarriedOut bankAccountDetails jobType active remarks")
     .populate({ path: "userId", select: "name email role" })
     .sort({ supervisorId: 1 });
   if (!exportAll) query.skip(skip).limit(limit);
@@ -435,7 +446,7 @@ async function getSupervisorRows(req, { exportAll = false } = {}) {
     qualification: supervisor.qualification || "-",
     jobType: supervisor.jobType || "-",
     hadhiya: sensitive ? Number(supervisor.salary || 0) : null,
-    travellingAllowance: sensitive ? Number(supervisor.travellingAllowance || 0) : null,
+
     otherDesignation: supervisor.otherDesignation || "-",
     activitiesCarriedOut: supervisor.activitiesCarriedOut || "-",
     bankAccountDetails: sensitive ? supervisor.bankAccountDetails || "-" : null,
@@ -460,7 +471,7 @@ const sendRowsExport = (res, format, filename, rows, sheetName) => {
   return sendXLSX(res, filename, rows, sheetName);
 };
 
-const flattenStudentExport = (row, sensitive) => ({
+const flattenStudentExport = (row, sensitive, financial) => ({
   "Roll Number": row.rollNumber,
   ...(sensitive ? { "Old Roll Number": row.oldRollNumber } : {}),
   "Student Name": row.name,
@@ -493,7 +504,7 @@ const flattenStudentExport = (row, sensitive) => ({
   Course: row.courses,
   Status: row.status,
   Hostel: row.hostel,
-  "Fees Status": row.feesStatus,
+  ...(financial ? { "Fees Status": row.feesStatus } : {}),
   Address: row.address,
   City: row.city,
   ...(sensitive ? {
@@ -502,9 +513,13 @@ const flattenStudentExport = (row, sensitive) => ({
     District: row.district,
     State: row.state,
     "Hostel Reference": row.hostelRefNumber,
-    "Hostel Monthly Fees": row.hostelFees,
-    "Hostel Discount": row.hostelDiscount,
-    "Hostel Final Fees": row.hostelFinalFees,
+    ...(financial
+      ? {
+          "Hostel Monthly Fees": row.hostelFees,
+          "Hostel Discount": row.hostelDiscount,
+          "Hostel Final Fees": row.hostelFinalFees,
+        }
+      : {}),
     Remarks: row.remarks,
   } : {}),
 });
@@ -525,7 +540,7 @@ const flattenEmployeeExport = (row, sensitive) => ({
   Gender: row.gender,
   "Marital Status": row.maritalStatus,
   Qualification: row.qualification,
-  ...(sensitive ? { Hadhiya: row.hadhiya, "Travelling Allowance": row.travellingAllowance } : {}),
+  ...(sensitive ? { Hadhiya: row.hadhiya } : {}),
   "Other Designation": row.otherDesignation,
   "Activities carried out": row.activitiesCarriedOut,
   ...(sensitive ? { "Bank account details": row.bankAccountDetails } : {}),
@@ -548,7 +563,7 @@ const flattenSupervisorExport = (row, sensitive) => ({
   Route: row.routeName,
   Qualification: row.qualification,
   "Job Type": row.jobType,
-  ...(sensitive ? { Hadhiya: row.hadhiya, "Travelling Allowance": row.travellingAllowance } : {}),
+  ...(sensitive ? { Hadhiya: row.hadhiya } : {}),
   "Other Designation": row.otherDesignation,
   "Activities carried out": row.activitiesCarriedOut,
   ...(sensitive ? { "Bank account details": row.bankAccountDetails } : {}),
@@ -574,7 +589,7 @@ export const exportStudentDetailReport = async (req, res) => {
   try {
     const data = await getStudentRows(req, { exportAll: true });
     if (!data.success) return res.status(data.status || 500).json(data);
-    return sendRowsExport(res, req.query.format, `Students_Report_${Date.now()}`, data.rows.map((row) => flattenStudentExport(row, data.canViewSensitive)), "Students");
+    return sendRowsExport(res, req.query.format, `Students_Report_${Date.now()}`, data.rows.map((row) => flattenStudentExport(row, data.canViewSensitive, data.canViewFinancial !== false)), "Students");
   } catch (error) {
     console.error(error);
     return res.status(500).json({ success: false, error: "Student report export error" });

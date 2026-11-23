@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily UNIS staging backup at 02:45 India time
+
+[Timer]
+OnCalendar=*-*-* 02:45:00 Asia/Kolkata
+Persistent=true
+AccuracySec=1min
+Unit=unis-mongodb-backup@staging.service
+
+[Install]
+WantedBy=timers.target

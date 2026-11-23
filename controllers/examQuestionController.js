@@ -5,6 +5,8 @@ import Employee from "../models/Employee.js";
 import ExamQuestionDownload from "../models/ExamQuestionDownload.js";
 import ExamQuestionPaper from "../models/ExamQuestionPaper.js";
 import School from "../models/School.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
+import { getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 import {
   deleteQuestionPaperFromDrive,
   downloadQuestionPaperFromDrive,
@@ -12,8 +14,9 @@ import {
 } from "../services/examQuestionDriveService.js";
 
 const EXAM_TYPES = ["Quarterly", "Half Yearly", "Annual"];
-const MANAGER_ROLES = new Set(["superadmin", "hquser"]);
-const VIEWER_ROLES = new Set(["superadmin", "hquser", "admin"]);
+const MANAGER_ROLES = new Set(["superadmin", "hqadmin"]);
+const GLOBAL_VIEWER_ROLES = new Set(["superadmin", "hqadmin", "accountant", "hquser"]);
+const VIEWER_ROLES = new Set([...GLOBAL_VIEWER_ROLES, "admin"]);
 const IST_OFFSET_MINUTES = 330;
 
 const clean = (value) => (value === undefined || value === null ? "" : String(value).trim());
@@ -99,7 +102,7 @@ const getCourseSubjects = (course = {}) => {
 const getAdminSchool = async (userId) => {
   const employee = await Employee.findOne({ userId }).select("schoolId active").lean();
   if (!employee?.schoolId || clean(employee.active).toLowerCase() !== "active") return null;
-  const school = await School.findOne({ _id: employee.schoolId, active: "Active" })
+  const school = await School.findOne({ _id: employee.schoolId, active: "Active", ...getNiswanSchoolFilter() })
     .select("_id code nameEnglish")
     .lean();
   return school || null;
@@ -108,7 +111,12 @@ const getAdminSchool = async (userId) => {
 const getAccess = async (req) => {
   const role = roleOf(req);
   if (!VIEWER_ROLES.has(role)) return { role, canUse: false, isManager: false, school: null };
-  if (MANAGER_ROLES.has(role)) return { role, canUse: true, isManager: true, school: null };
+  if (role === "superadmin") return { role, canUse: true, isManager: true, school: null };
+  if (GLOBAL_VIEWER_ROLES.has(role)) {
+    const scope = await getAccessContext(req.user);
+    const canUse = Boolean(scope?.isHQ && scope?.isActive);
+    return { role, canUse, isManager: canUse && MANAGER_ROLES.has(role), school: null };
+  }
   const school = await getAdminSchool(req.user?._id);
   return { role, canUse: Boolean(school), isManager: false, school };
 };
@@ -164,12 +172,11 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
   const examStartTime = clean(body.examStartTime);
   const releaseDate = clean(body.releaseDate);
   const releaseTime = clean(body.releaseTime);
-  const closeDate = clean(body.closeDate);
-  const closeTime = clean(body.closeTime);
   const targetType = clean(body.targetType).toUpperCase() === "SELECTED" ? "SELECTED" : "ALL";
-  const publicationStatus = ["Draft", "Published", "Closed"].includes(clean(body.publicationStatus))
-    ? clean(body.publicationStatus)
-    : "Draft";
+  // Create is always Published. Updates retain saved legacy settings; ignoring
+  // removed client controls prevents an ordinary edit from publishing a draft
+  // or reopening a closed paper. No bulk migration changes historical records.
+  const publicationStatus = existing ? existing.publicationStatus : "Published";
 
   if (!isObjectId(academicYearId)) throw new Error("Please select a valid Academic Year.");
   if (!isObjectId(courseId)) throw new Error("Please select a valid Course.");
@@ -184,11 +191,8 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
   const availableFrom = parseIstDateTime(releaseDate, releaseTime);
   if (!availableFrom) throw new Error("Release Date and Time are required.");
   if (availableFrom > examStartsAt) throw new Error("Question Paper release time cannot be later than the Exam Start Time.");
-  let availableUntil = null;
-  if (closeDate || closeTime) {
-    if (!closeDate || !closeTime) throw new Error("Both Close Date and Close Time are required when setting a close time.");
-    availableUntil = parseIstDateTime(closeDate, closeTime);
-    if (!availableUntil) throw new Error("Close Date/Time is invalid.");
+  const availableUntil = existing?.availableUntil || null;
+  if (availableUntil) {
     if (availableUntil <= availableFrom) throw new Error("Close time must be later than the release time.");
     if (availableUntil <= examStartsAt) throw new Error("Close time must be later than the Exam Start Time.");
   }
@@ -220,7 +224,7 @@ const validateAndResolvePayload = async (body, { requireFile = false, file, exis
       sameIdSet(existing.targetSchoolIds, targetSchoolIds)
     );
     if (!existingTargetsUnchanged) {
-      const activeSchools = await School.find({ _id: { $in: targetSchoolIds }, active: "Active" }).select("_id").lean();
+      const activeSchools = await School.find({ _id: { $in: targetSchoolIds }, active: "Active", ...getNiswanSchoolFilter() }).select("_id").lean();
       if (activeSchools.length !== targetSchoolIds.length) throw new Error("One or more selected Niswans are invalid or inactive.");
     }
   }
@@ -265,7 +269,7 @@ export const getExamQuestionOptions = async (req, res) => {
       AcademicYear.find({}).select("_id acYear active").sort({ acYear: -1 }).lean(),
       Course.find({}).sort({ promotionOrder: 1, code: 1 }).lean(),
       access.isManager
-        ? School.find({ active: "Active" }).select("_id code nameEnglish").sort({ code: 1 }).lean()
+        ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish").sort({ code: 1 }).lean()
         : Promise.resolve(access.school ? [access.school] : []),
     ]);
 
@@ -337,7 +341,7 @@ export const listExamQuestions = async (req, res) => {
         .populate("targetSchoolIds", "code nameEnglish")
         .lean(),
       ExamQuestionPaper.countDocuments(filter),
-      access.isManager ? School.find({ active: "Active" }).select("_id").lean() : Promise.resolve([]),
+      access.isManager ? School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id").lean() : Promise.resolve([]),
     ]);
 
     let statsMap = new Map();
@@ -455,7 +459,7 @@ export const updateExamQuestion = async (req, res) => {
       if (req.file || lockedFieldChanged) {
         return res.status(409).json({
           success: false,
-          error: "This Question Paper has already been downloaded by a Niswan. PDF, exam details, release time and targets are locked. You may only update title/instructions, close time or close the paper.",
+          error: "This Question Paper has already been downloaded by a Niswan. PDF, exam details, release time and targets are locked. You may only update title/instructions.",
         });
       }
       if (payload.publicationStatus === "Draft") {
@@ -593,8 +597,8 @@ export const getExamQuestionDownloads = async (req, res) => {
     if (!paper) return res.status(404).json({ success: false, error: "Question Paper not found." });
 
     const targetSchools = paper.targetType === "ALL"
-      ? await School.find({ active: "Active" }).select("_id code nameEnglish").sort({ code: 1 }).lean()
-      : await School.find({ _id: { $in: paper.targetSchoolIds || [] } }).select("_id code nameEnglish active").sort({ code: 1 }).lean();
+      ? await School.find({ active: "Active", ...getNiswanSchoolFilter() }).select("_id code nameEnglish").sort({ code: 1 }).lean()
+      : await School.find({ _id: { $in: paper.targetSchoolIds || [] }, ...getNiswanSchoolFilter() }).select("_id code nameEnglish active").sort({ code: 1 }).lean();
 
     const rows = await ExamQuestionDownload.find({ questionPaperId: paper._id })
       .select("schoolId userId downloadedAt")

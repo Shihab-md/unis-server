@@ -142,7 +142,6 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
   const results = [];
   let created = 0;
   let replaced = 0;
-  let invalid = 0;
   let failed = 0;
 
   let drive = null;
@@ -156,25 +155,6 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
   };
 
   for (const row of normalizedRows) {
-    if (row.errors.length > 0) {
-      invalid += 1;
-      results.push({
-        sourceRowNumber: row.sourceRowNumber,
-        regNumber: row.regNumber,
-        name: row.studentName,
-        status: "INVALID",
-        action: "",
-        totalSubjects: "",
-        totalMarks: "",
-        percentage: "",
-        fileName: row.fileName || "",
-        viewUrl: "",
-        downloadUrl: "",
-        message: row.errors.join(", "),
-      });
-      continue;
-    }
-
     try {
       const pdfBytes = await buildTempSchoolMarksheetPdf({
         row,
@@ -246,7 +226,7 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
         name: row.studentName,
         status: "FAILED",
         action: "",
-        totalSubjects: row.totalSubjects || "",
+        totalSubjects: row.totalSubjects ?? "",
         totalMarks: row.totalMarksText || "",
         percentage: row.percentageText || "",
         fileName: row.fileName || "",
@@ -262,7 +242,7 @@ export const processTempSchoolMarksheetRows = async ({ rows = [], expectedTempla
       total: normalizedRows.length,
       created,
       replaced,
-      invalid,
+      invalid: 0,
       failed,
       success: created + replaced,
     },

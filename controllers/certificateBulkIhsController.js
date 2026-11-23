@@ -2,15 +2,6 @@ import { processBulkIhsExcelRows } from "../services/certificateBulkIhsService.j
 
 const createBulkIhsCertificates = async (req, res) => {
   try {
-    const role = String(req?.user?.role || "").toLowerCase();
-
-    if (!["superadmin", "hquser"].includes(role)) {
-      return res.status(403).json({
-        success: false,
-        error: "You are not allowed to create bulk IHS certificates.",
-      });
-    }
-
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
 
     if (!rows.length) {

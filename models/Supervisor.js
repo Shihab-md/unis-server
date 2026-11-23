@@ -14,7 +14,8 @@ const supervisorSchema = new Schema({
   maritalStatus: { type: String, enum: ["Married", "Single"], },
   doj: { type: Date },
   salary: { type: Number, required: true },
-  travellingAllowance: { type: Number, min: 0, default: 0 },
+  // Historical profile value only. New TA is claimed through TravelClaim.
+  travellingAllowance: { type: Number, min: 0, default: 0, immutable: true },
   otherDesignation: { type: String, trim: true },
   activitiesCarriedOut: { type: String, trim: true },
   bankAccountDetails: { type: String, trim: true },

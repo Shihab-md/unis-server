@@ -11,6 +11,13 @@ import bcrypt from "bcrypt";
 import getRedis from "../db/redis.js"
 import { toCamelCase, parseDate } from "./commonController.js";
 import { validateActualDate, validateActualDateOrder } from "../utils/dateRules.js";
+import { HQ_EMPLOYEE_ROLE_SET } from "../config/rolePolicy.js";
+import {
+  HQ_EMPLOYEE_ID_PREFIX,
+  ORGANIZATION_TYPES,
+  getNiswanSchoolFilter,
+  normalizeOrganizationType,
+} from "../config/organizationPolicy.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -59,11 +66,15 @@ const parseDateFlexible = (raw) => {
 };
 
 const roleCodeMap = {
+  hqadmin: "HA",
+  accountant: "AC",
+  hquser: "HQ",
+  hqstaff: "HS",
   admin: "AD",
   teacher: "TR",
-  hquser: "HQ",
   usthadh: "US",
-  warden: "WR"
+  warden: "WR",
+  staff: "ST",
 };
 
 const extractLast5DigitsFromSchoolCode = (schoolCode) => {
@@ -74,12 +85,12 @@ const extractLast5DigitsFromSchoolCode = (schoolCode) => {
   return digits.padStart(5, "0"); // 001 -> 00001, 020 -> 00020
 };
 
-const generateEmployeeId = async ({ schoolCode, role }) => {
-  const last5 = extractLast5DigitsFromSchoolCode(schoolCode);
+const generateEmployeeId = async ({ schoolCode, role, organizationType }) => {
   const roleCode = roleCodeMap[String(role || "").toLowerCase()] || "EM";
-
-  // target format: UN00211AD001
-  const prefix = `UN${last5}${roleCode}`;
+  const prefix =
+    normalizeOrganizationType(organizationType) === ORGANIZATION_TYPES.HQ
+      ? `${HQ_EMPLOYEE_ID_PREFIX}${roleCode}`
+      : `UN${extractLast5DigitsFromSchoolCode(schoolCode)}${roleCode}`;
 
   const last = await Employee.findOne({ employeeId: { $regex: `^${prefix}\\d{3}$` } })
     .select("employeeId")
@@ -110,7 +121,7 @@ const addEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -139,46 +150,48 @@ const addEmployee = async (req, res) => {
     const roleNorm = String(role || "").toLowerCase().trim();
     const emailNorm = String(email || "").toLowerCase().trim();
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
-    if (!emailNorm || !password || !schoolId || !roleNorm || !name) {
+    const organizationType = normalizeOrganizationType(
+      req.employeeOrganizationType || (HQ_EMPLOYEE_ROLE_SET.has(roleNorm) ? ORGANIZATION_TYPES.HQ : ORGANIZATION_TYPES.NISWAN)
+    );
+
+    if (!emailNorm || !password || !roleNorm || !name) {
       return res.status(400).json({ success: false, error: "Missing required fields." });
     }
+    if (organizationType === ORGANIZATION_TYPES.NISWAN && !schoolId) {
+      return res.status(400).json({ success: false, error: "Niswan is required for this Employee role." });
+    }
 
-    // ✅ keep email unique check
     const existingUser = await User.findOne({ email: emailNorm }).select("_id").lean();
     if (existingUser) {
       return res.status(400).json({ success: false, error: "User already registered in emp" });
     }
 
-    const schoolById = await School.findById(schoolId)
-      .select("_id code district state nameEnglish")
-      .lean();
-
-    if (!schoolById?._id) {
-      return res.status(404).json({ success: false, error: "Niswan Not exists" });
+    let schoolById = null;
+    if (organizationType === ORGANIZATION_TYPES.NISWAN) {
+      schoolById = req.employeeTargetSchool || await School.findOne({ _id: schoolId, ...getNiswanSchoolFilter() })
+        .select("_id code district state nameEnglish recordType")
+        .lean();
+      if (!schoolById?._id) {
+        return res.status(404).json({ success: false, error: "Niswan does not exist." });
+      }
     }
 
-    // ✅ Restrict: only ONE Active admin per school
-    if (roleNorm === "admin") {
+    // Preserve the existing one-active-Admin-per-Niswan rule. HQ roles use explicit HQ role names.
+    if (roleNorm === "admin" && organizationType === ORGANIZATION_TYPES.NISWAN) {
       const existingActiveAdmin = await Employee.findOne({
+        organizationType: ORGANIZATION_TYPES.NISWAN,
         schoolId: schoolById._id,
         active: "Active",
       })
         .populate({
           path: "userId",
-          match: { role: "admin" }, // only admin users
+          match: { role: "admin" },
           select: "_id role",
         })
         .select("_id userId")
         .lean();
 
-      // If a matching admin exists, userId will be populated (not null)
       if (existingActiveAdmin?.userId) {
         return res.status(400).json({
           success: false,
@@ -187,8 +200,11 @@ const addEmployee = async (req, res) => {
       }
     }
 
-    // ✅ auto-generate employeeId from school code + role
-    const employeeId = await generateEmployeeId({ schoolCode: schoolById.code, role: roleNorm });
+    const employeeId = await generateEmployeeId({
+      schoolCode: schoolById?.code || "",
+      role: roleNorm,
+      organizationType,
+    });
 
     // Optional: prevent duplicate employeeId (extra safety)
     const existingEmp = await Employee.findOne({ employeeId }).select("_id").lean();
@@ -221,7 +237,8 @@ const addEmployee = async (req, res) => {
         [
           {
             userId: createdUserId,
-            schoolId: schoolById._id,
+            organizationType,
+            schoolId: organizationType === ORGANIZATION_TYPES.HQ ? null : schoolById._id,
             employeeId,
             contactNumber,
             address: toCamelCase(address),
@@ -233,7 +250,7 @@ const addEmployee = async (req, res) => {
             maritalStatus,
             doj,
             salary,
-            travellingAllowance: normalizedTravellingAllowance,
+            
             otherDesignation: String(otherDesignation || "").trim(),
             activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
             bankAccountDetails: String(bankAccountDetails || "").trim(),
@@ -332,7 +349,7 @@ const importEmployeesData = async (req, res) => {
     ].filter((v) => !isObjectIdLike(v));
 
     const schoolsByCode = possibleCodes.length
-      ? await School.find({ code: { $in: possibleCodes } })
+      ? await School.find({ code: { $in: possibleCodes }, ...getNiswanSchoolFilter() })
         .select("_id code districtStateId")
         .lean()
       : [];
@@ -354,6 +371,7 @@ const importEmployeesData = async (req, res) => {
 
     const existingActiveAdmins = allSchoolIdsInFile.size
       ? await Employee.find({
+        organizationType: ORGANIZATION_TYPES.NISWAN,
         schoolId: { $in: Array.from(allSchoolIdsInFile) },
         active: "Active",
       })
@@ -407,8 +425,6 @@ const importEmployeesData = async (req, res) => {
       if (!dateOrderValidation.ok) errors.push(dateOrderValidation.error);
 
       const salary = Number(safeStr(r.salary));
-      const travellingAllowanceRaw = safeStr(r.travellingAllowance);
-      const travellingAllowance = travellingAllowanceRaw === "" ? 0 : Number(travellingAllowanceRaw);
 
       // ✅ Required validations
       if (!isNonEmpty(schoolIdRaw)) errors.push("schoolId is missing");
@@ -420,7 +436,6 @@ const importEmployeesData = async (req, res) => {
       if (!isNonEmpty(address)) errors.push("address is missing");
       if (!isNonEmpty(role)) errors.push("role is missing");
       if (!Number.isFinite(salary)) errors.push("salary is invalid");
-      if (!Number.isFinite(travellingAllowance) || travellingAllowance < 0) errors.push("travellingAllowance is invalid");
 
       // ✅ Only admin import allowed
       if (role !== "admin") errors.push("Only role=admin allowed for this import");
@@ -470,6 +485,7 @@ const importEmployeesData = async (req, res) => {
 
         await Employee.create({
           userId: createdUser._id,
+          organizationType: ORGANIZATION_TYPES.NISWAN,
           schoolId,
           employeeId,
           contactNumber: Number(contactNumberDigits),
@@ -482,7 +498,7 @@ const importEmployeesData = async (req, res) => {
           maritalStatus,
           doj,
           salary,
-          travellingAllowance,
+
           otherDesignation,
           activitiesCarriedOut,
           bankAccountDetails,
@@ -568,7 +584,8 @@ const getEmployees = async (req, res) => {
     };
 
     // ------------------------------------------------------------
-    // ✅ SUPERVISOR: return only Admin employees under supervisor schools
+    // ✅ SUPERVISOR: return all Active employees under assigned Niswans.
+    // Mutation authority remains separately restricted to assigned-Niswan Admins.
     // ------------------------------------------------------------
     if (userRole === "supervisor") {
       if (!loginUserId) {
@@ -587,7 +604,7 @@ const getEmployees = async (req, res) => {
       possibleSupervisorIds.push(loginUserId); // fallback: if School.supervisorId stores User._id
 
       // 2) Find schools under supervisor
-      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } })
+      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds }, ...getNiswanSchoolFilter() })
         .select("_id code nameEnglish supervisorId")
         .lean();
 
@@ -597,21 +614,18 @@ const getEmployees = async (req, res) => {
         return res.status(200).json({ success: true, employees: [] });
       }
 
-      // 3) Fetch employees for those schools
-      const employeesAll = await Employee.find({
+      // 3) Fetch all Active employees for those assigned Niswans.
+      // This intentionally matches the Supervisor dashboard Employee count.
+      const employees = await Employee.find({
+        organizationType: ORGANIZATION_TYPES.NISWAN,
         schoolId: { $in: schoolIds },
         active: "Active",
       })
-        .select("_id employeeId schoolId userId contactNumber designation active dob doj")
+        .select("_id employeeId organizationType schoolId userId contactNumber designation active dob doj")
         .populate(schoolPopulate)
         .populate({ path: "userId", select: "_id name email role" })
         .sort({ employeeId: 1 })
         .lean();
-
-      // 4) Filter only admin users
-      const employees = employeesAll.filter(
-        (e) => String(e?.userId?.role || "").toLowerCase() === "admin"
-      );
 
       return res.status(200).json({ success: true, employees });
     }
@@ -620,12 +634,12 @@ const getEmployees = async (req, res) => {
     // ✅ OTHER ROLES
     // ------------------------------------------------------------
     const filter =
-      userRole === "superadmin" || userRole === "hquser"
+      ["superadmin", "hqadmin", "accountant", "hquser"].includes(userRole)
         ? { active: "Active" }
-        : { schoolId, active: "Active" };
+        : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId, active: "Active" };
 
     const employees = await Employee.find(filter)
-      .select("_id employeeId contactNumber designation active userId schoolId dob doj")
+      .select("_id employeeId organizationType contactNumber designation active userId schoolId dob doj")
       .sort({ employeeId: 1 })
       .populate({ path: "userId", select: "_id name email role" })
       .populate(schoolPopulate)
@@ -676,7 +690,7 @@ const getEmployees = async (req, res) => {
       possibleSupervisorIds.push(loginUserId); // fallback: if School.supervisorId stores User._id
 
       // 2) Find schools under supervisor
-      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds } })
+      const schools = await School.find({ supervisorId: { $in: possibleSupervisorIds }, ...getNiswanSchoolFilter() })
         .select("_id code nameEnglish supervisorId")
         .lean();
 
@@ -688,10 +702,11 @@ const getEmployees = async (req, res) => {
 
       // 3) Fetch employees for those schools
       const employeesAll = await Employee.find({
+        organizationType: ORGANIZATION_TYPES.NISWAN,
         schoolId: { $in: schoolIds },
         active: "Active",
       })
-        .select("_id employeeId schoolId userId contactNumber designation active dob doj")
+        .select("_id employeeId organizationType schoolId userId contactNumber designation active dob doj")
         .populate({ path: "schoolId", select: "code nameEnglish" })
         .populate({ path: "userId", select: "_id name email role" })
         .sort({ employeeId: 1 })
@@ -709,12 +724,12 @@ const getEmployees = async (req, res) => {
     // ✅ OTHER ROLES
     // ------------------------------------------------------------
     const filter =
-      userRole === "superadmin" || userRole === "hquser"
+      ["superadmin", "hqadmin", "accountant", "hquser"].includes(userRole)
         ? { active: "Active" }
-        : { schoolId, active: "Active" };
+        : { organizationType: ORGANIZATION_TYPES.NISWAN, schoolId, active: "Active" };
 
     const employees = await Employee.find(filter)
-      .select("_id employeeId contactNumber designation active userId schoolId dob doj")
+      .select("_id employeeId organizationType contactNumber designation active userId schoolId dob doj")
       .sort({ employeeId: 1 })
       .populate({ path: "userId", select: "_id name email role" })
       .populate({ path: "schoolId", select: "code nameEnglish" })
@@ -743,6 +758,7 @@ const getByEmpFilter = async (req, res) => {
     const query = {};
 
     if (isValidParam(empSchoolId)) {
+      query.organizationType = ORGANIZATION_TYPES.NISWAN;
       query.schoolId = empSchoolId;
     }
 
@@ -751,7 +767,7 @@ const getByEmpFilter = async (req, res) => {
     }
 
     // Keep response small (add fields if UI needs more)
-    const employeeSelect = "employeeId contactNumber designation active userId schoolId dob doj";
+    const employeeSelect = "employeeId organizationType contactNumber designation active userId schoolId dob doj";
 
     // Query employees and populate userId with a role match (if empRole is present)
     const employees = await Employee.find(query)
@@ -795,10 +811,11 @@ const getAdminsBySupervisor = async (req, res) => {
     }
 
     const admins = await Employee.find({
+      organizationType: ORGANIZATION_TYPES.NISWAN,
       schoolId: { $in: schoolIds },
       active: "Active",
     })
-      .select("_id employeeId schoolId userId contactNumber designation active")
+      .select("_id employeeId organizationType schoolId userId contactNumber designation active")
       .populate({ path: "schoolId", select: "code nameEnglish" })
       .populate({ path: "userId", select: "name email role" })
       .sort({ employeeId: 1 })
@@ -818,7 +835,7 @@ const getEmployee = async (req, res) => {
   try {
     let employee;
     employee = await Employee.findById({ _id: id })
-      .populate({ path: "schoolId", select: "_id code nameEnglish" })
+      .populate({ path: "schoolId", select: "_id code nameEnglish recordType" })
       .populate({ path: "userId", select: "name email role profileImage" }) // ✅ no password
       .lean();
 
@@ -851,7 +868,7 @@ const updateEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance,
+
       otherDesignation,
       activitiesCarriedOut,
       bankAccountDetails,
@@ -898,19 +915,19 @@ const updateEmployee = async (req, res) => {
         .json({ success: false, error: "User not found" });
     }
 
-    const school = await School.findById({ _id: schoolId })
-    if (!school) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Niswan not found" });
+    const organizationType = normalizeOrganizationType(
+      req.employeeOrganizationType || employee.organizationType
+    );
+    let school = null;
+    if (organizationType === ORGANIZATION_TYPES.NISWAN) {
+      school = await School.findOne({ _id: schoolId, ...getNiswanSchoolFilter() }).lean();
+      if (!school?._id) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Niswan not found" });
+      }
     }
 
-    const normalizedTravellingAllowance = travellingAllowance === "" || travellingAllowance == null
-      ? 0
-      : Number(travellingAllowance);
-    if (!Number.isFinite(normalizedTravellingAllowance) || normalizedTravellingAllowance < 0) {
-      return res.status(400).json({ success: false, error: "Travelling allowance must be a valid non-negative amount." });
-    }
 
     let updateUser;
     if (req.file) {
@@ -930,7 +947,10 @@ const updateEmployee = async (req, res) => {
     }
 
     const updateEmployee = await Employee.findByIdAndUpdate({ _id: id }, {
-      schoolId: school._id,
+      organizationType,
+      // Keep an existing legacy HQ School reference as historical compatibility data.
+      // Runtime HQ scope ignores it; new HQ Employees are created with schoolId=null.
+      schoolId: organizationType === ORGANIZATION_TYPES.HQ ? (employee.schoolId || null) : school._id,
       employeeId,
       contactNumber,
       address: toCamelCase(address),
@@ -942,7 +962,7 @@ const updateEmployee = async (req, res) => {
       maritalStatus,
       doj,
       salary,
-      travellingAllowance: normalizedTravellingAllowance,
+      
       otherDesignation: String(otherDesignation || "").trim(),
       activitiesCarriedOut: String(activitiesCarriedOut || "").trim(),
       bankAccountDetails: String(bankAccountDetails || "").trim(),

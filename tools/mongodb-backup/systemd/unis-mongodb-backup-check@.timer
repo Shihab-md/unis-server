@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly independent UNIS backup freshness check (%i)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+Unit=unis-mongodb-backup-check@%i.service
+
+[Install]
+WantedBy=timers.target

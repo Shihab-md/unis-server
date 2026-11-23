@@ -5,21 +5,13 @@ import PaymentBatchItem from "../models/PaymentBatchItem.js";
 import { getNextNumber } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 
-const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
+import { findAcademicYearBatchIds, scopeBatchesToAcademicYear } from "../utils/paymentBatchAcademicYear.js";
 
-const requireRole = (role, allowed) => {
-  if (!allowed.includes(role)) {
-    const err = new Error("Forbidden");
-    err.status = 403;
-    throw err;
-  }
-};
+const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
 export const listDueInvoicesForSchool = async (req, res) => {
   try {
     console.log("listDueInvoicesForSchool called");
-    requireRole(req.user?.role, ["superadmin", "hquser", "admin"]);
-
     const { schoolId, status } = req.params;
 
     const q = {};
@@ -84,8 +76,6 @@ export const createPaymentBatch = async (req, res) => {
   console.log("createPaymentBatch - called");
 
   try {
-    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
-
     const {
       schoolId,
       //acYear: bodyAcYear, // optional from UI
@@ -367,7 +357,6 @@ export const schoolFeesDashboard = async (req, res) => {
 // feesController.js (method)
 export const listBatchesSentToHQForSchool = async (req, res) => {
   try {
-    requireRole(req.user?.role, ["admin", "superadmin", "hquser"]);
     console.log("Called - listBatchesSentToHQForSchool")
     const role = req.user?.role;
     const { schoolId, acYear, status } = req.params;
@@ -376,8 +365,8 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       return res.status(400).json({ success: false, error: "Invalid acYear" });
     }
 
-    const q = { acYear };
-    const isHQ = role === "superadmin" || role === "hquser";
+    const q = {};
+    const isHQ = ["superadmin", "hqadmin", "accountant"].includes(role);
 
     if (isHQ) {
       if (schoolId && schoolId !== "ALL") {
@@ -399,6 +388,18 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       q.status = { $in: ["PENDING_APPROVAL", "APPROVED", "REJECTED"] };
     }
 
+    const responseScope = {
+      academicYearScope: "INVOICE_ITEMS",
+      selectedAcademicYearId: String(acYear),
+    };
+    const matchingBatchIds = await findAcademicYearBatchIds({
+      FeeInvoice, PaymentBatchItem, acYear, schoolId: q.schoolId,
+    });
+    if (!matchingBatchIds.length) {
+      return res.status(200).json({ success: true, ...responseScope, batches: [] });
+    }
+    q._id = { $in: matchingBatchIds };
+
     const batches = await PaymentBatch.find(q)
       .select(
         // ✅ added proofDrive* fields
@@ -415,13 +416,14 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       .lean();
 
     if (!batches.length) {
-      return res.status(200).json({ success: true, batches: [] });
+      return res.status(200).json({ success: true, ...responseScope, batches: [] });
     }
 
     const batchIds = batches.map((b) => b._id);
 
     const items = await PaymentBatchItem.find({ batchId: { $in: batchIds } })
-      .select("batchId invoiceId studentId amount status error createdAt")
+      .select("batchId acYear invoiceId studentId amount status error createdAt")
+      .populate({ path: "acYear", select: "acYear" })
       .populate({
         path: "studentId",
         select: "rollNumber feesPaid userId",
@@ -452,19 +454,8 @@ export const listBatchesSentToHQForSchool = async (req, res) => {
       };
     });
 
-    const map = new Map();
-    for (const it of normalizedItems) {
-      const k = String(it.batchId);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(it);
-    }
-
-    const result = batches.map((b) => ({
-      ...b,
-      items: map.get(String(b._id)) || [],
-    }));
-
-    return res.status(200).json({ success: true, batches: result });
+    const result = scopeBatchesToAcademicYear(batches, normalizedItems, acYear);
+    return res.status(200).json({ success: true, ...responseScope, batches: result });
   } catch (e) {
     console.log(e);
     return res.status(e.status || 500).json({ success: false, error: e.message || "server error" });

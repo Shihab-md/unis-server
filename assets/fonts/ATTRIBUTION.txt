@@ -1,0 +1,24 @@
+Font sources and copyright
+
+Noto fonts are licensed under the SIL Open Font License 1.1 (OFL.txt).
+Noto Sans / Noto Sans Arabic: bundled LibreOffice Noto fonts.
+Noto Sans Tamil: https://github.com/notofonts/noto-fonts/tree/main/hinted/ttf/NotoSansTamil
+
+NotoSans-Bold.ttf
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+
+NotoSans-Regular.ttf
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+
+NotoSansArabic-Bold.ttf
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+
+NotoSansArabic-Regular.ttf
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+
+NotoSansTamil-Bold.ttf
+Copyright 2017-2022 Google Inc. All Rights Reserved.
+
+NotoSansTamil-Regular.ttf
+Copyright 2017-2022 Google Inc. All Rights Reserved.
+

@@ -1,14 +1,16 @@
+import { SchoolReportError, schoolReportFilters, schoolReportSearch } from "../utils/schoolReportPolicy.js";
+import DistrictState from "../models/DistrictState.js";
+import { getAccessContext } from "../middleware/authorizationMiddleware.js";
 import multer from "multer";
-import jwt from "jsonwebtoken";
 import School from "../models/School.js";
 import Supervisor from "../models/Supervisor.js";
-import Employee from "../models/Employee.js";
 import Numbering from "../models/Numbering.js";
 import getRedis from "../db/redis.js"
 import mongoose from "mongoose";
 import { toCamelCase } from "./commonController.js";
 import { getActiveAcademicYearIdFromCache } from "./academicYearController.js";
 import { validateActualDate } from "../utils/dateRules.js";
+import { SCHOOL_RECORD_TYPES, getNiswanSchoolFilter } from "../config/organizationPolicy.js";
 
 const upload = multer({});
 
@@ -104,6 +106,7 @@ const addSchool = async (req, res) => {
     const newCode = await generateNextSchoolCode(code);
 
     const newSchool = new School({
+      recordType: SCHOOL_RECORD_TYPES.NISWAN,
       code: newCode,
       nameEnglish,
       nameArabic,
@@ -158,9 +161,9 @@ const addSchool = async (req, res) => {
     await newSchool.save();
 
     const redis = await getRedis();
-    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
+    await redis.set('totalSchools', String(await School.countDocuments(getNiswanSchoolFilter())));
 
-    const totalSchoolsList = await School.find()
+    const totalSchoolsList = await School.find(getNiswanSchoolFilter())
       .sort({ code: 1 })
       .select("_id code nameEnglish districtStateId active")
       .populate({ path: "districtStateId", select: "district state" })
@@ -541,31 +544,22 @@ const buildSchoolFinalProjectStage = () => {
 
 const getSchools = async (req, res) => {
   try {
-    const auth = req.headers.authorization || "";
-    const parts = auth.split(" ");
+    // Authentication and permission membership are enforced by the route.
+    // Reuse the authorization middleware's resolved scope instead of decoding
+    // the JWT and maintaining a second role matrix in this controller.
+    const access = req.accessContext || {};
+    const userRole = String(req.user?.role || "").trim().toLowerCase();
+    let filter = getNiswanSchoolFilter();
 
-    const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
-    const userId = decoded._id;
-    const userRole = decoded.role;
-
-    if (userRole !== "guest" && (parts.length !== 2 || parts[0] !== "Bearer")) {
-      return res.status(401).json({ success: false, error: "Unauthorized Request" });
-    }
-
-    let filter = {};
-
-    if (userRole === "superadmin" || userRole === "hquser" || userRole === "guest") {
-      filter = {};
-    } else if (userRole === "supervisor") {
-      const supervisor = await Supervisor.findOne({ userId }).select("_id").lean();
-      if (!supervisor?._id) return res.status(200).json({ success: true, schools: [] });
-      filter = { supervisorId: supervisor._id };
-    } else if (userRole === "admin") {
-      const employee = await Employee.findOne({ userId }).select("schoolId").lean();
-      if (!employee?.schoolId) return res.status(200).json({ success: true, schools: [] });
-      filter = { _id: employee.schoolId };
-    } else {
-      return res.status(403).json({ success: false, error: "Forbidden" });
+    if (!access.isHQ && userRole !== "guest") {
+      const allowedIds = Array.isArray(access.schoolIds)
+        ? access.schoolIds.filter((value) => mongoose.Types.ObjectId.isValid(String(value)))
+        : [];
+      if (!allowedIds.length) return res.status(200).json({ success: true, schools: [] });
+      filter = {
+        ...getNiswanSchoolFilter(),
+        _id: { $in: allowedIds.map((value) => new mongoose.Types.ObjectId(String(value))) },
+      };
     }
 
     // pagination
@@ -610,10 +604,10 @@ const getBySchFilter = async (req, res) => {
   const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v));
 
   try {
-    const baseMatch = {};
+    const baseMatch = getNiswanSchoolFilter();
 
     // V0.11: the normal Niswan list is role-scoped, so filtered reads must not widen it.
-    // requireSchoolReadRole has already resolved req.accessContext for Admin/Muavin.
+    // requireSchoolReadScope has already resolved req.accessContext for Admin/Muavin.
     const access = req.accessContext;
     const requestRole = String(req.user?.role || "").trim().toLowerCase();
     if (access && !access.isHQ && requestRole !== "guest") {
@@ -747,7 +741,7 @@ const getSchoolsFromCache = async (req, res) => {
 
     // ✅ Fallback to DB if cache empty (optional but recommended)
     if (!Array.isArray(schools) || schools.length === 0) {
-      schools = await School.find()
+      schools = await School.find(getNiswanSchoolFilter())
         .select("code nameEnglish nameArabic nameNative address city contactNumber active supervisorId districtStateId")
         .sort({ code: 1 })
         .lean();
@@ -770,7 +764,7 @@ const getSchoolsFromCache = async (req, res) => {
 const getSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const school = await School.findById({ _id: id })
+    const school = await School.findOne({ _id: id, ...getNiswanSchoolFilter() })
       .populate("supervisorId")
       .populate("districtStateId")
       .populate({
@@ -834,7 +828,7 @@ const updateSchool = async (req, res) => {
     }
 
 
-    const school = await School.findById({ _id: id });
+    const school = await School.findOne({ _id: id, ...getNiswanSchoolFilter() });
     if (!school) {
       return res
         .status(404)
@@ -848,7 +842,7 @@ const updateSchool = async (req, res) => {
         .json({ success: false, error: "Supervisor data not found." });
     }
 
-    const updateSchool = await School.findByIdAndUpdate({ _id: id }, {
+    const updateSchool = await School.findOneAndUpdate({ _id: id, ...getNiswanSchoolFilter() }, {
       code, nameEnglish,
       nameArabic,
       nameNative,
@@ -915,7 +909,7 @@ const updateSchool = async (req, res) => {
     // Keep reference-data lookups consistent after a mobile/web edit.
     try {
       const redis = await getRedis();
-      const totalSchoolsList = await School.find()
+      const totalSchoolsList = await School.find(getNiswanSchoolFilter())
         .sort({ code: 1 })
         .select("_id code nameEnglish districtStateId active supervisorId")
         .populate({ path: "districtStateId", select: "district state" })
@@ -934,18 +928,96 @@ const updateSchool = async (req, res) => {
   }
 };
 
+// Fresh report data: role/permission/scope are enforced independently of UI caches.
+export const getSchoolListReport = async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const access = req.accessContext || await getAccessContext(req.user);
+    if (!["superadmin", "hqadmin", "supervisor"].includes(access.role) || !access.isActive || (access.role !== "supervisor" && !access.isHQ)) throw new SchoolReportError("NR_FORBIDDEN", 403);
+    const filters = schoolReportFilters(req.query);
+    const filteredSupervisor = filters.supervisorId ? await Supervisor.findById(filters.supervisorId)
+      .select("supervisorId userId contactNumber").populate("userId", "name").lean() : null;
+    if (filters.supervisorId && !filteredSupervisor) throw new SchoolReportError("NR_INVALID_FILTER");
+    const match = getNiswanSchoolFilter();
+    if (access.role === "supervisor") match._id = { $in: access.schoolIds.map(id => new mongoose.Types.ObjectId(id)) };
+    if (filteredSupervisor) match.supervisorId = { $in: [filteredSupervisor._id, filteredSupervisor.userId?._id].filter(Boolean) };
+    if (filters.districtStateId) match.districtStateId = new mongoose.Types.ObjectId(filters.districtStateId);
+    if (filters.status) match.active = filters.status;
+    const projection = buildSchoolFinalProjectStage();
+    projection.$project._reportSupervisorRef = 1;
+    const schools = await School.aggregate([
+      { $match: match }, { $set: { _reportSupervisorRef: "$supervisorId" } },
+      ...await buildSchoolCountsPipeline(), ...buildSchoolPopulatePipeline(),
+      projection, { $sort: { code: 1, _id: 1 } },
+    ]);
+    // Some older Niswans store the Supervisor's User ID. Resolve both forms
+    // without exposing salary, bank details or unrelated profile fields.
+    const references = schools.map(s => s._reportSupervisorRef).filter(Boolean);
+    const supervisors = references.length ? await Supervisor.find({ $or: [{ _id: { $in: references } }, { userId: { $in: references } }] })
+      .select("supervisorId userId contactNumber").populate("userId", "name").lean() : [];
+    const supervisorMap = new Map();
+    for (const item of supervisors) {
+      supervisorMap.set(String(item._id), item);
+      if (item.userId?._id) supervisorMap.set(String(item.userId._id), item);
+    }
+    const rows = schools.map(s => {
+      const supervisor = supervisorMap.get(String(s._reportSupervisorRef || ""));
+      return {
+        code: s.code || "", nameEnglish: s.nameEnglish || "", nameNative: s.nameNative || "", nameArabic: s.nameArabic || "",
+        address: s.address || "", city: s.city || "", districtState: [s.districtStateId?.district, s.districtStateId?.state].filter(Boolean).join(", "),
+        incharge1: s.incharge1 || "", incharge1Number: s.incharge1Number == null ? "" : String(s.incharge1Number), active: s.active || "",
+        supervisorRecordId: supervisor ? String(supervisor._id) : "", supervisorCode: supervisor?.supervisorId || "", supervisorName: supervisor?.userId?.name || "",
+        supervisorContact: supervisor?.contactNumber == null ? "" : String(supervisor.contactNumber),
+        studentCount: Number(s.studentCount || 0), employeeCount: Number(s.employeeCount || 0),
+        studentCountsByCourse: (Array.isArray(s.studentCountsByCourse) ? s.studentCountsByCourse : []).map(item => ({
+          courseId: item.courseId ? String(item.courseId) : null, courseName: item.courseName || "", count: Number(item.count || 0),
+        })),
+        employeeCountsByRole: (Array.isArray(s.employeeCountsByRole) ? s.employeeCountsByRole : []).map(item => ({
+          role: item.role ? toCamelCase(item.role) : "", count: Number(item.count || 0),
+        })),
+      };
+    }).filter(row => schoolReportSearch(row, filters.search));
+    const singleIds = [...new Set(rows.map(row => row.supervisorRecordId).filter(Boolean))];
+    const supervisorId = access.role === "supervisor" ? access.supervisorId : filters.supervisorId || (singleIds.length === 1 && rows.every(row => row.supervisorRecordId) ? singleIds[0] : null);
+    const [supervisor, districtState] = await Promise.all([
+      supervisorId ? (access.role !== "supervisor" && filteredSupervisor ? filteredSupervisor : Supervisor.findById(supervisorId).select("supervisorId userId contactNumber").populate("userId", "name").lean()) : null,
+      filters.districtStateId ? DistrictState.findById(filters.districtStateId).select("district state").lean() : null,
+    ]);
+    if ((filters.supervisorId && !supervisor) || (filters.districtStateId && !districtState)) throw new SchoolReportError("NR_INVALID_FILTER");
+    return res.json({ success: true, report: {
+      generatedAt: new Date().toISOString(), filters: { ...filters, districtStateName: districtState ? [districtState.district, districtState.state].filter(Boolean).join(", ") : "" },
+      supervisor: supervisor ? { recordId: String(supervisor._id), code: supervisor.supervisorId, name: supervisor.userId?.name || "", contact: supervisor.contactNumber == null ? "" : String(supervisor.contactNumber) } : null,
+      showSupervisorColumn: !supervisor, showSupervisorDetails: access.role !== "supervisor", totalNiswans: rows.length,
+      totalStudents: rows.reduce((sum, row) => sum + row.studentCount, 0), totalStaff: rows.reduce((sum, row) => sum + row.employeeCount, 0), rows,
+    } });
+  } catch (error) {
+    if (!(error instanceof SchoolReportError)) console.error("[school-list-report]", error?.name);
+    return res.status(error instanceof SchoolReportError ? error.status : 503).json({ success: false, code: error instanceof SchoolReportError ? error.code : "NR_UNAVAILABLE", error: error instanceof SchoolReportError ? error.code : "NR_UNAVAILABLE" });
+  }
+};
+
 const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    await School.findByIdAndDelete({ _id: id })
-    // await deleteSchool.deleteOne()
-
-    const redis = await getRedis();
-    await redis.set('totalSchools', await School.countDocuments() - 1); // Minus HQ
-
-    return res.status(200).json({ success: true, deleteSchool })
+    if (!/^[a-f0-9]{24}$/i.test(String(id || ""))) return res.status(400).json({ success: false, error: "Invalid Niswan." });
+    const scope = await getAccessContext(req.user);
+    if (!["superadmin", "hqadmin"].includes(scope.role) || !scope.isHQ || !scope.isActive) {
+      return res.status(403).json({ success: false, error: "You do not have permission to deactivate Niswans." });
+    }
+    const school = await School.findOneAndUpdate({ _id: id, ...getNiswanSchoolFilter() },
+      { $set: { active: "In-Active", updatedAt: new Date() } }, { new: true, runValidators: true });
+    if (!school) return res.status(404).json({ success: false, error: "Niswan not found" });
+    // Database success must not become a failed delete response when Redis is down.
+    let timer;
+    try {
+      await Promise.race([(async () => { const redis = await getRedis(); await redis.del(["schools", "totalSchools"]); })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("cache timeout")), 1500); })]);
+    }
+    catch (error) { console.warn("[deactivateSchool] cache refresh skipped:", error?.message || error); }
+    finally { clearTimeout(timer); }
+    return res.status(200).json({ success: true, message: "Niswan deactivated successfully.", resourceId: id, school, deleteSchool: school });
   } catch (error) {
-    return res.status(500).json({ success: false, error: "delete School server error" })
+    return res.status(500).json({ success: false, error: "Unable to deactivate Niswan." });
   }
 }
 

@@ -22,6 +22,7 @@ import resetPassRouter from './routes/resetPass.js'
 
 import connectToDatabase from './db/db.js'
 import loadCache from './db/loadCache.js'
+import migrateOrganizationModel from './services/organizationMigrationService.js'
 
 import reportRouter from './routes/report.js'
 
@@ -32,6 +33,8 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
 
 import googleDriveRoutes from "./routes/googleDriveRoutes.js";
+import databaseBackupRoutes from "./routes/databaseBackupRoutes.js";
+import travelClaimRoutes from "./routes/travelClaimRoutes.js";
 
 import inspectionReportRoutes from "./routes/inspectionReportRoutes.js";
 
@@ -42,12 +45,14 @@ import examQuestionRouter from './routes/examQuestion.js';
 import attendanceRouter from './routes/attendance.js';
 import tempSchoolMarksheetRoutes from "./routes/tempSchoolMarksheetRoutes.js";
 import demoTutorialRoutes from "./routes/demoTutorialRoutes.js";
+import rolePermissionRouter from "./routes/rolePermission.js";
 import { SERVER_VERSION, getAppEnvironment, getCorsAllowedOrigins, validateRuntimeEnvironment } from "./utils/runtimeEnvironment.js";
 
 const runtime = validateRuntimeEnvironment();
 console.log(`[environment] ${runtime.environment} | DB=${runtime.databaseName} | server=${SERVER_VERSION}`);
 
 await connectToDatabase()
+await migrateOrganizationModel()
 await loadCache()
  
 const app = express()
@@ -104,6 +109,8 @@ app.use("/api/hq/fees", hqFeesRoutes);
 app.use("/api/public", publicRoutes);
 
 app.use("/api/integrations/google-drive", googleDriveRoutes);
+app.use("/api/database-backup", databaseBackupRoutes);
+app.use("/api/travel-claims", travelClaimRoutes);
 
 app.use("/api/inspection-report", inspectionReportRoutes);
 
@@ -114,6 +121,7 @@ app.use('/api/exam-questions', examQuestionRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use("/api/temp-school-marksheet", tempSchoolMarksheetRoutes);
 app.use("/api/demo-tutorial", demoTutorialRoutes);
+app.use("/api/role-permissions", rolePermissionRouter);
 
 app.use((err, req, res, next) => {
     if (err?.code === "UNIS_CORS_BLOCKED") {

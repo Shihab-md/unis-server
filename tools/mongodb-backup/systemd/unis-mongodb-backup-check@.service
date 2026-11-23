@@ -1,0 +1,17 @@
+[Unit]
+Description=Check UNIS MongoDB backup freshness (%i)
+Wants=network-online.target
+After=network-online.target
+OnFailure=unis-mongodb-backup-failure@%i.service
+
+[Service]
+Type=oneshot
+User=unis-backup
+Group=unis-backup
+ExecStart=/usr/bin/node --env-file=/etc/unis-backup/%i.env /opt/unis-server/tools/mongodb-backup/backup.mjs status
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+TimeoutStartSec=15min

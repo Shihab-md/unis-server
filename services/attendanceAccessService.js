@@ -3,13 +3,20 @@ import Employee from "../models/Employee.js";
 import Supervisor from "../models/Supervisor.js";
 import School from "../models/School.js";
 import User from "../models/User.js";
-
-export const HQ_SCHOOL_CODE = String(process.env.UNIS_HQ_SCHOOL_CODE || "UN-00-00001").trim();
+import {
+  ORGANIZATION_TYPES,
+  getHqOrganizationSummary,
+  getNiswanSchoolFilter,
+  normalizeOrganizationType,
+} from "../config/organizationPolicy.js";
 
 export const normalizeRole = (value) => String(value || "").trim().toLowerCase();
 
 const EMPLOYEE_STAFF_ROLES = new Set([
+  "hqadmin",
+  "accountant",
   "hquser",
+  "hqstaff",
   "admin",
   "employee",
   "teacher",
@@ -19,9 +26,6 @@ const EMPLOYEE_STAFF_ROLES = new Set([
 ]);
 
 export const isObjectId = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
-
-export const getHqSchool = async () =>
-  School.findOne({ code: HQ_SCHOOL_CODE }).select("_id code nameEnglish active").lean();
 
 export const getActorStaff = async (user) => {
   const role = normalizeRole(user?.role);
@@ -40,6 +44,7 @@ export const getActorStaff = async (user) => {
       userId: String(supervisor.userId?._id || userId),
       role,
       active: supervisor.active,
+      organizationType: ORGANIZATION_TYPES.HQ,
       schoolId: null,
       record: supervisor,
     };
@@ -48,18 +53,24 @@ export const getActorStaff = async (user) => {
   if (EMPLOYEE_STAFF_ROLES.has(role)) {
     const employee = await Employee.findOne({ userId })
       .populate({ path: "userId", select: "_id name email role" })
-      .populate({ path: "schoolId", select: "_id code nameEnglish active" })
+      .populate({ path: "schoolId", select: "_id code nameEnglish active recordType" })
       .lean();
 
     if (!employee?._id) return null;
+    const organizationType = normalizeOrganizationType(employee.organizationType);
     return {
       staffType: "Employee",
       staffId: String(employee._id),
       userId: String(employee.userId?._id || userId),
       role,
       active: employee.active,
-      schoolId: employee.schoolId?._id ? String(employee.schoolId._id) : null,
-      schoolCode: employee.schoolId?.code || "",
+      organizationType,
+      schoolId:
+        organizationType === ORGANIZATION_TYPES.NISWAN && employee.schoolId?._id
+          ? String(employee.schoolId._id)
+          : null,
+      schoolCode:
+        organizationType === ORGANIZATION_TYPES.NISWAN ? employee.schoolId?.code || "" : "",
       record: employee,
     };
   }
@@ -69,35 +80,42 @@ export const getActorStaff = async (user) => {
 
 export const getAttendanceAccess = async (user) => {
   const role = normalizeRole(user?.role);
-  const hqSchool = await getHqSchool();
   const actorStaff = await getActorStaff(user);
-
+  const actorOrganizationType = actorStaff?.organizationType || null;
   const actorSchoolId = actorStaff?.schoolId || null;
-  const actorSchoolCode = actorStaff?.schoolCode || "";
-  const isHqAdmin = role === "admin" && actorSchoolCode === HQ_SCHOOL_CODE;
+  const isLegacyHqAdmin = role === "admin" && actorOrganizationType === ORGANIZATION_TYPES.HQ;
+  const isHqAdmin = role === "hqadmin" || isLegacyHqAdmin;
+  const hasGlobalRead = ["superadmin", "hqadmin", "accountant", "hquser"].includes(role);
 
-  const access = {
+  return {
     role,
     userId: user?._id ? String(user._id) : null,
     actorStaff,
-    hqSchool: hqSchool
-      ? { _id: String(hqSchool._id), code: hqSchool.code, nameEnglish: hqSchool.nameEnglish }
-      : null,
+    hqOrganization: getHqOrganizationSummary(),
     isSuperAdmin: role === "superadmin",
     isHqUser: role === "hquser",
     isHqAdmin,
+    isLegacyHqAdmin,
+    isAccountant: role === "accountant",
+    isHqStaff: role === "hqstaff",
+    actorOrganizationType,
     actorSchoolId,
     canManageAnyNiswan: role === "superadmin",
-    canManageHqStaff: role === "superadmin" || role === "hquser" || isHqAdmin,
-    canManageOwnNiswanStaff: role === "admin" && !isHqAdmin && Boolean(actorSchoolId),
+    canViewAnyNiswanStaff: hasGlobalRead,
+    canViewHqStaff: hasGlobalRead || isLegacyHqAdmin,
+    canManageHqStaff: role === "superadmin" || role === "hqadmin" || isLegacyHqAdmin,
+    canManageOwnNiswanStaff:
+      role === "admin" && !isLegacyHqAdmin && actorOrganizationType === ORGANIZATION_TYPES.NISWAN && Boolean(actorSchoolId),
     canManageOwnNiswanStudents:
-      ["admin", "teacher", "usthadh"].includes(role) && !isHqAdmin && Boolean(actorSchoolId),
-    canManageAnyStudents: role === "superadmin",
+      ["admin", "teacher", "usthadh"].includes(role) &&
+      !isLegacyHqAdmin &&
+      actorOrganizationType === ORGANIZATION_TYPES.NISWAN &&
+      Boolean(actorSchoolId),
+    canViewAnyStudents: hasGlobalRead,
+    canManageAnyStudents: role === "superadmin" || role === "hqadmin",
     canViewOwnStaffAttendance: Boolean(actorStaff),
     canApplyOwnStaffLeave: Boolean(actorStaff),
   };
-
-  return access;
 };
 
 const forbidden = (message) => {
@@ -114,27 +132,26 @@ const badRequest = (message) => {
 
 export const normalizeScopeType = (value) => {
   const scope = String(value || "").trim().toUpperCase();
-  return scope === "HQ" ? "HQ" : "NISWAN";
+  return scope === ORGANIZATION_TYPES.HQ ? ORGANIZATION_TYPES.HQ : ORGANIZATION_TYPES.NISWAN;
 };
 
 export const resolveStaffScope = async ({ user, scopeType, schoolId, requireManage = false }) => {
   const access = await getAttendanceAccess(user);
   const requestedScope = normalizeScopeType(scopeType);
 
-  if (requestedScope === "HQ") {
-    if (!access.hqSchool?._id) throw badRequest(`HQ Niswan (${HQ_SCHOOL_CODE}) is not configured.`);
+  if (requestedScope === ORGANIZATION_TYPES.HQ) {
     if (requireManage && !access.canManageHqStaff) {
       throw forbidden("You are not authorized to manage HQ staff attendance.");
     }
-    if (!requireManage && !access.canManageHqStaff) {
-      // Non-managers may only use self endpoints, never browse the whole HQ roster.
-      throw forbidden("HQ staff list is available only to authorized HQ attendance managers.");
+    if (!requireManage && !access.canViewHqStaff) {
+      throw forbidden("You are not authorized to view the HQ staff attendance roster.");
     }
     return {
       access,
-      organizationType: "HQ",
-      schoolId: access.hqSchool._id,
-      school: access.hqSchool,
+      organizationType: ORGANIZATION_TYPES.HQ,
+      schoolId: null,
+      school: null,
+      organization: access.hqOrganization,
     };
   }
 
@@ -142,31 +159,55 @@ export const resolveStaffScope = async ({ user, scopeType, schoolId, requireMana
 
   if (access.isSuperAdmin) {
     if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
+  } else if (!requireManage && access.canViewAnyNiswanStaff) {
+    if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
   } else if (access.canManageOwnNiswanStaff) {
     targetSchoolId = access.actorSchoolId;
   } else {
-    throw forbidden("You are not authorized to manage Niswan staff attendance.");
+    throw forbidden(
+      requireManage
+        ? "You are not authorized to manage Niswan staff attendance."
+        : "You are not authorized to view Niswan staff attendance."
+    );
   }
 
-  const school = await School.findById(targetSchoolId).select("_id code nameEnglish active").lean();
+  const school = await School.findOne({ _id: targetSchoolId, ...getNiswanSchoolFilter() })
+    .select("_id code nameEnglish active recordType")
+    .lean();
   if (!school?._id) throw badRequest("Selected Niswan was not found.");
 
-  if (String(school.code) === HQ_SCHOOL_CODE) {
-    // Keep HQ rules explicit. Do not let a forged NISWAN request bypass HQ authorization.
-    if (!access.canManageHqStaff) throw forbidden("HQ staff scope is not available for this account.");
-    return {
-      access,
-      organizationType: "HQ",
-      schoolId: String(school._id),
-      school: { _id: String(school._id), code: school.code, nameEnglish: school.nameEnglish },
-    };
+  return {
+    access,
+    organizationType: ORGANIZATION_TYPES.NISWAN,
+    schoolId: String(school._id),
+    school: { _id: String(school._id), code: school.code, nameEnglish: school.nameEnglish },
+    organization: {
+      organizationType: ORGANIZATION_TYPES.NISWAN,
+      code: school.code,
+      nameEnglish: school.nameEnglish,
+    },
+  };
+};
+
+export const resolvePayrollScope = async ({ user, scopeType }) => {
+  const access = await getAttendanceAccess(user);
+  const requestedScope = normalizeScopeType(scopeType);
+  const canManageHqPayroll = ["superadmin", "hqadmin", "accountant"].includes(access.role);
+
+  if (!canManageHqPayroll) {
+    throw forbidden("You are not authorized to manage HQ Payroll.");
+  }
+
+  if (requestedScope !== ORGANIZATION_TYPES.HQ) {
+    throw forbidden("Payroll is available only for HQ. Niswan Payroll is not enabled.");
   }
 
   return {
     access,
-    organizationType: "NISWAN",
-    schoolId: String(school._id),
-    school: { _id: String(school._id), code: school.code, nameEnglish: school.nameEnglish },
+    organizationType: ORGANIZATION_TYPES.HQ,
+    schoolId: null,
+    school: null,
+    organization: access.hqOrganization,
   };
 };
 
@@ -174,19 +215,22 @@ export const resolveStudentScope = async ({ user, schoolId, requireManage = true
   const access = await getAttendanceAccess(user);
   let targetSchoolId = String(schoolId || "").trim();
 
-  if (access.canManageAnyStudents) {
+  if (requireManage ? access.canManageAnyStudents : access.canViewAnyStudents) {
     if (!isObjectId(targetSchoolId)) throw badRequest("Please select a valid Niswan.");
   } else if (access.canManageOwnNiswanStudents) {
     targetSchoolId = access.actorSchoolId;
   } else {
-    throw forbidden("Student attendance is not available for this account.");
+    throw forbidden(
+      requireManage
+        ? "Student attendance management is not available for this account."
+        : "Student attendance view is not available for this account."
+    );
   }
 
-  const school = await School.findById(targetSchoolId).select("_id code nameEnglish active").lean();
+  const school = await School.findOne({ _id: targetSchoolId, ...getNiswanSchoolFilter() })
+    .select("_id code nameEnglish active recordType")
+    .lean();
   if (!school?._id) throw badRequest("Selected Niswan was not found.");
-  if (String(school.code) === HQ_SCHOOL_CODE) {
-    throw badRequest("HQ is for staff attendance. Please select a Niswan for student attendance.");
-  }
 
   return {
     access,
@@ -208,6 +252,7 @@ export const loadStaffByRef = async ({ staffType, staffId }) => {
       staffId: String(record._id),
       userId: String(record.userId?._id || ""),
       role: normalizeRole(record.userId?.role || "supervisor"),
+      organizationType: ORGANIZATION_TYPES.HQ,
       schoolId: null,
       active: record.active,
       record,
@@ -216,16 +261,22 @@ export const loadStaffByRef = async ({ staffType, staffId }) => {
 
   const record = await Employee.findById(staffId)
     .populate({ path: "userId", select: "_id name email role" })
-    .populate({ path: "schoolId", select: "_id code nameEnglish active" })
+    .populate({ path: "schoolId", select: "_id code nameEnglish active recordType" })
     .lean();
   if (!record?._id) return null;
+  const organizationType = normalizeOrganizationType(record.organizationType);
   return {
     staffType: "Employee",
     staffId: String(record._id),
     userId: String(record.userId?._id || ""),
     role: normalizeRole(record.userId?.role),
-    schoolId: record.schoolId?._id ? String(record.schoolId._id) : null,
-    schoolCode: record.schoolId?.code || "",
+    organizationType,
+    schoolId:
+      organizationType === ORGANIZATION_TYPES.NISWAN && record.schoolId?._id
+        ? String(record.schoolId._id)
+        : null,
+    schoolCode:
+      organizationType === ORGANIZATION_TYPES.NISWAN ? record.schoolId?.code || "" : "",
     active: record.active,
     record,
   };
@@ -234,12 +285,15 @@ export const loadStaffByRef = async ({ staffType, staffId }) => {
 export const staffBelongsToScope = async ({ staff, organizationType, schoolId }) => {
   if (!staff) return false;
 
-  if (organizationType === "HQ") {
-    if (staff.staffType === "Supervisor") return true;
-    return String(staff.schoolId || "") === String(schoolId || "");
+  if (organizationType === ORGANIZATION_TYPES.HQ) {
+    return staff.staffType === "Supervisor" || staff.organizationType === ORGANIZATION_TYPES.HQ;
   }
 
-  return staff.staffType === "Employee" && String(staff.schoolId || "") === String(schoolId || "");
+  return (
+    staff.staffType === "Employee" &&
+    staff.organizationType === ORGANIZATION_TYPES.NISWAN &&
+    String(staff.schoolId || "") === String(schoolId || "")
+  );
 };
 
 export const canApproveStaffLeave = async ({ approverUser, leave }) => {
@@ -249,12 +303,12 @@ export const canApproveStaffLeave = async ({ approverUser, leave }) => {
 
   if (String(leave.userId) === String(approverUser?._id)) return false;
 
-  // Admin leave (HQ Admin or Niswan Admin) is escalated to SuperAdmin.
-  if (targetRole === "admin") return access.isSuperAdmin;
+  // HQ Admin and Niswan Admin leave is escalated to SuperAdmin.
+  if (["hqadmin", "admin"].includes(targetRole)) return access.isSuperAdmin;
 
   if (access.isSuperAdmin) return true;
 
-  if (leave.organizationType === "HQ") {
+  if (leave.organizationType === ORGANIZATION_TYPES.HQ) {
     return access.canManageHqStaff;
   }
 
@@ -262,4 +316,4 @@ export const canApproveStaffLeave = async ({ approverUser, leave }) => {
 };
 
 export const canManagePayrollScope = async ({ user, scopeType, schoolId }) =>
-  resolveStaffScope({ user, scopeType, schoolId, requireManage: true });
+  resolvePayrollScope({ user, scopeType, schoolId });
